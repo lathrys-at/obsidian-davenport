@@ -78,7 +78,24 @@ export default defineConfig(
 		},
 		rules: {
 			'obsidianmd/no-nodejs-modules': 'off',
+		},
+	},
+	{
+		name: 'davenport/tooling-console',
+		files: ['scripts/**/*.mjs'],
+		rules: {
 			'obsidianmd/rule-custom-message': 'off',
+		},
+	},
+	// The one sanctioned home for node APIs in plugin source, gated at
+	// runtime to desktop. Without this exemption the warnings-as-errors
+	// lint gate would reject the zone the import bans deliberately carve
+	// out.
+	{
+		name: 'davenport/desktop-zone',
+		files: ['src/adapters/desktop/**/*.ts'],
+		rules: {
+			'obsidianmd/no-nodejs-modules': 'off',
 		},
 	},
 	// All network I/O flows through the transport port; the Obsidian

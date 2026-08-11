@@ -65,4 +65,4 @@ jobs:
         steps:
             - name: All required jobs succeeded
               run: |
-                  echo '${{ toJSON(needs) }}' | jq -e 'all(.[].result; . == "success")'
+                  echo '${{ toJSON(needs) }}' | jq -e '(length > 0) and all(.[].result; . == "success")'
