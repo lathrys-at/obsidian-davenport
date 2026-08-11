@@ -1,14 +1,16 @@
 /**
  * A simulated device: an in-memory vault behind the vault port, plus the
- * modification times the port has no member for and the per-path versions
- * that say which changes this device has seen.
+ * modification times the port has no member for, the per-path versions
+ * that say which changes this device has seen, and who wrote the content
+ * it holds at each path.
  *
  * The device is what an engine holds. Every mutation made through it is
  * captured as an outbound change and counts one more change against the
  * path's version, so a change originates exactly once. The channel lands
  * inbound deliveries on `vault` underneath, which emits the file events
  * subscribers expect without the arrival being mistaken for a local edit,
- * and records the version and modification time the landing leaves.
+ * and records the version, authorship, and modification time the landing
+ * leaves.
  */
 
 import type {
@@ -18,7 +20,7 @@ import type {
 } from '../../../src/core/ports/vault';
 import type { ControlledClock } from '../clock';
 import { FakeVault } from '../obsidian-fake';
-import type { CapturedChange, DeviceId } from './types';
+import type { CapturedChange, ContentStamp, DeviceId } from './types';
 import { bumpVersion, INITIAL_VERSION, type PathVersion } from './version';
 
 export type CaptureSink = (change: CapturedChange) => void;
@@ -28,11 +30,16 @@ export class SyncDevice implements VaultPort {
 	 * The vault underneath the port. The channel writes here so applying a
 	 * delivery originates nothing; local edits go through the device. A
 	 * suite plants a file the same way when it wants one on a device
-	 * without any device having made it.
+	 * without any device having made it — and a plant meant to stand
+	 * against an incoming change needs `noteVersion` beside it, since a
+	 * file nobody is recorded as having changed is one every delivery
+	 * covers and overwrites without a conflict. `noteModified` and
+	 * `noteStamp` place the plant in time as well.
 	 */
 	readonly vault: FakeVault;
 	private readonly modificationTimes = new Map<string, number>();
 	private readonly versions = new Map<string, PathVersion>();
+	private readonly stamps = new Map<string, ContentStamp>();
 
 	constructor(
 		readonly id: DeviceId,
@@ -43,6 +50,7 @@ export class SyncDevice implements VaultPort {
 		this.vault = new FakeVault(initialFiles);
 		for (const path of this.vault.paths()) {
 			this.modificationTimes.set(path, clock.now());
+			this.stamps.set(path, { author: id, at: clock.now() });
 		}
 	}
 
@@ -163,8 +171,23 @@ export class SyncDevice implements VaultPort {
 		this.versions.set(path, version);
 	}
 
+	/**
+	 * Who wrote the content this device holds at a path, and when. Null
+	 * for a path the device does not hold, and for one planted straight
+	 * into the vault without a stamp.
+	 */
+	stampOf(path: string): ContentStamp | null {
+		return this.holds(path) ? (this.stamps.get(path) ?? null) : null;
+	}
+
+	/** Records who wrote the content a landed delivery leaves at a path. */
+	noteStamp(path: string, stamp: ContentStamp): void {
+		this.stamps.set(path, stamp);
+	}
+
 	private stamp(path: string): void {
 		this.modificationTimes.set(path, this.clock.now());
+		this.stamps.set(path, { author: this.id, at: this.clock.now() });
 	}
 
 	/** Counts one more local change to a path and records the result. */

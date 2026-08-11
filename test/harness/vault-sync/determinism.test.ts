@@ -14,6 +14,8 @@ const RENAMED = 'Meetings/renamed.md';
 interface ScriptRun {
 	/** Deliveries still in flight once the script has run out. */
 	readonly pending: number;
+	/** Whether every device ended on the same bytes. */
+	readonly converged: boolean;
 	readonly snapshots: readonly string[];
 	readonly times: readonly string[];
 	readonly log: readonly string[];
@@ -72,6 +74,7 @@ async function runScript(profile: SyncToolProfile): Promise<ScriptRun> {
 
 	return {
 		pending: channel.pending().length,
+		converged: channel.converged(),
 		snapshots: channel.devices.map(
 			(device) => `${device.id}\n${device.snapshot()}`,
 		),
@@ -103,15 +106,16 @@ describe('vault-sync determinism', () => {
 	}
 
 	it('exercises the branches it claims to', async () => {
-		const { log, snapshots } = await runScript(SYNCTHING);
+		const { log, snapshots, converged } = await runScript(SYNCTHING);
 		expect(log.filter((entry) => entry.includes('conflict-copy'))).toEqual([
 			'b->c conflict-copy records/one.sync-conflict-20260101-000130-c.md',
-			'c->a conflict-copy records/one.sync-conflict-20260101-000130-a.md',
-			'c->b conflict-copy records/one.sync-conflict-20260101-000130-b.md',
+			'c->a conflict-copy records/one.sync-conflict-20260101-000130-c.md',
+			'c->b conflict-copy records/one.sync-conflict-20260101-000130-c.md',
 		]);
 		expect(log).toContain('b->a deleted -');
 		expect(log).toContain('b->c deleted -');
 		expect(snapshots.join('\n')).toContain(RENAMED);
 		expect(snapshots.join('\n')).not.toContain(NOTE);
+		expect(converged).toBe(true);
 	});
 });

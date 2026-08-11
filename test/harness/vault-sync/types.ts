@@ -20,6 +20,18 @@ import type { PathVersion } from './version';
 
 export type DeviceId = string;
 
+/**
+ * Who wrote the content a path holds, and when they wrote it. This is
+ * authorship, not the file's modification time: a tool that stamps an
+ * arrival with the destination's clock changes the second and never the
+ * first, and it is the first that decides a divergence, so both devices
+ * rank the same pair of edits the same way.
+ */
+export interface ContentStamp {
+	readonly author: DeviceId;
+	readonly at: number;
+}
+
 /** The file operation a delivery asks its destination to perform. */
 export type DeliveryChange =
 	| {
@@ -76,10 +88,13 @@ export interface Delivery {
  * and `superseded` one whose version already covered the delivery, so
  * neither wrote anything. `overwritten`, `conflict-copy`, `merged`,
  * `kept-local`, `resurrected`, and `duplicated` are divergences the
- * profile decided: the local state was replaced, moved aside into a copy,
- * merged with the delivery, kept as it stood, put back after a local
- * deletion, or left in place beside the path a rename could not move it
- * to.
+ * profile decided: the local content was replaced by the delivery, one of
+ * the two was moved aside into a copy, the two were merged, the local
+ * content stood, a locally deleted file came back, or a rename could not
+ * move a source the destination had edited and left it in place beside
+ * the path it was moving to. `conflict-copy` says a copy was made and
+ * `conflictPath` says where; which side lost is read from there, since a
+ * destination whose own content wins moves the delivery's aside instead.
  */
 export type DeliveryOutcome =
 	| 'created'
@@ -98,7 +113,7 @@ export type DeliveryOutcome =
 export interface LandedDelivery {
 	readonly delivery: Delivery;
 	readonly outcome: DeliveryOutcome;
-	/** Where displaced local content went, where a copy was made. */
+	/** Where the losing side's content went, where a copy was made. */
 	readonly conflictPath: string | null;
 	/**
 	 * The modification time the destination now holds for the path, or

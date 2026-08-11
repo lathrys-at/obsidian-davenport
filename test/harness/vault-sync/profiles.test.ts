@@ -4,6 +4,7 @@ import {
 	DEFAULT_SYNC_PROFILE,
 	SYNC_TOOL_PROFILES,
 	formatTimestamp,
+	incomingWins,
 	renderConflictPath,
 	splitPath,
 	syncToolProfile,
@@ -60,6 +61,27 @@ describe('conflict-copy patterns', () => {
 		expect(() => syncToolProfile('dropbox')).toThrow(
 			/corpus holds obsidian-sync, syncthing, icloud-drive, git/,
 		);
+	});
+});
+
+describe('divergence winner', () => {
+	const EARLY = { author: 'b', at: DEFAULT_START_TIME };
+	const LATE = { author: 'a', at: DEFAULT_START_TIME + 1 };
+
+	it('gives the path to the side written last', () => {
+		expect(incomingWins('newest', LATE, EARLY)).toBe(true);
+		expect(incomingWins('newest', EARLY, LATE)).toBe(false);
+	});
+
+	it('breaks a tie on the author, the earlier id winning', () => {
+		const tied = { author: 'b', at: LATE.at };
+		expect(incomingWins('newest', LATE, tied)).toBe(true);
+		expect(incomingWins('newest', tied, LATE)).toBe(false);
+	});
+
+	it('answers the one-sided rules without looking at either side', () => {
+		expect(incomingWins('incoming', EARLY, LATE)).toBe(true);
+		expect(incomingWins('local', LATE, EARLY)).toBe(false);
 	});
 });
 

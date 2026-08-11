@@ -25,18 +25,21 @@ export {
 	DEFAULT_SYNC_PROFILE,
 	SYNC_TOOL_PROFILES,
 	formatTimestamp,
+	incomingWins,
 	renderConflictPath,
 	splitPath,
 	syncToolProfile,
 } from './profiles';
 export type {
 	ConflictCopyContext,
+	DivergenceWinner,
 	DivergentDelivery,
 	RenameDelivery,
 	SyncToolProfile,
 } from './profiles';
 export type {
 	CapturedChange,
+	ContentStamp,
 	Delivery,
 	DeliveryChange,
 	DeliveryOutcome,

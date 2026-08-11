@@ -9,33 +9,57 @@
  * lands the same way whatever order the deliveries arrive in. A delivery
  * the destination's version already covers is old news and nothing is
  * written. Only when neither version covers the other were the two edits
- * made without knowledge of each other, and then the profile decides:
- * overwrite the local content, move it aside into a conflict copy, or
- * merge, with the content the origin replaced as the merge base.
+ * made without knowledge of each other, and then the profile decides what
+ * becomes of the side that does not take the path: discarded, moved aside
+ * into a conflict copy, or merged into the other, with the content the
+ * origin replaced as the merge base.
+ *
+ * Which of the two contents takes the path is the profile's winner rule,
+ * read from the stamps the two sides carry rather than from which one
+ * happens to be local. Both devices in a divergence hold the same pair of
+ * stamps, so they pick the same winner and end up agreeing on the path's
+ * bytes; the loser goes to a conflict copy named after the device that
+ * wrote it, which both devices also name alike, or is discarded where the
+ * profile makes no copies. A merging profile is handed the two sides in
+ * that same fixed order — the winner as the arriving side — so every
+ * device merging one pair produces one file. Convergence through a
+ * conflict is therefore real rather than a swap of contents, and a device
+ * meeting three or more concurrent edits ranks them the same however they
+ * arrive — except where a copy pattern numbers its copies rather than
+ * naming them, since two devices meeting the same collisions in different
+ * orders number them differently.
  *
  * A merge that declines falls back to the conflict copy, and a profile
- * with no copy pattern falls back to overwriting, so every divergence has
- * an outcome. A divergent deletion and a divergent edit of a path the
- * destination deleted are the same question asked from two sides, and the
- * profile answers both alike: under overwrite the deletion wins, and
- * under any profile that copies or merges the edit survives — a tool that
- * makes copies has no reason to destroy the one edit it would be copying.
- * Resolving either way leaves the destination knowing what the origin
- * knew, so the two devices converge whichever delivery lands first.
+ * with no copy pattern falls back to keeping the winner alone, so every
+ * divergence has an outcome. A divergent deletion and a divergent edit of
+ * a path the destination deleted are the same question asked from two
+ * sides, and the profile answers both alike: under overwrite the deletion
+ * wins, and under any profile that copies or merges the edit survives — a
+ * tool that makes copies has no reason to destroy the one edit it would
+ * be copying. Resolving either way leaves the destination knowing what
+ * the origin knew, so the two devices converge whichever delivery lands
+ * first.
  *
  * Whether a conflict copy reaches the other devices is a per-tool fact
- * the profile carries. A copy that travels is terminal by construction:
- * landing one writes the file where the destination has the path free and
- * drops it where it does not, so a copy is never resolved against a local
- * edit and can never produce another copy.
+ * the profile carries. It decides what a device that never sees one side
+ * of a divergence ends up with, since one that sees both makes the copy
+ * itself. A copy that travels is terminal by construction: landing one
+ * writes the file where the destination has the path free and drops it
+ * where it does not, so a copy is never resolved against a local edit and
+ * can never produce another copy.
  */
 
 import type { ControlledClock } from '../clock';
 import type { SyncDevice } from './device';
 import type { MergeMangler } from './mangle';
-import { renderConflictPath, type SyncToolProfile } from './profiles';
+import {
+	incomingWins,
+	renderConflictPath,
+	type SyncToolProfile,
+} from './profiles';
 import type {
 	CapturedChange,
+	ContentStamp,
 	Delivery,
 	DeliveryChange,
 	DeliveryOutcome,
@@ -114,6 +138,7 @@ async function applyUpsert(
 	if (covers(delivery.version, local)) {
 		await device.vault.write(path, content);
 		device.noteModified(path, at);
+		device.noteStamp(path, deliveryStamp(delivery));
 		noteSeen(device, path, delivery.version);
 		return landed(
 			delivery,
@@ -159,6 +184,7 @@ async function resolveAbsent(
 	}
 	await device.vault.write(path, content);
 	device.noteModified(path, at);
+	device.noteStamp(path, deliveryStamp(delivery));
 	noteSeen(device, path, delivery.version);
 	return landed(delivery, 'resurrected', null, at);
 }
@@ -173,16 +199,22 @@ async function resolveDivergence(
 	at: number,
 ): Promise<LandedDelivery> {
 	const { device, profile, merger } = context;
+	const incoming = deliveryStamp(delivery);
+	const local = localStamp(device, path, at);
+	const takesPath = incomingWins(profile.divergenceWinner, incoming, local);
+	const loser = takesPath ? current : content;
+	const loserStamp = takesPath ? local : incoming;
 	if (profile.divergentDelivery === 'merge') {
 		const merged = merger({
 			path,
 			base,
-			local: current,
-			incoming: content,
+			local: loser,
+			incoming: takesPath ? content : current,
 		});
 		if (merged !== null) {
 			await device.vault.write(path, merged);
 			device.noteModified(path, at);
+			device.noteStamp(path, takesPath ? incoming : local);
 			noteSeen(device, path, delivery.version);
 			return landed(delivery, 'merged', null, at);
 		}
@@ -191,34 +223,52 @@ async function resolveDivergence(
 		profile.divergentDelivery === 'overwrite' ||
 		profile.conflictCopyPattern === null
 	) {
+		if (!takesPath) {
+			noteSeen(device, path, delivery.version);
+			return landed(
+				delivery,
+				'kept-local',
+				null,
+				device.modifiedAt(path),
+			);
+		}
 		await device.vault.write(path, content);
 		device.noteModified(path, at);
+		device.noteStamp(path, incoming);
 		noteSeen(device, path, delivery.version);
 		return landed(delivery, 'overwritten', null, at);
 	}
-	const copiedAt = device.modifiedAt(path) ?? at;
 	const copyPath = freeConflictPath(
 		device,
 		profile.conflictCopyPattern,
 		path,
-		copiedAt,
+		loserStamp,
 	);
 	const copyVersion = bumpVersion(device.versionOf(copyPath), device.id);
-	await device.vault.write(copyPath, current);
-	device.noteModified(copyPath, copiedAt);
+	await device.vault.write(copyPath, loser);
+	device.noteModified(copyPath, loserStamp.at);
 	device.noteVersion(copyPath, copyVersion);
-	await device.vault.write(path, content);
-	device.noteModified(path, at);
+	device.noteStamp(copyPath, loserStamp);
+	if (takesPath) {
+		await device.vault.write(path, content);
+		device.noteModified(path, at);
+		device.noteStamp(path, incoming);
+	}
 	noteSeen(device, path, delivery.version);
 	if (profile.propagateConflictCopies) {
 		context.propagate({
-			change: { kind: 'upsert', path: copyPath, content: current },
+			change: { kind: 'upsert', path: copyPath, content: loser },
 			previousContent: null,
 			version: copyVersion,
-			modifiedAt: copiedAt,
+			modifiedAt: loserStamp.at,
 		});
 	}
-	return landed(delivery, 'conflict-copy', copyPath, at);
+	return landed(
+		delivery,
+		'conflict-copy',
+		copyPath,
+		takesPath ? at : device.modifiedAt(path),
+	);
 }
 
 /**
@@ -244,6 +294,7 @@ async function applyConflictCopy(
 	}
 	await device.vault.write(path, content);
 	device.noteModified(path, at);
+	device.noteStamp(path, deliveryStamp(delivery));
 	noteSeen(device, path, delivery.version);
 	return landed(delivery, 'created', null, at);
 }
@@ -298,6 +349,7 @@ async function applyRename(
 		device.forgetModified(oldPath);
 		noteSeen(device, oldPath, delivery.version);
 		device.noteModified(path, at);
+		device.noteStamp(path, deliveryStamp(delivery));
 		noteSeen(device, path, delivery.version);
 		return landed(delivery, 'renamed', null, at);
 	}
@@ -320,18 +372,24 @@ async function applyRename(
 }
 
 /**
- * The first conflict-copy path this device has free. Patterns carrying no
- * counter render one candidate, so a collision numbers the name instead,
- * from two, the same number a counted pattern's second copy carries.
+ * The first conflict-copy path this device has free, named after the side
+ * that lost. Patterns carrying no counter render one candidate, so a
+ * collision numbers the name instead, from two, the same number a counted
+ * pattern's second copy carries.
  */
 function freeConflictPath(
 	device: SyncDevice,
 	pattern: string,
 	path: string,
-	at: number,
+	loser: ContentStamp,
 ): string {
 	const render = (counter: number): string =>
-		renderConflictPath(pattern, { path, device: device.id, at, counter });
+		renderConflictPath(pattern, {
+			path,
+			device: loser.author,
+			at: loser.at,
+			counter,
+		});
 	const first = render(2);
 	if (!device.holds(first)) {
 		return first;
@@ -359,6 +417,30 @@ function numbered(path: string, counter: number): string {
 		return `${path} ${String(counter)}`;
 	}
 	return `${path.slice(0, dot)} ${String(counter)}${path.slice(dot)}`;
+}
+
+/** Who wrote the content a delivery carries, and when they wrote it. */
+function deliveryStamp(delivery: Delivery): ContentStamp {
+	return { author: delivery.from, at: delivery.modifiedAt };
+}
+
+/**
+ * The stamp on the content the destination holds. A file planted straight
+ * into the vault carries none, so it counts as this device's own, written
+ * at whatever time the device has recorded for it or at the landing
+ * instant.
+ */
+function localStamp(
+	device: SyncDevice,
+	path: string,
+	at: number,
+): ContentStamp {
+	return (
+		device.stampOf(path) ?? {
+			author: device.id,
+			at: device.modifiedAt(path) ?? at,
+		}
+	);
 }
 
 /** Records that this device has now seen everything the delivery had. */

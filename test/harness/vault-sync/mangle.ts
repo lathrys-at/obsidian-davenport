@@ -10,16 +10,19 @@
  *
  * The merger is a plain function, so the modeled merge below can be
  * swapped for one replaying merges captured from a real tool without
- * anything else in the channel changing.
+ * anything else in the channel changing. It is told which side is in
+ * place and which is arriving rather than working it out: the channel
+ * fixes those roles by the profile's winner rule, so two devices merging
+ * one pair of edits hand the merger the same call and get the same file.
  */
 
 export interface MergeInputs {
 	readonly path: string;
 	/** Content both sides started from; null where they share none. */
 	readonly base: string | null;
-	/** Content the destination holds now. */
+	/** The side the merge treats as already in place. */
 	readonly local: string;
-	/** Content the delivery carries. */
+	/** The side the merge treats as arriving. */
 	readonly incoming: string;
 }
 

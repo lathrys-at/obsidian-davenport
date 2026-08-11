@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { ControlledClock, DEFAULT_START_TIME } from '../clock';
 import {
+	SYNC_TOOL_PROFILES,
 	VaultSyncChannel,
 	declineMerge,
 	lineMergeMangler,
@@ -87,6 +88,7 @@ describe('vault-sync conflict copies', () => {
 			id: 'timestamped',
 			conflictCopyPattern:
 				'{dir}{stem} (conflicted copy {timestamp}){ext}',
+			divergenceWinner: 'newest',
 			divergentDelivery: 'conflict-copy',
 			propagateConflictCopies: false,
 			renameDelivery: 'rename',
@@ -118,20 +120,25 @@ describe('vault-sync conflict copies', () => {
 	});
 
 	it('names a copy after the time of the content it moves aside', async () => {
-		const { channel, clock } = await diverge(syncToolProfile('syncthing'));
+		const clock = new ControlledClock();
+		const channel = new VaultSyncChannel({
+			devices: ['a', 'b'],
+			clock,
+			profile: syncToolProfile('syncthing'),
+			seed: { [RECORD]: 'base\n' },
+		});
 		clock.advance(60_000);
-		await channel.device('b').write(RECORD, 'from b later\n');
+		await channel.device('b').write(RECORD, 'from b\n');
 		clock.advance(60_000);
+		await channel.device('a').write(RECORD, 'from a\n');
+		clock.advance(60_000);
+		const copyPath = 'records/abc123.sync-conflict-20260101-000100-b.md';
+		const b = channel.device('b');
 		expect(
 			only(await channel.deliver({ from: 'a', to: 'b' })).conflictPath,
-		).toBe('records/abc123.sync-conflict-20260101-000200-b.md');
-		expect(
-			channel
-				.device('b')
-				.modifiedAt(
-					'records/abc123.sync-conflict-20260101-000200-b.md',
-				),
-		).toBe(DEFAULT_START_TIME + 120_000);
+		).toBe(copyPath);
+		expect(b.modifiedAt(copyPath)).toBe(DEFAULT_START_TIME + 60_000);
+		expect(b.modifiedAt(RECORD)).toBe(DEFAULT_START_TIME + 120_000);
 	});
 });
 
@@ -232,9 +239,162 @@ describe('vault-sync divergence resolution', () => {
 	});
 });
 
+describe('vault-sync divergence winner', () => {
+	const profiles: readonly SyncToolProfile[] = [
+		...SYNC_TOOL_PROFILES,
+		{
+			...syncToolProfile('syncthing'),
+			id: 'overwriting',
+			divergentDelivery: 'overwrite',
+		},
+	];
+
+	/**
+	 * Both devices edit the seeded file without seeing each other, `a`
+	 * later than `b`, and everything either of them has to say is
+	 * delivered until nothing is left in flight.
+	 */
+	async function toExhaustion(
+		profile: SyncToolProfile,
+	): Promise<VaultSyncChannel> {
+		const clock = new ControlledClock();
+		const channel = new VaultSyncChannel({
+			devices: ['a', 'b'],
+			clock,
+			profile,
+			seed: { [RECORD]: 'base\n' },
+		});
+		clock.advance(60_000);
+		await channel.device('b').write(RECORD, 'from b\n');
+		clock.advance(60_000);
+		await channel.device('a').write(RECORD, 'from a\n');
+		while (channel.pending().length > 0) {
+			await channel.deliver();
+		}
+		return channel;
+	}
+
+	for (const profile of profiles) {
+		for (const propagate of [false, true]) {
+			it(`converges on one set of bytes under ${profile.id}, copies ${propagate ? '' : 'not '}propagated`, async () => {
+				const channel = await toExhaustion({
+					...profile,
+					propagateConflictCopies: propagate,
+				});
+				const a = channel.device('a');
+				const b = channel.device('b');
+				expect(await a.read(RECORD)).toBe('from a\n');
+				expect(await b.read(RECORD)).toBe('from a\n');
+				const copies = a.paths().filter((path) => path !== RECORD);
+				expect(copies).toHaveLength(
+					profile.divergentDelivery === 'conflict-copy' ? 1 : 0,
+				);
+				for (const copy of copies) {
+					expect(await a.read(copy)).toBe('from b\n');
+				}
+				expect(channel.converged()).toBe(true);
+			});
+		}
+	}
+
+	it('keeps the local side where it wrote last', async () => {
+		const clock = new ControlledClock();
+		const channel = new VaultSyncChannel({
+			devices: ['a', 'b'],
+			clock,
+			profile: syncToolProfile('syncthing'),
+			seed: { [RECORD]: 'base\n' },
+		});
+		await channel.device('a').write(RECORD, 'from a\n');
+		clock.advance(60_000);
+		await channel.device('b').write(RECORD, 'from b\n');
+		const landed = only(await channel.deliver({ from: 'a', to: 'b' }));
+		expect(landed.outcome).toBe('conflict-copy');
+		expect(landed.conflictPath).toBe(
+			'records/abc123.sync-conflict-20260101-000000-a.md',
+		);
+		expect(await channel.device('b').read(RECORD)).toBe('from b\n');
+	});
+
+	it('takes the one-sided rules where a profile names one', async () => {
+		for (const [winner, expected] of [
+			['incoming', 'from a\n'],
+			['local', 'from b\n'],
+		] as const) {
+			const clock = new ControlledClock();
+			const channel = new VaultSyncChannel({
+				devices: ['a', 'b'],
+				clock,
+				profile: {
+					...syncToolProfile('syncthing'),
+					divergenceWinner: winner,
+				},
+				seed: { [RECORD]: 'base\n' },
+			});
+			await channel.device('a').write(RECORD, 'from a\n');
+			clock.advance(60_000);
+			await channel.device('b').write(RECORD, 'from b\n');
+			await channel.deliver({ from: 'a', to: 'b' });
+			expect(await channel.device('b').read(RECORD)).toBe(expected);
+		}
+	});
+});
+
+describe('vault-sync three-way divergence', () => {
+	const COPY_FROM_B = 'records/abc123.sync-conflict-20260101-000000-b.md';
+	const COPY_FROM_C = 'records/abc123.sync-conflict-20260101-000000-c.md';
+
+	async function raceOnThree(
+		devices: readonly string[],
+	): Promise<VaultSyncChannel> {
+		const channel = new VaultSyncChannel({
+			devices,
+			clock: new ControlledClock(),
+			profile: syncToolProfile('syncthing'),
+			seed: { [RECORD]: 'base\n' },
+		});
+		for (const id of ['a', 'b', 'c']) {
+			await channel.device(id).write(RECORD, `from ${id}\n`);
+		}
+		return channel;
+	}
+
+	it('settles a fourth device the same way whatever order it sees', async () => {
+		const seen = new Set<string>();
+		for (const order of [
+			['a', 'b', 'c'],
+			['a', 'c', 'b'],
+			['b', 'a', 'c'],
+			['b', 'c', 'a'],
+			['c', 'a', 'b'],
+			['c', 'b', 'a'],
+		]) {
+			const channel = await raceOnThree(['a', 'b', 'c', 'd']);
+			await channel.deliverInOrder(
+				order.map((from) => ({ from, to: 'd' })),
+			);
+			const d = channel.device('d');
+			expect(d.paths()).toEqual([RECORD, COPY_FROM_B, COPY_FROM_C]);
+			expect(await d.read(RECORD)).toBe('from a\n');
+			seen.add(d.snapshot());
+		}
+		expect(seen.size).toBe(1);
+	});
+
+	it('leaves every device on the same bytes once everything lands', async () => {
+		const channel = await raceOnThree(['a', 'b', 'c', 'd']);
+		while (channel.pending().length > 0) {
+			await channel.deliver();
+		}
+		for (const device of channel.devices) {
+			expect(device.paths()).toEqual([RECORD, COPY_FROM_B, COPY_FROM_C]);
+		}
+		expect(channel.converged()).toBe(true);
+	});
+});
+
 describe('vault-sync conflict-copy propagation', () => {
 	const COPY_FROM_B = 'records/abc123.sync-conflict-20260101-000100-b.md';
-	const COPY_FROM_A = 'records/abc123.sync-conflict-20260101-000100-a.md';
 
 	function propagating(id: string): SyncToolProfile {
 		return { ...syncToolProfile(id), propagateConflictCopies: true };
@@ -268,41 +428,43 @@ describe('vault-sync conflict-copy propagation', () => {
 		await channel.deliver();
 		expect(
 			channel.pending().map((delivery) => delivery.change.path),
-		).toEqual([COPY_FROM_B, COPY_FROM_A]);
-		await channel.deliver();
+		).toEqual([COPY_FROM_B, COPY_FROM_B]);
+		expect(outcomes(await channel.deliver())).toEqual([
+			'converged',
+			'converged',
+		]);
 		expect(channel.pending()).toEqual([]);
 		expect(
 			channel.log.filter((entry) => entry.outcome === 'conflict-copy'),
 		).toHaveLength(2);
-		expect(channel.device('a').paths()).toEqual([
-			RECORD,
-			COPY_FROM_A,
-			COPY_FROM_B,
-		]);
-		expect(channel.device('b').paths()).toEqual(
-			channel.device('a').paths(),
-		);
+		expect(channel.device('a').paths()).toEqual([RECORD, COPY_FROM_B]);
+		expect(channel.converged()).toBe(true);
 	});
 
-	it('drops a copy onto a name the destination already used', async () => {
-		const { channel } = await diverge(propagating('icloud-drive'));
+	it('drops a copy onto a name another device gave other content', async () => {
+		const clock = new ControlledClock();
+		const channel = new VaultSyncChannel({
+			devices: ['a', 'b', 'c'],
+			clock,
+			profile: propagating('icloud-drive'),
+			seed: { [RECORD]: 'base\n' },
+		});
+		const copyPath = 'records/abc123 2.md';
+		for (const id of ['a', 'b', 'c']) {
+			await channel.device(id).write(RECORD, `from ${id}\n`);
+		}
 		await channel.deliver();
-		expect(
-			outcomes(await channel.deliver()).filter(
-				(outcome) => outcome === 'kept-local',
-			),
-		).toEqual(['kept-local', 'kept-local']);
-		expect(channel.pending()).toEqual([]);
-		expect(channel.device('a').paths()).toEqual([
-			'records/abc123 2.md',
-			RECORD,
+		const copies = await channel.deliver();
+		expect(copies.length).toBeGreaterThan(0);
+		expect(copies.every((entry) => entry.delivery.conflictCopy)).toBe(true);
+		expect([...new Set(outcomes(copies))].sort()).toEqual([
+			'converged',
+			'kept-local',
 		]);
-		expect(await channel.device('a').read('records/abc123 2.md')).toBe(
-			'from a\n',
-		);
-		expect(await channel.device('b').read('records/abc123 2.md')).toBe(
-			'from b\n',
-		);
+		expect(channel.pending()).toEqual([]);
+		expect(await channel.device('b').read(copyPath)).toBe('from b\n');
+		expect(await channel.device('c').read(copyPath)).toBe('from c\n');
+		expect(channel.converged()).toBe(false);
 	});
 });
 

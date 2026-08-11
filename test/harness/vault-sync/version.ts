@@ -22,7 +22,7 @@ import type { DeviceId } from './types';
 export type PathVersion = Readonly<Record<DeviceId, number>>;
 
 /** The version of a path no device has changed. */
-export const INITIAL_VERSION: PathVersion = {};
+export const INITIAL_VERSION: PathVersion = Object.freeze({});
 
 /** The version after one more change to the path by this device. */
 export function bumpVersion(

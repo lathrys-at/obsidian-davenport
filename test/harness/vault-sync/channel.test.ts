@@ -5,6 +5,7 @@ import {
 	SyncDevice,
 	SYNC_TOOL_PROFILES,
 	VaultSyncChannel,
+	bumpVersion,
 	syncToolProfile,
 	type LandedDelivery,
 	type SyncToolProfile,
@@ -264,6 +265,32 @@ describe('vault-sync modification times', () => {
 		expect(channel.device('b').modifiedAt(NOTE)).toBe(
 			DEFAULT_START_TIME + 60_000,
 		);
+	});
+});
+
+describe('vault-sync planted files', () => {
+	const PLANTED = 'planted by the suite';
+
+	it('covers a file planted with no version of its own', async () => {
+		const { channel } = channelOf(['a', 'b'], syncToolProfile('syncthing'));
+		await channel.device('b').vault.write(RECORD, PLANTED);
+		await channel.device('a').write(RECORD, 'from a');
+		expect(outcomes(await channel.deliver({ from: 'a' }))).toEqual([
+			'updated',
+		]);
+		expect(await channel.device('b').read(RECORD)).toBe('from a');
+		expect(channel.pending()).toEqual([]);
+	});
+
+	it('stands a plant against a delivery once its version is recorded', async () => {
+		const { channel } = channelOf(['a', 'b'], syncToolProfile('syncthing'));
+		const b = channel.device('b');
+		await b.vault.write(RECORD, PLANTED);
+		b.noteVersion(RECORD, bumpVersion(b.versionOf(RECORD), b.id));
+		await channel.device('a').write(RECORD, 'from a');
+		const [landed] = await channel.deliver({ from: 'a' });
+		expect(landed?.outcome).toBe('conflict-copy');
+		expect(await b.read(landed?.conflictPath ?? '')).toBe(PLANTED);
 	});
 });
 

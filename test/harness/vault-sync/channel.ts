@@ -185,10 +185,16 @@ export class VaultSyncChannel {
 	}
 
 	/**
-	 * Whether every device holds the same bytes. A conflict copy that
-	 * stays where it was made leaves the devices holding different files,
-	 * so under a profile that does not propagate its copies this stays
-	 * false once any divergence has been resolved by copying.
+	 * Whether every device holds the same bytes. This is reachable through
+	 * a conflict: the profile's winner rule reads the same from both
+	 * sides, so every device resolving one divergence keeps the same
+	 * content at the path and writes the same losing content to the same
+	 * copy name, whether or not the profile propagates its copies. It
+	 * stays false while a divergence is only half delivered, since the
+	 * device that has not seen the other side has made no copy yet, and
+	 * under a copy pattern that numbers its copies rather than naming
+	 * them, where two devices meeting the same collisions in different
+	 * orders number the same content differently.
 	 */
 	converged(): boolean {
 		const first = this.order[0]?.snapshot();
