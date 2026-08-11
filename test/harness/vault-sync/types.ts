@@ -2,17 +2,21 @@
  * What the vault-sync channel moves between devices.
  *
  * A change captured on one device becomes one delivery per peer. Every
- * delivery carries the content the origin replaced, and that is what lets
- * a destination tell a clean fast-forward from a divergence: a destination
- * holding exactly that content has seen everything the origin had seen, so
- * the change applies; holding anything else means a local edit the origin
- * never saw.
+ * delivery carries the version of the path it changes, and comparing that
+ * against the version the destination holds is what tells a fast-forward
+ * from a divergence: a destination whose version the delivery covers has
+ * seen nothing the origin missed, so the change applies, however far
+ * behind it is; two versions where neither covers the other are edits
+ * made without knowledge of each other. The content the origin replaced
+ * rides along as the base a merge needs, not as the discriminator.
  *
  * Modification times ride on the delivery because the vault port exposes
  * none. The channel records the time a sync tool would leave on the file
  * so consumers have the fact, rather than growing the port a member no
  * production code reads.
  */
+
+import type { PathVersion } from './version';
 
 export type DeviceId = string;
 
@@ -36,6 +40,8 @@ export interface CapturedChange {
 	readonly change: DeliveryChange;
 	/** Content the origin replaced; null where the file was absent. */
 	readonly previousContent: string | null;
+	/** The origin's version of the path once the change was made. */
+	readonly version: PathVersion;
 	/** The origin's clock reading when the change was made. */
 	readonly modifiedAt: number;
 }
@@ -47,20 +53,33 @@ export interface Delivery {
 	readonly to: DeviceId;
 	readonly change: DeliveryChange;
 	readonly previousContent: string | null;
+	readonly version: PathVersion;
 	readonly modifiedAt: number;
 	/**
 	 * Whether the destination keeps the origin's modification time. False
 	 * means the file is stamped with the destination's clock on arrival.
 	 */
 	readonly preserveModifiedAt: boolean;
+	/**
+	 * Whether this delivery carries a conflict copy a landing made rather
+	 * than a change a device made. A copy travels once: it is written
+	 * where the destination has the path free, dropped where it does not,
+	 * and never resolved or propagated further.
+	 */
+	readonly conflictCopy: boolean;
 }
 
 /**
- * How a delivery landed. The first four are clean applications; the rest
- * name what happened instead: `converged` where the destination already
- * held the delivered content, and `overwritten`, `conflict-copy`,
- * `merged`, and `kept-local` where a local edit stood in the way and the
- * profile decided the outcome.
+ * How a delivery landed. `created`, `updated`, `renamed`, and `deleted`
+ * are clean applications; the rest name what happened instead.
+ * `converged` is a destination that already held the delivered content
+ * and `superseded` one whose version already covered the delivery, so
+ * neither wrote anything. `overwritten`, `conflict-copy`, `merged`,
+ * `kept-local`, `resurrected`, and `duplicated` are divergences the
+ * profile decided: the local state was replaced, moved aside into a copy,
+ * merged with the delivery, kept as it stood, put back after a local
+ * deletion, or left in place beside the path a rename could not move it
+ * to.
  */
 export type DeliveryOutcome =
 	| 'created'
@@ -68,18 +87,25 @@ export type DeliveryOutcome =
 	| 'renamed'
 	| 'deleted'
 	| 'converged'
+	| 'superseded'
 	| 'overwritten'
 	| 'conflict-copy'
 	| 'merged'
-	| 'kept-local';
+	| 'kept-local'
+	| 'resurrected'
+	| 'duplicated';
 
 export interface LandedDelivery {
 	readonly delivery: Delivery;
 	readonly outcome: DeliveryOutcome;
 	/** Where displaced local content went, where a copy was made. */
 	readonly conflictPath: string | null;
-	/** The modification time the destination now holds for the path. */
-	readonly modifiedAt: number;
+	/**
+	 * The modification time the destination now holds for the path, or
+	 * null where it holds no such path — a delivered deletion, or one it
+	 * had already made itself.
+	 */
+	readonly modifiedAt: number | null;
 }
 
 /**

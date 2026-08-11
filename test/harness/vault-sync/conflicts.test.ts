@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ControlledClock } from '../clock';
+import { ControlledClock, DEFAULT_START_TIME } from '../clock';
 import {
 	VaultSyncChannel,
 	declineMerge,
@@ -40,6 +40,10 @@ async function diverge(
 	await channel.device('a').write(RECORD, incoming);
 	await channel.device('b').write(RECORD, local);
 	return { channel, clock };
+}
+
+function outcomes(landed: readonly LandedDelivery[]): string[] {
+	return landed.map((entry) => entry.outcome);
 }
 
 function only(landed: readonly LandedDelivery[]): LandedDelivery {
@@ -84,6 +88,7 @@ describe('vault-sync conflict copies', () => {
 			conflictCopyPattern:
 				'{dir}{stem} (conflicted copy {timestamp}){ext}',
 			divergentDelivery: 'conflict-copy',
+			propagateConflictCopies: false,
 			renameDelivery: 'rename',
 			preserveModificationTimes: true,
 		};
@@ -95,7 +100,7 @@ describe('vault-sync conflict copies', () => {
 		await channel.device('b').write(RECORD, 'from b again\n');
 		expect(
 			only(await channel.deliver({ from: 'a', to: 'b' })).conflictPath,
-		).toBe('records/abc123 (conflicted copy 20260101-000100) 3.md');
+		).toBe('records/abc123 (conflicted copy 20260101-000100) 2.md');
 	});
 
 	it('keeps the copy at the time of the content it holds', async () => {
@@ -105,10 +110,28 @@ describe('vault-sync conflict copies', () => {
 		clock.advance(60_000);
 		const landed = only(await channel.deliver({ from: 'a', to: 'b' }));
 		const b = channel.device('b');
-		expect(b.modifiedAt(RECORD)).toBe(landed.modifiedAt);
+		expect(landed.modifiedAt).toBe(DEFAULT_START_TIME + 120_000);
+		expect(b.modifiedAt(RECORD)).toBe(DEFAULT_START_TIME + 120_000);
 		expect(b.modifiedAt('records/abc123 2.md')).toBe(
-			landed.modifiedAt - 60_000,
+			DEFAULT_START_TIME + 60_000,
 		);
+	});
+
+	it('names a copy after the time of the content it moves aside', async () => {
+		const { channel, clock } = await diverge(syncToolProfile('syncthing'));
+		clock.advance(60_000);
+		await channel.device('b').write(RECORD, 'from b later\n');
+		clock.advance(60_000);
+		expect(
+			only(await channel.deliver({ from: 'a', to: 'b' })).conflictPath,
+		).toBe('records/abc123.sync-conflict-20260101-000200-b.md');
+		expect(
+			channel
+				.device('b')
+				.modifiedAt(
+					'records/abc123.sync-conflict-20260101-000200-b.md',
+				),
+		).toBe(DEFAULT_START_TIME + 120_000);
 	});
 });
 
@@ -152,6 +175,26 @@ describe('vault-sync divergence resolution', () => {
 		);
 	});
 
+	it('merges the way the profile says and lets the channel override it', async () => {
+		const profile: SyncToolProfile = {
+			...syncToolProfile('obsidian-sync'),
+			merger: () => 'from the profile\n',
+		};
+		const byProfile = await diverge(profile);
+		expect(
+			only(await byProfile.channel.deliver({ from: 'a', to: 'b' }))
+				.outcome,
+		).toBe('merged');
+		expect(await byProfile.channel.device('b').read(RECORD)).toBe(
+			'from the profile\n',
+		);
+		const overridden = await diverge(profile, declineMerge);
+		expect(
+			only(await overridden.channel.deliver({ from: 'a', to: 'b' }))
+				.outcome,
+		).toBe('conflict-copy');
+	});
+
 	it('overwrites where the merge declines and the profile makes no copies', async () => {
 		const { channel } = await diverge(syncToolProfile('git'), declineMerge);
 		const landed = only(await channel.deliver({ from: 'a', to: 'b' }));
@@ -184,8 +227,82 @@ describe('vault-sync divergence resolution', () => {
 		await channel.device('b').trash(RECORD);
 		await channel.device('a').write(RECORD, 'from a\n');
 		const landed = only(await channel.deliver({ from: 'a', to: 'b' }));
-		expect(landed.outcome).toBe('overwritten');
+		expect(landed.outcome).toBe('resurrected');
 		expect(await channel.device('b').read(RECORD)).toBe('from a\n');
+	});
+});
+
+describe('vault-sync conflict-copy propagation', () => {
+	const COPY_FROM_B = 'records/abc123.sync-conflict-20260101-000100-b.md';
+	const COPY_FROM_A = 'records/abc123.sync-conflict-20260101-000100-a.md';
+
+	function propagating(id: string): SyncToolProfile {
+		return { ...syncToolProfile(id), propagateConflictCopies: true };
+	}
+
+	it('leaves the copy where it was made by default', async () => {
+		const { channel } = await diverge(syncToolProfile('syncthing'));
+		expect(
+			only(await channel.deliver({ from: 'a', to: 'b' })).conflictPath,
+		).toBe(COPY_FROM_B);
+		expect(channel.pending().map((delivery) => delivery.to)).toEqual(['a']);
+		expect(channel.device('a').paths()).toEqual([RECORD]);
+	});
+
+	it('sends the copy to the peers where the profile propagates', async () => {
+		const { channel } = await diverge(propagating('syncthing'));
+		expect(
+			only(await channel.deliver({ from: 'a', to: 'b' })).conflictPath,
+		).toBe(COPY_FROM_B);
+		const [copy] = channel.pending({ path: COPY_FROM_B });
+		expect(copy?.from).toBe('b');
+		expect(copy?.conflictCopy).toBe(true);
+		const landed = only(await channel.deliver({ path: COPY_FROM_B }));
+		expect(landed.outcome).toBe('created');
+		expect(landed.conflictPath).toBeNull();
+		expect(channel.device('a').paths()).toEqual([RECORD, COPY_FROM_B]);
+	});
+
+	it('carries a propagated copy once and never breeds another', async () => {
+		const { channel } = await diverge(propagating('syncthing'));
+		await channel.deliver();
+		expect(
+			channel.pending().map((delivery) => delivery.change.path),
+		).toEqual([COPY_FROM_B, COPY_FROM_A]);
+		await channel.deliver();
+		expect(channel.pending()).toEqual([]);
+		expect(
+			channel.log.filter((entry) => entry.outcome === 'conflict-copy'),
+		).toHaveLength(2);
+		expect(channel.device('a').paths()).toEqual([
+			RECORD,
+			COPY_FROM_A,
+			COPY_FROM_B,
+		]);
+		expect(channel.device('b').paths()).toEqual(
+			channel.device('a').paths(),
+		);
+	});
+
+	it('drops a copy onto a name the destination already used', async () => {
+		const { channel } = await diverge(propagating('icloud-drive'));
+		await channel.deliver();
+		expect(
+			outcomes(await channel.deliver()).filter(
+				(outcome) => outcome === 'kept-local',
+			),
+		).toEqual(['kept-local', 'kept-local']);
+		expect(channel.pending()).toEqual([]);
+		expect(channel.device('a').paths()).toEqual([
+			'records/abc123 2.md',
+			RECORD,
+		]);
+		expect(await channel.device('a').read('records/abc123 2.md')).toBe(
+			'from a\n',
+		);
+		expect(await channel.device('b').read('records/abc123 2.md')).toBe(
+			'from b\n',
+		);
 	});
 });
 

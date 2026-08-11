@@ -1,23 +1,33 @@
 /**
  * Landing a delivery on a device.
  *
- * A delivery applies cleanly when the destination holds exactly the
- * content the origin replaced — it has seen everything the origin saw — or
- * when it already holds what the delivery carries. Anything else is a
- * local edit made without knowledge of this change, and the profile
- * decides: overwrite it, move it aside into a conflict copy, or merge.
+ * A delivery carries the version its path had on the origin, and the
+ * destination compares it against the version it holds for that path. A
+ * delivery whose version covers the destination's applies: the
+ * destination has seen nothing the origin missed, so it fast-forwards
+ * however far behind it is, and a change relayed through a third device
+ * lands the same way whatever order the deliveries arrive in. A delivery
+ * the destination's version already covers is old news and nothing is
+ * written. Only when neither version covers the other were the two edits
+ * made without knowledge of each other, and then the profile decides:
+ * overwrite the local content, move it aside into a conflict copy, or
+ * merge, with the content the origin replaced as the merge base.
  *
  * A merge that declines falls back to the conflict copy, and a profile
  * with no copy pattern falls back to overwriting, so every divergence has
- * an outcome. A divergent delete keeps the local file except under
- * overwrite, since a tool that makes copies has no reason to destroy the
- * one edit it would be copying.
+ * an outcome. A divergent deletion and a divergent edit of a path the
+ * destination deleted are the same question asked from two sides, and the
+ * profile answers both alike: under overwrite the deletion wins, and
+ * under any profile that copies or merges the edit survives — a tool that
+ * makes copies has no reason to destroy the one edit it would be copying.
+ * Resolving either way leaves the destination knowing what the origin
+ * knew, so the two devices converge whichever delivery lands first.
  *
- * A conflict copy stays on the device that made it. Real tools do
- * propagate their copies, but a copy that travels meets the copy the peer
- * made of the same file and breeds another, so the simulator stops at the
- * first one: the copy is on a device, which is what a vault has to cope
- * with, and the count stays scriptable.
+ * Whether a conflict copy reaches the other devices is a per-tool fact
+ * the profile carries. A copy that travels is terminal by construction:
+ * landing one writes the file where the destination has the path free and
+ * drops it where it does not, so a copy is never resolved against a local
+ * edit and can never produce another copy.
  */
 
 import type { ControlledClock } from '../clock';
@@ -25,19 +35,30 @@ import type { SyncDevice } from './device';
 import type { MergeMangler } from './mangle';
 import { renderConflictPath, type SyncToolProfile } from './profiles';
 import type {
+	CapturedChange,
 	Delivery,
 	DeliveryChange,
 	DeliveryOutcome,
 	LandedDelivery,
 } from './types';
+import {
+	bumpVersion,
+	covers,
+	mergeVersions,
+	type PathVersion,
+} from './version';
 
 type RenameChange = Extract<DeliveryChange, { kind: 'rename' }>;
+
+/** Sends a conflict copy a landing made on to the destination's peers. */
+export type PropagateCopy = (copy: CapturedChange) => void;
 
 export interface ApplyContext {
 	readonly device: SyncDevice;
 	readonly profile: SyncToolProfile;
 	readonly merger: MergeMangler;
 	readonly clock: ControlledClock;
+	readonly propagate: PropagateCopy;
 }
 
 const MAX_CONFLICT_COPIES = 99;
@@ -49,13 +70,20 @@ export async function applyDelivery(
 	const { change } = delivery;
 	switch (change.kind) {
 		case 'upsert':
-			return applyUpsert(
-				context,
-				delivery,
-				change.path,
-				change.content,
-				delivery.previousContent,
-			);
+			return delivery.conflictCopy
+				? applyConflictCopy(
+						context,
+						delivery,
+						change.path,
+						change.content,
+					)
+				: applyUpsert(
+						context,
+						delivery,
+						change.path,
+						change.content,
+						delivery.previousContent,
+					);
 		case 'delete':
 			return applyDelete(context, delivery, change.path);
 		case 'rename':
@@ -72,8 +100,10 @@ async function applyUpsert(
 ): Promise<LandedDelivery> {
 	const { device } = context;
 	const current = await contentOrNull(device, path);
+	const local = device.versionOf(path);
 	const at = landingTime(context, delivery);
 	if (current === content) {
+		noteSeen(device, path, delivery.version);
 		return landed(
 			delivery,
 			'converged',
@@ -81,9 +111,10 @@ async function applyUpsert(
 			device.modifiedAt(path) ?? at,
 		);
 	}
-	if (current === base) {
+	if (covers(delivery.version, local)) {
 		await device.vault.write(path, content);
 		device.noteModified(path, at);
+		noteSeen(device, path, delivery.version);
 		return landed(
 			delivery,
 			current === null ? 'created' : 'updated',
@@ -91,10 +122,11 @@ async function applyUpsert(
 			at,
 		);
 	}
+	if (covers(local, delivery.version)) {
+		return landed(delivery, 'superseded', null, device.modifiedAt(path));
+	}
 	if (current === null) {
-		await device.vault.write(path, content);
-		device.noteModified(path, at);
-		return landed(delivery, 'overwritten', null, at);
+		return resolveAbsent(context, delivery, path, content, at);
 	}
 	return resolveDivergence(
 		context,
@@ -105,6 +137,30 @@ async function applyUpsert(
 		current,
 		at,
 	);
+}
+
+/**
+ * A divergent edit of a path the destination deleted. There is no local
+ * content to copy or merge, so the profile's answer is the one it gives a
+ * divergent deletion read from the other side: the deletion wins under
+ * overwrite, and the edit comes back under anything else.
+ */
+async function resolveAbsent(
+	context: ApplyContext,
+	delivery: Delivery,
+	path: string,
+	content: string,
+	at: number,
+): Promise<LandedDelivery> {
+	const { device, profile } = context;
+	if (profile.divergentDelivery === 'overwrite') {
+		noteSeen(device, path, delivery.version);
+		return landed(delivery, 'kept-local', null, null);
+	}
+	await device.vault.write(path, content);
+	device.noteModified(path, at);
+	noteSeen(device, path, delivery.version);
+	return landed(delivery, 'resurrected', null, at);
 }
 
 async function resolveDivergence(
@@ -127,6 +183,7 @@ async function resolveDivergence(
 		if (merged !== null) {
 			await device.vault.write(path, merged);
 			device.noteModified(path, at);
+			noteSeen(device, path, delivery.version);
 			return landed(delivery, 'merged', null, at);
 		}
 	}
@@ -136,20 +193,59 @@ async function resolveDivergence(
 	) {
 		await device.vault.write(path, content);
 		device.noteModified(path, at);
+		noteSeen(device, path, delivery.version);
 		return landed(delivery, 'overwritten', null, at);
 	}
+	const copiedAt = device.modifiedAt(path) ?? at;
 	const copyPath = freeConflictPath(
 		device,
 		profile.conflictCopyPattern,
 		path,
-		at,
+		copiedAt,
 	);
-	const copiedAt = device.modifiedAt(path) ?? at;
+	const copyVersion = bumpVersion(device.versionOf(copyPath), device.id);
 	await device.vault.write(copyPath, current);
 	device.noteModified(copyPath, copiedAt);
+	device.noteVersion(copyPath, copyVersion);
 	await device.vault.write(path, content);
 	device.noteModified(path, at);
+	noteSeen(device, path, delivery.version);
+	if (profile.propagateConflictCopies) {
+		context.propagate({
+			change: { kind: 'upsert', path: copyPath, content: current },
+			previousContent: null,
+			version: copyVersion,
+			modifiedAt: copiedAt,
+		});
+	}
 	return landed(delivery, 'conflict-copy', copyPath, at);
+}
+
+/**
+ * A conflict copy that travelled. It is written where the destination has
+ * the path free and dropped where it does not, so it resolves nothing and
+ * makes no copy of its own.
+ */
+async function applyConflictCopy(
+	context: ApplyContext,
+	delivery: Delivery,
+	path: string,
+	content: string,
+): Promise<LandedDelivery> {
+	const { device } = context;
+	const current = await contentOrNull(device, path);
+	const at = landingTime(context, delivery);
+	if (current === content) {
+		noteSeen(device, path, delivery.version);
+		return landed(delivery, 'converged', null, device.modifiedAt(path));
+	}
+	if (current !== null) {
+		return landed(delivery, 'kept-local', null, device.modifiedAt(path));
+	}
+	await device.vault.write(path, content);
+	device.noteModified(path, at);
+	noteSeen(device, path, delivery.version);
+	return landed(delivery, 'created', null, at);
 }
 
 async function applyDelete(
@@ -159,21 +255,28 @@ async function applyDelete(
 ): Promise<LandedDelivery> {
 	const { device, profile } = context;
 	const current = await contentOrNull(device, path);
-	const at = landingTime(context, delivery);
+	const local = device.versionOf(path);
 	if (current === null) {
-		return landed(delivery, 'converged', null, at);
+		noteSeen(device, path, delivery.version);
+		return landed(delivery, 'converged', null, null);
 	}
-	if (current === delivery.previousContent) {
+	if (covers(delivery.version, local)) {
 		await device.vault.trash(path);
 		device.forgetModified(path);
-		return landed(delivery, 'deleted', null, at);
+		noteSeen(device, path, delivery.version);
+		return landed(delivery, 'deleted', null, null);
+	}
+	if (covers(local, delivery.version)) {
+		return landed(delivery, 'superseded', null, device.modifiedAt(path));
 	}
 	if (profile.divergentDelivery === 'overwrite') {
 		await device.vault.trash(path);
 		device.forgetModified(path);
-		return landed(delivery, 'overwritten', null, at);
+		noteSeen(device, path, delivery.version);
+		return landed(delivery, 'overwritten', null, null);
 	}
-	return landed(delivery, 'kept-local', null, device.modifiedAt(path) ?? at);
+	noteSeen(device, path, delivery.version);
+	return landed(delivery, 'kept-local', null, device.modifiedAt(path));
 }
 
 async function applyRename(
@@ -183,30 +286,43 @@ async function applyRename(
 ): Promise<LandedDelivery> {
 	const { device, profile } = context;
 	const { path, oldPath, content } = change;
-	const oldContent = await contentOrNull(device, oldPath);
-	const oldMatches =
-		oldContent !== null && oldContent === delivery.previousContent;
+	const settled = covers(delivery.version, device.versionOf(oldPath));
 	if (
 		profile.renameDelivery === 'rename' &&
-		oldMatches &&
+		settled &&
+		device.holds(oldPath) &&
 		!device.holds(path)
 	) {
 		const at = landingTime(context, delivery);
 		await device.vault.rename(oldPath, path);
 		device.forgetModified(oldPath);
+		noteSeen(device, oldPath, delivery.version);
 		device.noteModified(path, at);
+		noteSeen(device, path, delivery.version);
 		return landed(delivery, 'renamed', null, at);
 	}
-	if (oldMatches) {
-		await device.vault.trash(oldPath);
-		device.forgetModified(oldPath);
+	if (settled) {
+		if (device.holds(oldPath)) {
+			await device.vault.trash(oldPath);
+			device.forgetModified(oldPath);
+		}
+		noteSeen(device, oldPath, delivery.version);
 	}
-	return applyUpsert(context, delivery, path, content, null);
+	const kept = !settled && device.holds(oldPath);
+	const result = await applyUpsert(context, delivery, path, content, null);
+	if (
+		kept &&
+		(result.outcome === 'created' || result.outcome === 'updated')
+	) {
+		return { ...result, outcome: 'duplicated' };
+	}
+	return result;
 }
 
 /**
  * The first conflict-copy path this device has free. Patterns carrying no
- * counter render one candidate, so a collision numbers the name instead.
+ * counter render one candidate, so a collision numbers the name instead,
+ * from two, the same number a counted pattern's second copy carries.
  */
 function freeConflictPath(
 	device: SyncDevice,
@@ -221,7 +337,11 @@ function freeConflictPath(
 		return first;
 	}
 	const counted = pattern.includes('{counter}');
-	for (let counter = 3; counter <= MAX_CONFLICT_COPIES; counter += 1) {
+	for (
+		let counter = counted ? 3 : 2;
+		counter <= MAX_CONFLICT_COPIES;
+		counter += 1
+	) {
 		const candidate = counted ? render(counter) : numbered(first, counter);
 		if (!device.holds(candidate)) {
 			return candidate;
@@ -241,6 +361,15 @@ function numbered(path: string, counter: number): string {
 	return `${path.slice(0, dot)} ${String(counter)}${path.slice(dot)}`;
 }
 
+/** Records that this device has now seen everything the delivery had. */
+function noteSeen(
+	device: SyncDevice,
+	path: string,
+	version: PathVersion,
+): void {
+	device.noteVersion(path, mergeVersions(device.versionOf(path), version));
+}
+
 function landingTime(context: ApplyContext, delivery: Delivery): number {
 	return delivery.preserveModifiedAt
 		? delivery.modifiedAt
@@ -258,7 +387,7 @@ function landed(
 	delivery: Delivery,
 	outcome: DeliveryOutcome,
 	conflictPath: string | null,
-	modifiedAt: number,
+	modifiedAt: number | null,
 ): LandedDelivery {
 	return { delivery, outcome, conflictPath, modifiedAt };
 }

@@ -1,9 +1,11 @@
 /**
  * The vault-sync simulator: simulated devices exchanging file changes
- * under a scripted delivery order, with per-tool conflict, rename, and
- * modification-time behavior.
+ * under a scripted delivery order, with per-path causality deciding what
+ * is a conflict and per-tool conflict, rename, and modification-time
+ * behavior.
  */
 
+export type { PropagateCopy } from './apply';
 export { VaultSyncChannel } from './channel';
 export type {
 	FlightSkew,
@@ -42,3 +44,5 @@ export type {
 	DeviceId,
 	LandedDelivery,
 } from './types';
+export { INITIAL_VERSION, bumpVersion, covers, mergeVersions } from './version';
+export type { PathVersion } from './version';

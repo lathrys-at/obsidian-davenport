@@ -165,7 +165,9 @@ describe('vault-sync clean application', () => {
 	it('deletes a file the destination has not touched', async () => {
 		const { channel } = channelOf(['a', 'b'], undefined, { [NOTE]: 'one' });
 		await channel.device('a').trash(NOTE);
-		expect(outcomes(await channel.deliver())).toEqual(['deleted']);
+		const [landed] = await channel.deliver();
+		expect(landed?.outcome).toBe('deleted');
+		expect(landed?.modifiedAt).toBeNull();
 		expect(channel.device('b').paths()).toEqual([]);
 		expect(channel.device('b').modifiedAt(NOTE)).toBeNull();
 	});
@@ -204,6 +206,21 @@ describe('vault-sync rename delivery', () => {
 		]);
 		expect(channel.device('b').paths()).toEqual(['new.md']);
 		expect(await channel.device('b').read('new.md')).toBe('one');
+	});
+
+	it('names a rename it could not move a locally edited source', async () => {
+		for (const id of ['obsidian-sync', 'syncthing']) {
+			const { channel } = channelOf(['a', 'b'], syncToolProfile(id), {
+				'old.md': 'one',
+			});
+			await channel.device('b').write('old.md', 'from b');
+			await channel.device('a').rename('old.md', 'new.md');
+			expect(outcomes(await channel.deliver({ from: 'a' }))).toEqual([
+				'duplicated',
+			]);
+			expect(channel.device('b').paths()).toEqual(['new.md', 'old.md']);
+			expect(await channel.device('b').read('old.md')).toBe('from b');
+		}
 	});
 
 	it('creates the target where the source never reached the destination', async () => {

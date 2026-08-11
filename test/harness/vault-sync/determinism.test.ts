@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { ControlledClock } from '../clock';
-import { VaultSyncChannel, syncToolProfile } from './index';
+import {
+	VaultSyncChannel,
+	syncToolProfile,
+	type SyncToolProfile,
+} from './index';
 
 const ONE = 'records/one.md';
 const TWO = 'records/two.md';
@@ -8,10 +12,19 @@ const NOTE = 'Meetings/two.md';
 const RENAMED = 'Meetings/renamed.md';
 
 interface ScriptRun {
+	/** Deliveries still in flight once the script has run out. */
+	readonly pending: number;
 	readonly snapshots: readonly string[];
 	readonly times: readonly string[];
 	readonly log: readonly string[];
 }
+
+const SYNCTHING = syncToolProfile('syncthing');
+const PROPAGATING: SyncToolProfile = {
+	...SYNCTHING,
+	id: 'syncthing-propagating',
+	propagateConflictCopies: true,
+};
 
 /**
  * A script over three devices covering every branch a suite leans on:
@@ -19,12 +32,12 @@ interface ScriptRun {
  * devices at once, a rename, and a deletion — with the clock moving
  * between steps so the recorded times differ.
  */
-async function runScript(): Promise<ScriptRun> {
+async function runScript(profile: SyncToolProfile): Promise<ScriptRun> {
 	const clock = new ControlledClock();
 	const channel = new VaultSyncChannel({
 		devices: ['a', 'b', 'c'],
 		clock,
-		profile: syncToolProfile('syncthing'),
+		profile,
 		seed: { [ONE]: 'uid: one\nchecksum: aaaa\n' },
 	});
 	const [a, b, c] = channel.devices;
@@ -55,8 +68,10 @@ async function runScript(): Promise<ScriptRun> {
 	clock.advance(15_000);
 	await b.trash(TWO);
 	await channel.deliver();
+	await channel.deliver();
 
 	return {
+		pending: channel.pending().length,
 		snapshots: channel.devices.map(
 			(device) => `${device.id}\n${device.snapshot()}`,
 		),
@@ -76,16 +91,19 @@ async function runScript(): Promise<ScriptRun> {
 }
 
 describe('vault-sync determinism', () => {
-	it('leaves every device holding the same bytes on every run', async () => {
-		const first = await runScript();
-		const second = await runScript();
-		expect(second.snapshots).toEqual(first.snapshots);
-		expect(second.times).toEqual(first.times);
-		expect(second.log).toEqual(first.log);
-	});
+	for (const profile of [SYNCTHING, PROPAGATING]) {
+		it(`leaves every device holding the same bytes on every run under ${profile.id}`, async () => {
+			const first = await runScript(profile);
+			const second = await runScript(profile);
+			expect(first.pending).toBe(0);
+			expect(second.snapshots).toEqual(first.snapshots);
+			expect(second.times).toEqual(first.times);
+			expect(second.log).toEqual(first.log);
+		});
+	}
 
 	it('exercises the branches it claims to', async () => {
-		const { log, snapshots } = await runScript();
+		const { log, snapshots } = await runScript(SYNCTHING);
 		expect(log.filter((entry) => entry.includes('conflict-copy'))).toEqual([
 			'b->c conflict-copy records/one.sync-conflict-20260101-000130-c.md',
 			'c->a conflict-copy records/one.sync-conflict-20260101-000130-a.md',

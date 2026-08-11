@@ -1,14 +1,18 @@
 /**
  * Per-tool sync profiles: how one sync tool names conflict copies, what it
- * does when a delivery meets a locally edited file, how it delivers a
- * rename, and whether it keeps modification times.
+ * does when a delivery meets a locally edited file, how it merges, whether
+ * its conflict copies reach the other devices, how it delivers a rename,
+ * and whether it keeps modification times.
  *
  * The entries below are placeholders — plausible shapes to test against,
  * not observed behavior. Each value is replaced by the fact recorded
  * against the real tool without the profile interface changing, so suites
- * written now keep working when the corpus becomes real.
+ * written now keep working when the corpus becomes real. That is why
+ * every fact a recording will carry has a slot here even where the
+ * placeholder for it is the channel's own default.
  */
 
+import type { MergeMangler } from './mangle';
 import type { DeviceId } from './types';
 
 /** What a tool does when a delivery meets content it did not put there. */
@@ -26,6 +30,19 @@ export interface SyncToolProfile {
 	 */
 	readonly conflictCopyPattern: string | null;
 	readonly divergentDelivery: DivergentDelivery;
+	/**
+	 * How this tool merges, for a profile that merges. A merger passed to
+	 * the channel wins over it, and the modeled line merge stands in where
+	 * neither is given, so the merge recorded against a real tool lands
+	 * here without any call site changing.
+	 */
+	readonly merger?: MergeMangler;
+	/**
+	 * Whether a conflict copy reaches the tool's other devices. False
+	 * leaves the copy on the device that made it, which is the placeholder
+	 * every entry below carries.
+	 */
+	readonly propagateConflictCopies: boolean;
 	readonly renameDelivery: RenameDelivery;
 	readonly preserveModificationTimes: boolean;
 }
@@ -35,6 +52,7 @@ export const SYNC_TOOL_PROFILES: readonly SyncToolProfile[] = [
 		id: 'obsidian-sync',
 		conflictCopyPattern: '{dir}{stem} (conflicted copy {timestamp}){ext}',
 		divergentDelivery: 'merge',
+		propagateConflictCopies: false,
 		renameDelivery: 'rename',
 		preserveModificationTimes: false,
 	},
@@ -43,6 +61,7 @@ export const SYNC_TOOL_PROFILES: readonly SyncToolProfile[] = [
 		conflictCopyPattern:
 			'{dir}{stem}.sync-conflict-{timestamp}-{device}{ext}',
 		divergentDelivery: 'conflict-copy',
+		propagateConflictCopies: false,
 		renameDelivery: 'delete-and-create',
 		preserveModificationTimes: true,
 	},
@@ -50,6 +69,7 @@ export const SYNC_TOOL_PROFILES: readonly SyncToolProfile[] = [
 		id: 'icloud-drive',
 		conflictCopyPattern: '{dir}{stem} {counter}{ext}',
 		divergentDelivery: 'conflict-copy',
+		propagateConflictCopies: false,
 		renameDelivery: 'delete-and-create',
 		preserveModificationTimes: false,
 	},
@@ -57,6 +77,7 @@ export const SYNC_TOOL_PROFILES: readonly SyncToolProfile[] = [
 		id: 'git',
 		conflictCopyPattern: null,
 		divergentDelivery: 'merge',
+		propagateConflictCopies: false,
 		renameDelivery: 'rename',
 		preserveModificationTimes: false,
 	},
@@ -67,6 +88,7 @@ export const DEFAULT_SYNC_PROFILE: SyncToolProfile = {
 	id: 'default',
 	conflictCopyPattern: '{dir}{stem} (conflict {counter}){ext}',
 	divergentDelivery: 'conflict-copy',
+	propagateConflictCopies: false,
 	renameDelivery: 'rename',
 	preserveModificationTimes: false,
 };
@@ -90,7 +112,10 @@ export interface ConflictCopyContext {
 	readonly path: string;
 	/** The device making the copy. */
 	readonly device: DeviceId;
-	/** The instant the copy is made. */
+	/**
+	 * The modification time of the content being moved aside, which is
+	 * what a tool names its copies after and what the copy itself keeps.
+	 */
 	readonly at: number;
 	/** Fills `{counter}`; the first attempt uses 2, as tools number from. */
 	readonly counter: number;

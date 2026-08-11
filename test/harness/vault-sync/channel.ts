@@ -10,6 +10,11 @@
  * making a change and delivering it; the modification times the channel
  * records carry that skew.
  *
+ * Every delivery carries the version of the path it changes, so a device
+ * that is merely behind catches up whichever order the deliveries reach
+ * it in, and only edits made without knowledge of each other come out as
+ * conflicts.
+ *
  * The same script run twice leaves every device holding the same bytes,
  * with the same deliveries landing the same way.
  */
@@ -33,7 +38,11 @@ export interface VaultSyncChannelOptions {
 	readonly devices: readonly DeviceId[];
 	readonly clock: ControlledClock;
 	readonly profile?: SyncToolProfile;
-	/** Merger for profiles that merge; the modeled line merge by default. */
+	/**
+	 * Merger for profiles that merge, overriding the profile's own. The
+	 * profile's merger stands in where this is omitted, and the modeled
+	 * line merge where the profile carries none.
+	 */
 	readonly merger?: MergeMangler;
 	/** Files every device starts with. Seeding delivers nothing. */
 	readonly seed?: Readonly<Record<string, string>>;
@@ -66,7 +75,8 @@ export class VaultSyncChannel {
 		}
 		this.clock = options.clock;
 		this.profile = options.profile ?? DEFAULT_SYNC_PROFILE;
-		this.merger = options.merger ?? lineMergeMangler();
+		this.merger =
+			options.merger ?? this.profile.merger ?? lineMergeMangler();
 		for (const id of options.devices) {
 			if (this.byId.has(id)) {
 				throw new Error(`vault-sync channel: duplicate device ${id}`);
@@ -129,8 +139,9 @@ export class VaultSyncChannel {
 
 	/**
 	 * Delivers matching unheld deliveries in the order they were captured.
-	 * Deliveries a landing change originates are captured behind those
-	 * being delivered and stay pending.
+	 * A landing originates nothing, save for a conflict copy under a
+	 * profile that propagates them: that one is captured behind the
+	 * deliveries this call chose and stays pending.
 	 */
 	async deliver(selector?: DeliverySelector): Promise<LandedDelivery[]> {
 		const chosen = this.queue.filter(
@@ -173,7 +184,12 @@ export class VaultSyncChannel {
 		return this.deliverPathsInOrder([skew.note, skew.record], skew.to);
 	}
 
-	/** Whether every device holds the same bytes. */
+	/**
+	 * Whether every device holds the same bytes. A conflict copy that
+	 * stays where it was made leaves the devices holding different files,
+	 * so under a profile that does not propagate its copies this stays
+	 * false once any divergence has been resolved by copying.
+	 */
 	converged(): boolean {
 		const first = this.order[0]?.snapshot();
 		return this.order.every((device) => device.snapshot() === first);
@@ -198,7 +214,11 @@ export class VaultSyncChannel {
 		return results;
 	}
 
-	private enqueue(from: DeviceId, captured: CapturedChange): void {
+	private enqueue(
+		from: DeviceId,
+		captured: CapturedChange,
+		conflictCopy = false,
+	): void {
 		for (const peer of this.order) {
 			if (peer.id === from) {
 				continue;
@@ -209,8 +229,10 @@ export class VaultSyncChannel {
 				to: peer.id,
 				change: captured.change,
 				previousContent: captured.previousContent,
+				version: captured.version,
 				modifiedAt: captured.modifiedAt,
 				preserveModifiedAt: this.profile.preserveModificationTimes,
+				conflictCopy,
 			});
 		}
 	}
@@ -232,11 +254,15 @@ export class VaultSyncChannel {
 	}
 
 	private contextFor(delivery: Delivery): ApplyContext {
+		const device = this.device(delivery.to);
 		return {
-			device: this.device(delivery.to),
+			device,
 			profile: this.profile,
 			merger: this.merger,
 			clock: this.clock,
+			propagate: (copy) => {
+				this.enqueue(device.id, copy, true);
+			},
 		};
 	}
 }

@@ -1,12 +1,14 @@
 /**
  * A simulated device: an in-memory vault behind the vault port, plus the
- * modification times the port has no member for.
+ * modification times the port has no member for and the per-path versions
+ * that say which changes this device has seen.
  *
  * The device is what an engine holds. Every mutation made through it is
- * captured as an outbound change, so a change originates exactly once. The
- * channel lands inbound deliveries on `vault` underneath, which emits the
- * file events subscribers expect without the arrival being mistaken for a
- * local edit.
+ * captured as an outbound change and counts one more change against the
+ * path's version, so a change originates exactly once. The channel lands
+ * inbound deliveries on `vault` underneath, which emits the file events
+ * subscribers expect without the arrival being mistaken for a local edit,
+ * and records the version and modification time the landing leaves.
  */
 
 import type {
@@ -17,16 +19,20 @@ import type {
 import type { ControlledClock } from '../clock';
 import { FakeVault } from '../obsidian-fake';
 import type { CapturedChange, DeviceId } from './types';
+import { bumpVersion, INITIAL_VERSION, type PathVersion } from './version';
 
 export type CaptureSink = (change: CapturedChange) => void;
 
 export class SyncDevice implements VaultPort {
 	/**
 	 * The vault underneath the port. The channel writes here so applying a
-	 * delivery originates nothing; local edits go through the device.
+	 * delivery originates nothing; local edits go through the device. A
+	 * suite plants a file the same way when it wants one on a device
+	 * without any device having made it.
 	 */
 	readonly vault: FakeVault;
 	private readonly modificationTimes = new Map<string, number>();
+	private readonly versions = new Map<string, PathVersion>();
 
 	constructor(
 		readonly id: DeviceId,
@@ -65,6 +71,7 @@ export class SyncDevice implements VaultPort {
 		this.capture({
 			change: { kind: 'upsert', path, content },
 			previousContent,
+			version: this.advance(path),
 			modifiedAt: this.clock.now(),
 		});
 	}
@@ -74,9 +81,12 @@ export class SyncDevice implements VaultPort {
 		await this.vault.rename(path, newPath);
 		this.modificationTimes.delete(path);
 		this.stamp(newPath);
+		const version = this.advance(path);
+		this.versions.set(newPath, version);
 		this.capture({
 			change: { kind: 'rename', path: newPath, oldPath: path, content },
 			previousContent: content,
+			version,
 			modifiedAt: this.clock.now(),
 		});
 	}
@@ -88,6 +98,7 @@ export class SyncDevice implements VaultPort {
 		this.capture({
 			change: { kind: 'delete', path },
 			previousContent,
+			version: this.advance(path),
 			modifiedAt: this.clock.now(),
 		});
 	}
@@ -103,6 +114,7 @@ export class SyncDevice implements VaultPort {
 		this.capture({
 			change: { kind: 'upsert', path, content },
 			previousContent,
+			version: this.advance(path),
 			modifiedAt: this.clock.now(),
 		});
 	}
@@ -137,8 +149,29 @@ export class SyncDevice implements VaultPort {
 		this.modificationTimes.delete(path);
 	}
 
+	/**
+	 * The version this device holds for a path. A path this device has
+	 * deleted keeps the version it had, so a deletion is distinguishable
+	 * from never having held the file at all.
+	 */
+	versionOf(path: string): PathVersion {
+		return this.versions.get(path) ?? INITIAL_VERSION;
+	}
+
+	/** Records the version a landed delivery leaves on a path. */
+	noteVersion(path: string, version: PathVersion): void {
+		this.versions.set(path, version);
+	}
+
 	private stamp(path: string): void {
 		this.modificationTimes.set(path, this.clock.now());
+	}
+
+	/** Counts one more local change to a path and records the result. */
+	private advance(path: string): PathVersion {
+		const version = bumpVersion(this.versionOf(path), this.id);
+		this.versions.set(path, version);
+		return version;
 	}
 
 	private async contentOrNull(path: string): Promise<string | null> {
