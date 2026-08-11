@@ -640,6 +640,28 @@ describe('capability: managed attachments', () => {
 		).toBe(404);
 	});
 
+	it('drops the continuation lines of a folded ATTACH property', async () => {
+		const mock = server({ managedAttachments: true });
+		await addAttachment(mock, 'agenda text');
+		mock.seedResource(
+			'alice',
+			'work',
+			'one.ics',
+			EVENT.replace(
+				'END:VEVENT',
+				'ATTACH;MANAGED-ID=attachment-1;FMTTYPE=text/plain\r\n ;FILENAME="agenda.txt":https://caldav.davenport.test/attachments/attachment-1\r\nEND:VEVENT',
+			),
+		);
+		const removed = await mock.request({
+			url: `${mock.resourceUrl('alice', 'work', 'one.ics')}?action=attachment-remove&managed-id=attachment-1`,
+			method: 'POST',
+		});
+		expect(removed.status).toBe(204);
+		const stored = mock.resourceIcs('alice', 'work', 'one.ics') ?? '';
+		expect(stored).not.toContain('ATTACH');
+		expect(stored).not.toContain('FILENAME');
+	});
+
 	it('leaves the bytes alone when a write only drops the property', async () => {
 		const mock = server({ managedAttachments: true });
 		await addAttachment(mock, 'agenda text');

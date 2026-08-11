@@ -16,8 +16,9 @@ const LINE_BREAK = /\r\n|\n|\r/;
 /**
  * The pieces a text splits into at its line breaks, the terminator
  * included: a text ending in a break ends with an empty piece. Joining the
- * pieces back with one ending reproduces the text, which is what a caller
- * rewriting a line in place needs.
+ * pieces back with one ending reproduces a text whose breaks all agree,
+ * which is what a caller rewriting a line in place needs; a text mixing
+ * its breaks comes back written with whichever one the caller joined on.
  */
 export function icsLineParts(text: string): string[] {
 	return text.split(LINE_BREAK);

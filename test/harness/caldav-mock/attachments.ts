@@ -31,7 +31,7 @@
  */
 
 import type { MockServerCapabilities } from './capabilities';
-import { icsLineParts } from '../ics-lines';
+import { icsLineParts, isFoldedContinuation } from '../ics-lines';
 import { octetLength } from '../ics-octets';
 import { readIcs } from './ics';
 import type { SchedulingFact } from './observation';
@@ -247,7 +247,7 @@ function withoutProperty(ics: string, managedId: string): string {
 	const kept: string[] = [];
 	let dropping = false;
 	for (const line of icsLineParts(ics)) {
-		if (dropping && (line.startsWith(' ') || line.startsWith('\t'))) {
+		if (dropping && isFoldedContinuation(line)) {
 			continue;
 		}
 		dropping = namesAttachment(line, managedId);
@@ -280,6 +280,11 @@ function namesAttachment(line: string, managedId: string): boolean {
 	);
 }
 
+/**
+ * The ending a rewritten resource is written back with: CRLF where the
+ * text uses one anywhere, and LF otherwise. A resource whose breaks
+ * disagree is normalized onto one of them by the rewrite.
+ */
 function endingOf(ics: string): string {
 	return ics.includes('\r\n') ? '\r\n' : '\n';
 }

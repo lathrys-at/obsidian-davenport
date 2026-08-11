@@ -6,12 +6,14 @@
  *
  * The octets counted here are an HTTP body's and not an iCalendar line's —
  * a multistatus and an error page cross this module too — so the encoder
- * and its decoder stay together here rather than coming from the module
- * that holds the iCalendar line arithmetic.
+ * and its decoder are this module's own.
  */
 
 import type { HttpResponse } from '../../../src/core/ports/transport';
 import type { MockResponse } from './response';
+
+const encoder = new TextEncoder();
+const decoder = new TextDecoder();
 
 export type HeaderReader = (name: string) => string | null;
 
@@ -32,7 +34,9 @@ export function headerReader(
  * against and swept, and a credential the sweeps cannot see is one they
  * cannot report. `Authorization` is therefore here like any other header,
  * and a request that states its content type through the port's own member
- * rather than a header is recorded as having sent the header.
+ * rather than a header is recorded as having sent the header. A request
+ * that does both is recorded with the header, which is what a server would
+ * have read.
  */
 export function headerEntries(
 	headers: Readonly<Record<string, string>> | undefined,
@@ -52,7 +56,7 @@ export function bodyText(body: string | ArrayBuffer | undefined): string {
 	if (body === undefined) {
 		return '';
 	}
-	return typeof body === 'string' ? body : new TextDecoder().decode(body);
+	return typeof body === 'string' ? body : decoder.decode(body);
 }
 
 /** Null when the request names a different server, which answers nothing. */
@@ -83,7 +87,7 @@ export function toHttpResponse(
 	response: MockResponse,
 	truncateAfter: number | null,
 ): HttpResponse {
-	const encoded = new TextEncoder().encode(response.body);
+	const encoded = encoder.encode(response.body);
 	const kept =
 		truncateAfter === null ? encoded : encoded.slice(0, truncateAfter);
 	const buffer = new ArrayBuffer(kept.byteLength);
@@ -91,7 +95,7 @@ export function toHttpResponse(
 	return {
 		status: response.status,
 		headers: response.headers,
-		text: new TextDecoder().decode(kept),
+		text: decoder.decode(kept),
 		arrayBuffer: buffer,
 	};
 }

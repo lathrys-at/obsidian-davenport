@@ -15,9 +15,16 @@
  * The property is defined rather than assigned so a frozen or accessor
  * fetch is covered too, and the original descriptor is kept so the poison
  * can be lifted and put back.
+ *
+ * This is the complete half of the network ban, and the only complete one.
+ * A lint rule and a scan over the bundle read spellings off the page, so
+ * they answer for the ones a reader would recognise and cannot answer for a
+ * key held in a variable; replacing the property answers for every spelling
+ * at once, because a call arrives at the poison however it was written. The
+ * key is spelled out at each use below rather than held in a constant of
+ * its own: the constant would be the one form the static guards cannot see,
+ * and the repository should not hold an example of it.
  */
-
-const FETCH_KEY = 'fetch';
 
 /** Global names a caller could reach fetch through, besides globalThis. */
 const ALIAS_NAMES = ['window', 'self', 'global'] as const;
@@ -112,9 +119,9 @@ export function poisonFetch(): void {
 		covered.add(target);
 		installed.push({
 			target,
-			original: Object.getOwnPropertyDescriptor(target, FETCH_KEY),
+			original: Object.getOwnPropertyDescriptor(target, 'fetch'),
 		});
-		Object.defineProperty(target, FETCH_KEY, {
+		Object.defineProperty(target, 'fetch', {
 			value: thrower(spelling),
 			writable: true,
 			enumerable: true,
@@ -131,9 +138,9 @@ export function restoreFetch(): void {
 	}
 	for (const { target, original } of poisoned) {
 		if (original === undefined) {
-			Reflect.deleteProperty(target, FETCH_KEY);
+			Reflect.deleteProperty(target, 'fetch');
 		} else {
-			Object.defineProperty(target, FETCH_KEY, original);
+			Object.defineProperty(target, 'fetch', original);
 		}
 	}
 	poisoned = null;
@@ -153,7 +160,7 @@ export function fetchPoisonHolds(): boolean {
 		return false;
 	}
 	return !spellings().some(({ target }) => {
-		const value: unknown = Reflect.get(target, FETCH_KEY);
+		const value: unknown = Reflect.get(target, 'fetch');
 		return typeof value === 'function' && !throwers.has(value);
 	});
 }

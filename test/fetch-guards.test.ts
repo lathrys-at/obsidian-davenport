@@ -10,13 +10,13 @@
  */
 
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Linter } from 'eslint';
 import { createJiti } from 'jiti';
-import { beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 interface RestrictedSyntax {
 	readonly selector: string;
@@ -31,6 +31,9 @@ interface ConfigBlock {
 
 const REFLECT_CALL = "Reflect.get(globalThis, 'fetch')('https://a.test/');";
 const REFLECT_HOLDER = "const read = Reflect.get(holder, 'fetch');";
+const REFLECT_TEMPLATE = 'const read = Reflect.get(holder, `fetch`);';
+const REFLECT_INTERPOLATED =
+	'const read = Reflect.get(holder, `fet${middle}ch`);';
 const REFLECT_ELSEWHERE = "const url = Reflect.get(input, 'url');";
 const MEMBER_CALL = "window.fetch('https://a.test/');";
 
@@ -88,6 +91,10 @@ describe.each([['davenport/no-global-fetch'], ['davenport/core-boundary']])(
 			expect(refused(name, REFLECT_HOLDER)).toHaveLength(1);
 		});
 
+		it('refuses the templated spelling of the key as well', () => {
+			expect(refused(name, REFLECT_TEMPLATE)).toHaveLength(1);
+		});
+
 		it('still refuses the member spellings', () => {
 			expect(refused(name, MEMBER_CALL)).toHaveLength(1);
 		});
@@ -95,12 +102,19 @@ describe.each([['davenport/no-global-fetch'], ['davenport/core-boundary']])(
 		it('says nothing about Reflect.get reaching another property', () => {
 			expect(refused(name, REFLECT_ELSEWHERE)).toEqual([]);
 		});
+
+		// A key assembled at run time reads as fetch and is not spelled as
+		// it, which is the boundary the poison covers and lint does not.
+		it('says nothing about a key it cannot read off the page', () => {
+			expect(refused(name, REFLECT_INTERPOLATED)).toEqual([]);
+		});
 	},
 );
 
-describe('the exemption the fetch poison tests carry', () => {
-	it('covers that one file and nothing else', () => {
+describe('the exemption the fetch poison carries', () => {
+	it('covers the poison and its tests and nothing else', () => {
 		expect(blockNamed('davenport/fetch-poison-reflect').files).toEqual([
+			'test/harness/sweeps/fetch-poison.ts',
 			'test/harness/sweeps/fetch-poison.test.ts',
 		]);
 	});
@@ -108,7 +122,43 @@ describe('the exemption the fetch poison tests carry', () => {
 	it('lets the Reflect spelling through and keeps the rest banned', () => {
 		const name = 'davenport/fetch-poison-reflect';
 		expect(refused(name, REFLECT_HOLDER)).toEqual([]);
+		expect(refused(name, REFLECT_TEMPLATE)).toEqual([]);
 		expect(refused(name, MEMBER_CALL)).toHaveLength(1);
+	});
+});
+
+describe('the key spelling the static halves cannot see', () => {
+	// The exemption exists because two files read fetch off a holder. They
+	// spell the key out where they do it: a constant holding the key is the
+	// one form neither the selector nor the scan can follow, and an example
+	// of it in the tree is a worked answer for evading both.
+	//
+	// Written in POSIX classes because git's -E does not read \s or \w, and
+	// a pattern it cannot read matches nothing and reports a clean tree.
+	// The grep runs over tracked files, so the check follows the repository
+	// rather than the working directory.
+	const heldKey = (value: string): string =>
+		'^[[:space:]]*(const|let|var)[[:space:]]+[[:alnum:]_]+[[:space:]]*' +
+		`=[[:space:]]*['"\`]${value}['"\`]`;
+
+	/** A constant of the shape the ban looks for, holding something else. */
+	const CONTROL = 'not-a-key-at-all';
+
+	it('is written nowhere in the repository', () => {
+		const held = spawnSync('git', ['grep', '-nE', heldKey('fetch')], {
+			encoding: 'utf8',
+		});
+		expect(held.stdout).toBe('');
+	});
+
+	// The negative above is worth having only if the pattern can find a
+	// constant at all, which the same engine is asked here: the line
+	// declaring the control above is one, and this must find it.
+	it('finds a constant of that shape when there is one', () => {
+		const found = spawnSync('git', ['grep', '-nE', heldKey(CONTROL)], {
+			encoding: 'utf8',
+		});
+		expect(found.stdout).toContain('fetch-guards.test.ts');
 	});
 });
 
@@ -117,12 +167,20 @@ describe('the bundle scan', () => {
 		new URL('../scripts/scan-bundle.mjs', import.meta.url),
 	);
 
+	/** One directory for every case, taken down when the block ends. */
+	let directory = '';
+
+	beforeAll(() => {
+		directory = mkdtempSync(join(tmpdir(), 'davenport-scan-'));
+	});
+
+	afterAll(() => {
+		rmSync(directory, { recursive: true, force: true });
+	});
+
 	/** Runs the scan over a bundle holding this text. */
 	function scan(bundle: string): { status: number | null; output: string } {
-		const file = join(
-			mkdtempSync(join(tmpdir(), 'davenport-scan-')),
-			'b.js',
-		);
+		const file = join(directory, 'bundle.js');
 		writeFileSync(file, bundle, 'utf8');
 		const result = spawnSync(process.execPath, [script, file], {
 			encoding: 'utf8',
@@ -139,6 +197,7 @@ describe('the bundle scan', () => {
 			'Reflect.get(globalThis,"fetch")("https://a.test/");',
 		],
 		['a Reflect.get read off a holder', "const f=Reflect.get(h,'fetch');"],
+		['a templated key', 'const f=Reflect.get(h,`fetch`);'],
 	])('fails a bundle carrying %s', (_name, bundle) => {
 		const result = scan(bundle);
 		expect(result.status).toBe(1);
@@ -151,5 +210,11 @@ describe('the bundle scan', () => {
 		);
 		expect(result.status).toBe(0);
 		expect(result.output).toContain('no direct fetch usage');
+	});
+
+	it('names the file it scanned as a path', () => {
+		expect(scan('fetch("https://a.test/");').output).toContain(
+			join(directory, 'bundle.js'),
+		);
 	});
 });

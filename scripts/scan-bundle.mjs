@@ -6,23 +6,28 @@
 // a heuristic backstop over bundled output; the lint guards are the primary
 // enforcement.
 //
+// Two shapes are past a scan over text and are left to the fetch poison,
+// which covers every spelling because it replaces the property itself: a key
+// held in a variable, which esbuild does not inline, and a holder that is
+// itself a call, since the holder here stops at the first comma or paren.
+//
 // Scans main.js unless a path is given, so the same patterns can be run
 // against a bundle written anywhere.
 import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 
 const spellings = [
 	// A call to fetch, bare or through a global object.
 	/(?<![.\w$])fetch\s*\(|(?:window|globalThis|self|global)\s*(?:\.\s*fetch|\[\s*['"]fetch['"]\s*\])\s*\(/g,
 	// Reflect.get(holder, 'fetch'), which names no property and so appears
-	// in none of the spellings above. The holder is anything but a further
-	// call, which keeps the match on one argument list.
-	/Reflect\s*\.\s*get\s*\(\s*[^,()]*,\s*['"]fetch['"]\s*[,)]/g,
+	// in none of the spellings above. The key is quoted or templated; the
+	// holder is anything but a further call, which keeps the match on one
+	// argument list.
+	/Reflect\s*\.\s*get\s*\(\s*[^,()]*,\s*(?:'fetch'|"fetch"|`fetch`)\s*[,)]/g,
 ];
 
 const target =
-	process.argv[2] === undefined
-		? new URL('../main.js', import.meta.url)
-		: process.argv[2];
+	process.argv[2] ?? fileURLToPath(new URL('../main.js', import.meta.url));
 const bundle = readFileSync(target, 'utf8');
 const matches = spellings
 	.flatMap((pattern) => [...bundle.matchAll(pattern)])
@@ -38,7 +43,7 @@ if (matches.length > 0) {
 		console.error(`  …${context.replace(/\n/g, '\\n')}…`);
 	}
 	console.error(
-		`bundle scan: ${String(matches.length)} direct fetch call(s) found in ${String(target)}`,
+		`bundle scan: ${String(matches.length)} direct fetch call(s) found in ${target}`,
 	);
 	process.exit(1);
 }
