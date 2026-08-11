@@ -1,8 +1,8 @@
 /**
  * HTTP transport port. Every network call flows through here, and the
- * Obsidian adapter backs it with `requestUrl` (§2.2): CalDAV servers send
- * no CORS headers, so any other transport breaks on mobile. The test
- * harness poisons global `fetch` to enforce this seam (IV-13).
+ * Obsidian adapter backs it with `requestUrl`: CalDAV servers send no CORS
+ * headers, so any other transport breaks on mobile. The test harness
+ * poisons global `fetch` to enforce this seam.
  */
 
 export interface HttpRequest {

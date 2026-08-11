@@ -58,7 +58,10 @@ comments, PR bodies and comments — is produced in this order:
 
 Code is self-describing. Modules, types, and functions get documentation
 comments as the language's conventions dictate (eg `///` and `//!` in Rust) — the
-contract, never the history. Inline comments are limited to exactly two forms:
+contract, never the history. Comments are plain and simple prose: subsection
+anchors — spec `§` references, test-plan IDs, issue numbers — never appear in
+code comments, and a comment links out to documentation only when absolutely
+necessary. Inline comments are limited to exactly two forms:
 
 - justifications for exceptional code (eg unsafe blocks, silencing warnings, etc.)
 - looks-wrong-but-correct-because-X guards, where the code reads as a bug

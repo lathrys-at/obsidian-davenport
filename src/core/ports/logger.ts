@@ -1,7 +1,7 @@
 /**
- * Sync-log vocabulary (§14.4). The log records refusals, skips, and
- * conflicts, not only successes: nothing is silently skipped (§1
- * principle 5), and the sync activity view renders these entries.
+ * Sync-log vocabulary. The log records refusals, skips, and conflicts, not
+ * only successes: nothing is silently skipped, and the sync activity view
+ * renders these entries.
  */
 
 export type LogOutcome = 'success' | 'refused' | 'skipped' | 'failed' | 'conflict';

@@ -1,17 +1,17 @@
 import type { EventIdentity } from './identity';
 
 /**
- * Tombstone typing by origin (§5.6). Only local-intent tombstones may issue
- * `DELETE`; remote-observed tombstones never write to the server. The
- * typing exists because a tombstone whose origin the reader cannot
- * determine could escalate a misdiagnosed remote deletion into a `DELETE`
- * against a live event.
+ * Tombstone typing by origin. Only local-intent tombstones may issue
+ * DELETE; remote-observed tombstones never write to the server. The typing
+ * exists because a tombstone whose origin the reader cannot determine
+ * could escalate a misdiagnosed remote deletion into a DELETE against a
+ * live event.
  */
 export type TombstoneType = 'remote-observed' | 'local-intent';
 
 /**
- * Monotone dominance (§5.6): remote-observed may upgrade to local-intent,
- * never the reverse. Devices re-canonicalize to the highest rank seen.
+ * Monotone dominance: remote-observed may upgrade to local-intent, never
+ * the reverse. Devices re-canonicalize to the highest rank seen.
  */
 export const TOMBSTONE_RANK = {
 	'remote-observed': 0,
@@ -19,10 +19,9 @@ export const TOMBSTONE_RANK = {
 } as const satisfies Record<TombstoneType, number>;
 
 /**
- * Successor annotation for conversions and calendar moves (§10.4). The
- * orphaned-note banner is typed by it, and the incomplete-operation
- * detector (Appendix B row 13b) reads it: an annotated successor resolving
- * to no record and no claiming note past flight grace is a detectable
+ * Successor annotation for conversions and calendar moves. The orphaned
+ * note's banner is typed by it, and an annotated successor resolving to no
+ * record and no claiming note past the flight grace period is a detectable
  * half-completed operation.
  */
 export interface TombstoneAnnotation {
