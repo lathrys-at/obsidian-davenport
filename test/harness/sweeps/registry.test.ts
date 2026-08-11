@@ -58,6 +58,29 @@ describe('sweep registry', () => {
 		]);
 	});
 
+	it('names the sweep that threw instead of letting the error out', () => {
+		const registry = new SweepRegistry([
+			{
+				name: 'broken',
+				check: () => {
+					throw new Error('the sweep is wrong');
+				},
+			},
+			alwaysHolds,
+		]);
+		expect(registry.evaluate(evidence())).toEqual([
+			{
+				sweep: 'broken',
+				violations: [
+					{
+						where: 'the sweep itself',
+						detail: 'threw the sweep is wrong',
+					},
+				],
+			},
+		]);
+	});
+
 	it('drops added sweeps on reset and keeps the standing set', () => {
 		const registry = new SweepRegistry(STANDING_SWEEPS);
 		registry.register(alwaysHolds);

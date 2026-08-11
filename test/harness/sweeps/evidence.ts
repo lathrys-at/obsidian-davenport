@@ -31,9 +31,24 @@ export interface FeedEvidence {
 	readonly requests: readonly FeedRequestRecord[];
 }
 
+/**
+ * One change the vault made, with the bytes it left behind. Content is
+ * captured as the change lands rather than read back later, so a note
+ * written and then trashed or overwritten is still in the record: the end
+ * of the run is not the only state the engine is answerable for.
+ */
+export interface VaultChange {
+	readonly kind: VaultFileEvent['kind'];
+	readonly path: string;
+	/** Where a rename moved from; null for every other kind. */
+	readonly oldPath: string | null;
+	/** What the file held just after the change; null once it is gone. */
+	readonly content: string | null;
+}
+
 export interface VaultEvidence {
-	/** File events in the order the vault emitted them. */
-	readonly events: readonly VaultFileEvent[];
+	/** Every change the vault made, in the order it emitted them. */
+	readonly changes: readonly VaultChange[];
 	/** Contents at the end of the run, by path. */
 	readonly files: Readonly<Record<string, string>>;
 }
@@ -46,17 +61,69 @@ export interface NetworkEvidence {
 }
 
 /**
+ * How many requests each network surface had handled at one moment. A
+ * stretch of a run is bounded on all of them at once, so no surface can be
+ * the one nobody thought to count; a surface that arrives later is a field
+ * here and an entry in the table below, not a change to the shape a
+ * stretch carries.
+ */
+export interface NetworkCursor {
+	readonly caldav: number;
+	readonly feed: number;
+}
+
+/** A cursor with every surface the caller left out set to zero. */
+export function networkCursor(
+	parts: Partial<NetworkCursor> = {},
+): NetworkCursor {
+	return { caldav: parts.caldav ?? 0, feed: parts.feed ?? 0 };
+}
+
+/**
  * A stretch of the run spent on work the engine observed remotely rather
- * than work a user asked for. The bounds are positions in the CalDAV
- * request log: `from` is the number of requests handled when the stretch
- * opened and `to` the number when it closed, so every request whose index
- * falls between them was issued inside it.
+ * than work a user asked for. Every request a surface recorded between the
+ * two cursors was issued inside it.
  */
 export interface RemoteObservedWindow {
 	readonly label: string;
-	readonly from: number;
-	readonly to: number;
+	readonly from: NetworkCursor;
+	readonly to: NetworkCursor;
 }
+
+/** A request as a sweep reports it, whichever surface recorded it. */
+export interface RecordedRequest {
+	readonly where: string;
+	readonly detail: string;
+}
+
+/**
+ * A network surface, paired with the cursor field that counts it. A sweep
+ * that cares about requests walks this table rather than naming surfaces,
+ * so adding one here is what puts it under every such sweep at once.
+ */
+export interface NetworkSurface {
+	readonly key: keyof NetworkCursor;
+	requests(evidence: RunEvidence): readonly RecordedRequest[];
+}
+
+export const NETWORK_SURFACES: readonly NetworkSurface[] = [
+	{
+		key: 'caldav',
+		requests: (record) =>
+			record.caldav.requests.map((entry, index) => ({
+				where: `caldav.requests[${String(index)}]`,
+				detail: `${entry.method} ${entry.path}`,
+			})),
+	},
+	{
+		key: 'feed',
+		requests: (record) =>
+			record.feed.requests.map((entry, index) => ({
+				where: `feed.requests[${String(index)}]`,
+				detail: `${entry.method} ${entry.url}`,
+			})),
+	},
+];
 
 /** A value the run declared sensitive, named so a report can cite it. */
 export interface SensitiveValue {
@@ -78,7 +145,7 @@ export interface RunEvidence {
 
 const NO_CALDAV: CalDavEvidence = { requests: [], scheduling: [] };
 const NO_FEED: FeedEvidence = { requests: [] };
-const NO_VAULT: VaultEvidence = { events: [], files: {} };
+const NO_VAULT: VaultEvidence = { changes: [], files: {} };
 
 /**
  * Builds a record, filling every surface the caller left out. A run states
@@ -120,45 +187,67 @@ const PLAIN_KEY = /^[A-Za-z_$][\w$]*$/;
 /**
  * Every string the evidence carries, with where it sits. The walk knows
  * nothing about the surfaces it crosses, so a surface added later is
- * scanned without the scanners being told it exists.
+ * scanned without the scanners being told it exists — as long as it holds
+ * its text in strings, arrays, plain objects, maps, sets, or URLs. Text
+ * encoded as numbers or octets is not reached, and a surface that carries
+ * either owes its own reader.
  */
 export function evidenceStrings(
 	record: RunEvidence,
 ): readonly EvidenceString[] {
 	const found: EvidenceString[] = [];
-	const seen = new Set<object>();
 	for (const [key, value] of Object.entries(record)) {
 		if (!UNSCANNED_KEYS.has(key)) {
-			walk(key, value, found, seen);
+			walk(key, value, found, new Set());
 		}
 	}
 	return found;
 }
 
+/**
+ * `open` holds the objects on the path back to the root, not every object
+ * already visited: it exists to stop a cycle, and an object reachable at
+ * two positions is reported at both, because either one is a leak.
+ */
 function walk(
 	where: string,
 	value: unknown,
 	found: EvidenceString[],
-	seen: Set<object>,
+	open: Set<object>,
 ): void {
 	if (typeof value === 'string') {
 		found.push({ where, text: value });
 		return;
 	}
-	if (typeof value !== 'object' || value === null || seen.has(value)) {
+	if (typeof value !== 'object' || value === null || open.has(value)) {
 		return;
 	}
-	seen.add(value);
+	if (value instanceof URL) {
+		found.push({ where, text: value.href });
+		return;
+	}
+	open.add(value);
 	if (Array.isArray(value)) {
 		const items: readonly unknown[] = value;
 		items.forEach((item, index) => {
-			walk(`${where}[${String(index)}]`, item, found, seen);
+			walk(`${where}[${String(index)}]`, item, found, open);
 		});
-		return;
+	} else if (value instanceof Map) {
+		const entries: readonly [unknown, unknown][] = [...value];
+		for (const [key, item] of entries) {
+			walk(join(where, String(key)), item, found, open);
+		}
+	} else if (value instanceof Set) {
+		const items: readonly unknown[] = [...value];
+		items.forEach((item, index) => {
+			walk(`${where}[${String(index)}]`, item, found, open);
+		});
+	} else {
+		for (const [key, child] of Object.entries(value)) {
+			walk(join(where, key), child, found, open);
+		}
 	}
-	for (const [key, child] of Object.entries(value)) {
-		walk(join(where, key), child, found, seen);
-	}
+	open.delete(value);
 }
 
 function join(where: string, key: string): string {

@@ -82,8 +82,13 @@ describe('simulation runs', () => {
 				expect(
 					evidence.feed.requests.map((entry) => entry.url),
 				).toEqual([FEED_URL]);
-				expect(evidence.vault.events).toEqual([
-					{ kind: 'created', path: 'Events/two.md' },
+				expect(evidence.vault.changes).toEqual([
+					{
+						kind: 'created',
+						path: 'Events/two.md',
+						oldPath: null,
+						content: 'written',
+					},
 				]);
 				expect(evidence.vault.files).toEqual({
 					'Events/one.md': 'seeded',
@@ -120,10 +125,35 @@ describe('simulation runs', () => {
 		let seen = 0;
 		await runSimulation(options({ vault }), async (run) => {
 			await vault.write('a.md', 'one');
-			seen = (await run.evidence()).vault.events.length;
+			seen = (await run.evidence()).vault.changes.length;
 		});
 		await vault.write('b.md', 'two');
 		expect(seen).toBe(1);
+	});
+
+	it('keeps the bytes a change left, not the ones that replaced them', async () => {
+		const vault = new FakeVault();
+		await runSimulation(options({ vault }), async (run) => {
+			await vault.write('a.md', 'first');
+			await vault.write('a.md', 'second');
+			await vault.rename('a.md', 'b.md');
+			await vault.trash('b.md');
+			const evidence = await run.evidence();
+			expect(
+				evidence.vault.changes.map((change) => [
+					change.kind,
+					change.path,
+					change.oldPath,
+					change.content,
+				]),
+			).toEqual([
+				['created', 'a.md', null, 'first'],
+				['modified', 'a.md', null, 'second'],
+				['renamed', 'b.md', 'a.md', 'second'],
+				['deleted', 'b.md', null, null],
+			]);
+			expect(evidence.vault.files).toEqual({});
+		});
 	});
 
 	it('attributes requests to the stretch that issued them', async () => {
@@ -140,9 +170,31 @@ describe('simulation runs', () => {
 				});
 			});
 			expect((await run.evidence()).remoteObserved).toEqual([
-				{ label: 'a tombstone', from: 1, to: 2 },
+				{
+					label: 'a tombstone',
+					from: { caldav: 1, feed: 0 },
+					to: { caldav: 2, feed: 0 },
+				},
 			]);
 		});
+	});
+
+	it('counts a feed poll inside the stretch too', async () => {
+		const feeds = feed();
+		const failure = await runSimulation(
+			{ name: 'a run', feed: feeds },
+			async (run) => {
+				await run.remoteObserved('a tombstone', async () => {
+					await feeds.request({ url: FEED_URL });
+				});
+			},
+		).catch((error: unknown) => error);
+		expect((failure as SweepFailure).message).toContain(
+			'remote-observed-no-server-requests',
+		);
+		expect((failure as SweepFailure).message).toContain(
+			`feed.requests[0]: GET ${FEED_URL} was issued while processing a tombstone`,
+		);
 	});
 
 	it('closes the stretch even when the work inside it throws', async () => {
@@ -216,6 +268,36 @@ describe('sweep failures', () => {
 			'vault.files["Events/one.md"]',
 		);
 		expect((failure as SweepFailure).message).not.toContain(PASSWORD);
+	});
+
+	it('catches a registered value in a note the run then removed', async () => {
+		const vault = new FakeVault();
+		const failure = await runSimulation(
+			{ name: 'a run', vault },
+			async (run) => {
+				run.registerSecret({ label: 'app password', value: PASSWORD });
+				await vault.write('Events/one.md', PASSWORD);
+				await vault.trash('Events/one.md');
+			},
+		).catch((error: unknown) => error);
+		expect((failure as SweepFailure).message).toContain(
+			'vault.changes[0].content',
+		);
+	});
+
+	it('catches a registered value a later write redacted', async () => {
+		const vault = new FakeVault();
+		const failure = await runSimulation(
+			{ name: 'a run', vault },
+			async (run) => {
+				run.registerSecret({ label: 'app password', value: PASSWORD });
+				await vault.write('Events/one.md', PASSWORD);
+				await vault.write('Events/one.md', 'redacted');
+			},
+		).catch((error: unknown) => error);
+		expect((failure as SweepFailure).message).toContain(
+			'vault.changes[0].content',
+		);
 	});
 
 	it('takes sensitive values declared at the start too', async () => {

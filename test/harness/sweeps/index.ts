@@ -8,13 +8,22 @@ export type {
 	CalDavEvidence,
 	EvidenceString,
 	FeedEvidence,
+	NetworkCursor,
 	NetworkEvidence,
+	NetworkSurface,
+	RecordedRequest,
 	RemoteObservedWindow,
 	RunEvidence,
 	SensitiveValue,
+	VaultChange,
 	VaultEvidence,
 } from './evidence';
-export { evidence, evidenceStrings } from './evidence';
+export {
+	NETWORK_SURFACES,
+	evidence,
+	evidenceStrings,
+	networkCursor,
+} from './evidence';
 export type { FetchAttempt } from './fetch-poison';
 export {
 	NetworkAccessError,

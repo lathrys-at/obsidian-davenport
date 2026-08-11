@@ -9,11 +9,16 @@
  * the next test whether or not module state was reused. A suite that wants
  * a registration to survive that reset registers it in its own `beforeEach`,
  * which runs after the setup file's.
+ *
+ * `beforeEach` and not `beforeAll`: the reset runs between the two, so a
+ * `beforeAll` registration is gone by the time the first test reads it,
+ * and under a shared module registry it is also the one place a
+ * registration from another file is still visible.
  */
 
 import type { RunEvidence } from './evidence';
 import { STANDING_SWEEPS } from './standing';
-import type { Sweep, SweepReport } from './sweep';
+import type { Sweep, SweepReport, SweepViolation } from './sweep';
 
 export class SweepRegistry {
 	private readonly baseline: readonly Sweep[];
@@ -46,11 +51,27 @@ export class SweepRegistry {
 		this.current = [...this.baseline];
 	}
 
-	/** Every sweep that found something, in registration order. */
+	/**
+	 * Every sweep that found something, in registration order. A sweep that
+	 * throws is reported as having found its own failure rather than being
+	 * allowed out: an error escaping here would fail the test with nothing
+	 * naming which sweep produced it, which is the one failure shape the
+	 * reporting exists to prevent.
+	 */
 	evaluate(evidence: RunEvidence): readonly SweepReport[] {
 		const reports: SweepReport[] = [];
 		for (const sweep of this.current) {
-			const violations = sweep.check(evidence);
+			let violations: readonly SweepViolation[];
+			try {
+				violations = sweep.check(evidence);
+			} catch (error) {
+				violations = [
+					{
+						where: 'the sweep itself',
+						detail: `threw ${error instanceof Error ? error.message : String(error)}`,
+					},
+				];
+			}
 			if (violations.length > 0) {
 				reports.push({ sweep: sweep.name, violations });
 			}

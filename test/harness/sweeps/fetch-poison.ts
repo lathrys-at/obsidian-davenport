@@ -97,16 +97,14 @@ function thrower(spelling: string): () => never {
 }
 
 /**
- * Installs the poison. Calling it again while it is installed changes
- * nothing, so a setup file that runs more than once cannot lose the
- * original fetch behind a second layer of poison.
+ * Installs the poison, covering any global it has not covered already. A
+ * target is poisoned once and never twice, so calling this again cannot
+ * lose the original fetch behind a second layer; calling it again is how a
+ * global that appeared after the first call gets covered.
  */
 export function poisonFetch(): void {
-	if (poisoned !== null) {
-		return;
-	}
-	const covered = new Set<object>();
-	const installed: PoisonedTarget[] = [];
+	const installed = poisoned ?? [];
+	const covered = new Set(installed.map((entry) => entry.target));
 	for (const { spelling, target } of spellings()) {
 		if (covered.has(target)) {
 			continue;
@@ -142,18 +140,21 @@ export function restoreFetch(): void {
 }
 
 /**
- * Whether every reachable spelling of fetch is a thrower right now. This is
- * the question a run asks, rather than whether the poison was installed:
- * code that replaced fetch after installation is exactly what the check is
- * for.
+ * Whether a live fetch survives anywhere right now. The question is what a
+ * caller could reach, not what every global happens to hold: a suite that
+ * stubs `window` with an object carrying no fetch has closed nothing off,
+ * and reading that as a breach would accuse it of a network call it never
+ * made. A spelling only fails the check when it holds a callable that is
+ * not one of ours, which is the case the check exists for — code that put
+ * a working fetch back after the poison went in.
  */
 export function fetchPoisonHolds(): boolean {
 	if (poisoned === null) {
 		return false;
 	}
-	return spellings().every(({ target }) => {
+	return !spellings().some(({ target }) => {
 		const value: unknown = Reflect.get(target, FETCH_KEY);
-		return typeof value === 'function' && throwers.has(value);
+		return typeof value === 'function' && !throwers.has(value);
 	});
 }
 

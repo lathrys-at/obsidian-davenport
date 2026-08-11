@@ -19,13 +19,20 @@ import type { FeedFixture } from '../feed-fixture/server';
 import type { FakeVault } from '../obsidian-fake/vault';
 import {
 	evidence,
+	type NetworkCursor,
 	type RemoteObservedWindow,
 	type RunEvidence,
 	type SensitiveValue,
+	type VaultChange,
 } from './evidence';
 import { fetchPoisonHolds, recordedFetchAttempts } from './fetch-poison';
 import { sweeps, type SweepRegistry } from './registry';
 import { SweepFailure } from './sweep';
+
+/** A change whose bytes are captured but not yet read back out. */
+interface PendingChange extends Omit<VaultChange, 'content'> {
+	readonly content: Promise<string | null>;
+}
 
 export interface SimulationOptions {
 	/** Names the run in a sweep failure. */
@@ -83,7 +90,7 @@ class Simulation implements SimulationRun {
 	private readonly registry: SweepRegistry;
 	private readonly name: string;
 	private readonly syncLog: SyncLogEntry[] = [];
-	private readonly vaultEvents: VaultFileEvent[] = [];
+	private readonly vaultChanges: PendingChange[] = [];
 	private readonly secrets: SensitiveValue[];
 	private readonly windows: RemoteObservedWindow[] = [];
 	private readonly attemptsBefore: number;
@@ -102,9 +109,15 @@ class Simulation implements SimulationRun {
 				this.syncLog.push(entry);
 			},
 		};
-		if (options.vault) {
-			this.unsubscribe = options.vault.onFileEvent((event) => {
-				this.vaultEvents.push(event);
+		const vault = options.vault;
+		if (vault) {
+			this.unsubscribe = vault.onFileEvent((event) => {
+				this.vaultChanges.push({
+					kind: event.kind,
+					path: event.path,
+					oldPath: event.kind === 'renamed' ? event.oldPath : null,
+					content: contentAfter(vault, event),
+				});
 			});
 		}
 	}
@@ -122,11 +135,11 @@ class Simulation implements SimulationRun {
 		label: string,
 		body: () => T | Promise<T>,
 	): Promise<T> {
-		const from = this.requestCount();
+		const from = this.cursor();
 		try {
 			return await body();
 		} finally {
-			this.windows.push({ label, from, to: this.requestCount() });
+			this.windows.push({ label, from, to: this.cursor() });
 		}
 	}
 
@@ -140,7 +153,14 @@ class Simulation implements SimulationRun {
 			},
 			feed: { requests: [...(feed?.log ?? [])] },
 			vault: {
-				events: [...this.vaultEvents],
+				changes: await Promise.all(
+					this.vaultChanges.map(async (change) => ({
+						kind: change.kind,
+						path: change.path,
+						oldPath: change.oldPath,
+						content: await change.content,
+					})),
+				),
 				files: await filesOf(vault),
 			},
 			syncLog: [...this.syncLog],
@@ -170,9 +190,33 @@ class Simulation implements SimulationRun {
 		this.unsubscribe = null;
 	}
 
-	private requestCount(): number {
-		return this.options.caldav?.log.entries.length ?? 0;
+	/**
+	 * Stated surface by surface rather than through the cursor builder, so a
+	 * surface added to the cursor stops compiling here until this counts it.
+	 */
+	private cursor(): NetworkCursor {
+		const { caldav, feed } = this.options;
+		return {
+			caldav: caldav?.log.entries.length ?? 0,
+			feed: feed?.log.length ?? 0,
+		};
 	}
+}
+
+/**
+ * The bytes a change left. The read is issued as the change lands and the
+ * fake vault performs it there rather than on the microtask queue, so
+ * awaiting the result later still yields what the file held at the time
+ * rather than its state at the end of the run.
+ */
+function contentAfter(
+	vault: FakeVault,
+	event: VaultFileEvent,
+): Promise<string | null> {
+	if (event.kind === 'deleted') {
+		return Promise.resolve(null);
+	}
+	return vault.read(event.path).catch(() => null);
 }
 
 async function filesOf(

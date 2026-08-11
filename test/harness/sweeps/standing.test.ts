@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import type { RequestLogEntry } from '../caldav-mock/observation';
-import { evidence, evidenceStrings, type RunEvidence } from './evidence';
+import type { FeedRequestRecord } from '../feed-fixture/server';
+import {
+	evidence,
+	evidenceStrings,
+	networkCursor,
+	type RunEvidence,
+} from './evidence';
 import { STANDING_SWEEPS } from './standing';
 import type { Sweep } from './sweep';
 
@@ -28,6 +34,15 @@ function request(index: number, patch: Partial<RequestLogEntry> = {}) {
 		status: 204,
 		...patch,
 	} satisfies RequestLogEntry;
+}
+
+function poll(index: number) {
+	return {
+		url: `https://feeds.davenport.test/${String(index)}.ics`,
+		method: 'GET',
+		status: 200,
+		poll: index + 1,
+	} satisfies FeedRequestRecord;
 }
 
 function violations(sweep: Sweep, record: RunEvidence): string[] {
@@ -72,7 +87,7 @@ describe('secrets-scan', () => {
 
 	it('holds when the run registered nothing sensitive', () => {
 		const record = evidence({
-			vault: { events: [], files: { 'Events/one.md': PASSWORD } },
+			vault: { changes: [], files: { 'Events/one.md': PASSWORD } },
 		});
 		expect(sweep.check(record)).toEqual([]);
 	});
@@ -89,7 +104,7 @@ describe('secrets-scan', () => {
 				scheduling: [],
 			},
 			vault: {
-				events: [],
+				changes: [],
 				files: { 'Events/one.md': `---\npassword: ${PASSWORD}\n---\n` },
 			},
 			syncLog: [
@@ -111,7 +126,7 @@ describe('secrets-scan', () => {
 	it('never prints the value it found', () => {
 		const record = evidence({
 			secrets: [{ label: 'app password', value: PASSWORD }],
-			vault: { events: [], files: { 'Events/one.md': PASSWORD } },
+			vault: { changes: [], files: { 'Events/one.md': PASSWORD } },
 		});
 		const printed = JSON.stringify(sweep.check(record));
 		expect(printed).not.toContain(PASSWORD);
@@ -132,12 +147,38 @@ describe('secrets-scan', () => {
 		const record = evidence({
 			secrets: [{ label: 'token', value: 'abc123' }],
 			vault: {
-				events: [],
+				changes: [],
 				files: { 'note.md': 'bearer abc123 expires' },
 			},
 		});
 		expect(violations(sweep, record)).toEqual([
 			'vault.files["note.md"]: carries the value registered as "token"',
+		]);
+	});
+
+	it('finds a value in note content the end of the run no longer holds', () => {
+		const record = evidence({
+			secrets: [{ label: 'app password', value: PASSWORD }],
+			vault: {
+				changes: [
+					{
+						kind: 'created',
+						path: 'Events/one.md',
+						oldPath: null,
+						content: PASSWORD,
+					},
+					{
+						kind: 'deleted',
+						path: 'Events/one.md',
+						oldPath: null,
+						content: null,
+					},
+				],
+				files: {},
+			},
+		});
+		expect(violations(sweep, record)).toEqual([
+			'vault.changes[0].content: carries the value registered as "app password"',
 		]);
 	});
 });
@@ -152,16 +193,53 @@ describe('remote-observed-no-server-requests', () => {
 		expect(sweep.check(record)).toEqual([]);
 	});
 
-	it('objects to a request issued inside one', () => {
+	it('objects to a calendar request issued inside one', () => {
 		const record = evidence({
 			caldav: { requests: [request(0), request(1)], scheduling: [] },
 			remoteObserved: [
-				{ label: 'a remote-observed tombstone', from: 1, to: 2 },
+				{
+					label: 'a remote-observed tombstone',
+					from: networkCursor({ caldav: 1 }),
+					to: networkCursor({ caldav: 2 }),
+				},
 			],
 		});
 		expect(violations(sweep, record)).toEqual([
 			'caldav.requests[1]: PUT /calendars/alice/work/1.ics was issued while processing a remote-observed tombstone',
 		]);
+	});
+
+	it('objects to a feed poll issued inside one', () => {
+		const record = evidence({
+			feed: { requests: [poll(0), poll(1)] },
+			remoteObserved: [
+				{
+					label: 'a remote-observed tombstone',
+					from: networkCursor({ feed: 1 }),
+					to: networkCursor({ feed: 2 }),
+				},
+			],
+		});
+		expect(violations(sweep, record)).toEqual([
+			'feed.requests[1]: GET https://feeds.davenport.test/1.ics was issued while processing a remote-observed tombstone',
+		]);
+	});
+
+	it('objects on every surface a single stretch spans', () => {
+		const record = evidence({
+			caldav: { requests: [request(0)], scheduling: [] },
+			feed: { requests: [poll(0)] },
+			remoteObserved: [
+				{
+					label: 'processing',
+					from: networkCursor(),
+					to: networkCursor({ caldav: 1, feed: 1 }),
+				},
+			],
+		});
+		expect(
+			violations(sweep, record).map((line) => line.split(':')[0]),
+		).toEqual(['caldav.requests[0]', 'feed.requests[0]']);
 	});
 
 	it('ignores requests either side of the stretch', () => {
@@ -170,8 +248,29 @@ describe('remote-observed-no-server-requests', () => {
 				requests: [request(0), request(1), request(2)],
 				scheduling: [],
 			},
-			remoteObserved: [{ label: 'processing', from: 1, to: 1 }],
+			feed: { requests: [poll(0)] },
+			remoteObserved: [
+				{
+					label: 'processing',
+					from: networkCursor({ caldav: 1 }),
+					to: networkCursor({ caldav: 1 }),
+				},
+			],
 		});
 		expect(sweep.check(record)).toEqual([]);
+	});
+
+	it('stops at the end of a surface when the cursor overshoots it', () => {
+		const record = evidence({
+			caldav: { requests: [request(0)], scheduling: [] },
+			remoteObserved: [
+				{
+					label: 'processing',
+					from: networkCursor(),
+					to: networkCursor({ caldav: 9 }),
+				},
+			],
+		});
+		expect(violations(sweep, record)).toHaveLength(1);
 	});
 });

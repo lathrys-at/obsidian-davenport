@@ -7,6 +7,7 @@ import {
 	recordedFetchAttempts,
 	restoreFetch,
 } from './fetch-poison';
+import { runSimulation } from './run';
 
 const ALIASES = ['window', 'self', 'global'] as const;
 
@@ -15,10 +16,10 @@ const ALIASES = ['window', 'self', 'global'] as const;
  * meets a spelling that is a separate object. Node resolves every alias to
  * one global, which would let a poison that covers only globalThis pass.
  */
-function withAlias(name: string, own: () => unknown): () => void {
+function withAlias(name: string, own: (() => unknown) | undefined): () => void {
 	const original = Object.getOwnPropertyDescriptor(globalThis, name);
 	Object.defineProperty(globalThis, name, {
-		value: { fetch: own },
+		value: own === undefined ? {} : { fetch: own },
 		writable: true,
 		enumerable: false,
 		configurable: true,
@@ -133,6 +134,30 @@ describe('fetch poisoning', () => {
 		restoreFetch();
 		expect(fetchPoisonHolds()).toBe(false);
 		expect(fetchOf('globalThis')).not.toBe(poison);
+	});
+
+	it('holds when a global stub carries no fetch at all', async () => {
+		const remove = withAlias('window', undefined);
+		try {
+			expect(fetchPoisonHolds()).toBe(true);
+			await expect(
+				runSimulation({ name: 'stubbed' }, () => undefined),
+			).resolves.toBeUndefined();
+		} finally {
+			remove();
+		}
+	});
+
+	it('reports itself broken when a stub brings its own live fetch', () => {
+		const remove = withAlias('window', () => undefined);
+		try {
+			expect(fetchPoisonHolds()).toBe(false);
+			poisonFetch();
+			expect(fetchPoisonHolds()).toBe(true);
+		} finally {
+			restoreFetch();
+			remove();
+		}
 	});
 
 	it('leaves an alias without its own fetch alone once restored', () => {

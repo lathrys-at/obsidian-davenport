@@ -4,7 +4,11 @@
  * is what the harness can already answer on its own evidence.
  */
 
-import { evidenceStrings, type RunEvidence } from './evidence';
+import {
+	NETWORK_SURFACES,
+	evidenceStrings,
+	type RunEvidence,
+} from './evidence';
 import type { Sweep, SweepViolation } from './sweep';
 
 /**
@@ -62,8 +66,10 @@ const secretsScan: Sweep = {
 
 /**
  * Work the engine took on because it observed something remotely, rather
- * than because a user asked for it, talks to no server at all. Nothing
- * opens such a stretch until the engine lands, so this passes on every run
+ * than because a user asked for it, talks to no server at all — not the
+ * calendar server, not a feed, not anything a later surface adds, which is
+ * why this walks the surface table rather than naming one. Nothing opens
+ * such a stretch until the engine lands, so this passes on every run
  * today; it is registered anyway, because a registry that holds only the
  * assertions with a producer teaches suites to add the producer and the
  * assertion together, and the second half is the one that gets dropped.
@@ -73,12 +79,21 @@ const remoteObservedNoServerRequests: Sweep = {
 	check(evidence: RunEvidence): readonly SweepViolation[] {
 		const violations: SweepViolation[] = [];
 		for (const window of evidence.remoteObserved) {
-			for (const request of evidence.caldav.requests) {
-				if (request.index >= window.from && request.index < window.to) {
-					violations.push({
-						where: `caldav.requests[${String(request.index)}]`,
-						detail: `${request.method} ${request.path} was issued while processing ${window.label}`,
-					});
+			for (const surface of NETWORK_SURFACES) {
+				const requests = surface.requests(evidence);
+				const to = Math.min(window.to[surface.key], requests.length);
+				for (
+					let index = window.from[surface.key];
+					index < to;
+					index++
+				) {
+					const request = requests[index];
+					if (request) {
+						violations.push({
+							where: request.where,
+							detail: `${request.detail} was issued while processing ${window.label}`,
+						});
+					}
 				}
 			}
 		}
