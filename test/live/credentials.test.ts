@@ -85,6 +85,15 @@ describe('live credential lookup', () => {
 		});
 	});
 
+	it('ignores what an environment record inherits', () => {
+		const inherited = Object.create(complete) as Record<string, string>;
+		expect(availableProviders(inherited)).toStrictEqual([]);
+		expect(lookupCredentials('radicale', inherited)).toStrictEqual({
+			available: false,
+			missing: namesOf('radicale'),
+		});
+	});
+
 	it('reads only its own provider from a shared environment', () => {
 		const shared = {
 			...complete,

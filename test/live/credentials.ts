@@ -8,15 +8,19 @@
  * environment supplying none is a valid environment. Nothing here reads
  * the environment at import time, and nothing throws at import time.
  *
- * Credential values never leave this module. An unavailable provider
- * reports the names of the variables it wants and never their contents;
- * no function here writes to a log or puts a value in an error message.
+ * An unavailable provider reports the names of the variables it wants and
+ * never their contents; no function here writes to a log or puts a value
+ * in an error message. Resolved credentials are a plain object holding the
+ * secret as a plain string, so keeping it out of logs, errors and
+ * artifacts is the caller's obligation from that point on.
  *
  * A variable holding only whitespace counts as unset — a secret mapped
  * from a store that does not have it arrives as the empty string. The
  * resolved `url` and `username` are trimmed, since surrounding whitespace
  * in either is an artifact of how the value was written down; the secret
- * is taken verbatim, because whitespace can be part of it.
+ * is taken verbatim, because whitespace can be part of it. A lookup reads
+ * own properties only, so nothing an environment record inherits can
+ * supply a credential.
  */
 
 import process from 'node:process';
@@ -70,15 +74,24 @@ function isSet(value: string | undefined): value is string {
 	return value !== undefined && value.trim() !== '';
 }
 
+function read(
+	environment: CredentialEnvironment,
+	name: string,
+): string | undefined {
+	return Object.prototype.hasOwnProperty.call(environment, name)
+		? environment[name]
+		: undefined;
+}
+
 /** Credentials for one provider, or the names of what it is missing. */
 export function lookupCredentials(
 	provider: LiveProvider,
 	environment: CredentialEnvironment,
 ): CredentialLookup {
 	const names = variableNames(provider);
-	const url = environment[names.url];
-	const username = environment[names.username];
-	const secret = environment[names.secret];
+	const url = read(environment, names.url);
+	const username = read(environment, names.username);
+	const secret = read(environment, names.secret);
 
 	if (!isSet(url) || !isSet(username) || !isSet(secret)) {
 		const missing: string[] = [];

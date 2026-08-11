@@ -6,14 +6,9 @@
 #
 # Radicale answers on http://localhost:5232/ and Baikal on
 # http://localhost:8801/dav.php/, both as davenport/davenport. Those
-# credentials are throwaway and public by design: the stack binds to
-# loopback, holds nothing but test data, and goes away with its volumes.
-# Radicale keeps its upstream default port; Baikal's upstream default is
-# 80, so it takes one clear of the range dev servers and proxies compete
-# for. Image tags are pinned, and the Baikal seed script names the same
-# version its tag does.
-#
-# See test/live/README.md.
+# credentials are throwaway and public by design. The port choice, the
+# rest of the rationale, and what depends on this file are in
+# test/live/README.md.
 
 services:
     radicale:

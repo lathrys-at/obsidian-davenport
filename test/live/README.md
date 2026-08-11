@@ -27,10 +27,12 @@ variable counts as unset. The lookups are pure functions over an injected
 record; `processEnvironment()` is the one function that reads
 `process.env`, so a caller decides when the real environment is consulted.
 
-Credential values never leave that module. An unavailable provider reports
-the *names* of the variables it wants, never their contents, and no error
-or log line from it carries a value. Anything built on top of it inherits
-that obligation.
+An unavailable provider reports the *names* of the variables it wants,
+never their contents, and no error or log line from the module carries a
+value. That guarantee ends at the return value: resolved credentials are a
+plain object holding the secret as a plain string, and keeping it out of
+logs, errors, recorded facts and workflow output is the obligation of
+whatever asked for it.
 
 ## Running locally
 
@@ -62,7 +64,9 @@ Radicale answers on `http://localhost:5232/` and Baikal on
 `http://localhost:8801/dav.php/`, both as `davenport`/`davenport`. Those
 credentials are public on purpose: the stack binds to loopback, holds
 nothing but test data, and is torn down with its volumes. The values in
-`.env.example` already match it.
+`.env.example` already match it. Radicale keeps its upstream default port;
+Baikal's upstream default is 80, so it takes one clear of the range dev
+servers and proxies compete for. Both image tags are pinned.
 
 Radicale takes its configuration and its password file from
 [`radicale/`](radicale). Baikal has no such hook, so
@@ -79,17 +83,31 @@ than the one running.
 `workflow_dispatch` only. It never runs on push and never on
 `pull_request`, so a pull request from a fork has no path to the provider
 secrets — that is the reason for the trigger, and any trigger added to that
-workflow has to preserve it. Repository secrets named for the scheme above
-are mapped into the job environment; a secret that does not exist arrives
-as the empty string, which the resolver reads as unavailable.
+workflow has to preserve it.
 
-The workflow takes a `target` input. Its one target today is `containers`:
-it brings up the compose stack, waits for both servers, confirms each
-answers `OPTIONS` on its CalDAV root with a `DAV` header, and tears the
-stack down. That job needs no secret and passes without one. Targets for
-the protocol runners arrive with the issues that add those runners.
+Repository secrets are named exactly for the variables above. A secret that
+does not exist arrives as the empty string, which reads as unavailable, so
+a partly configured repository is a working repository. **A job maps only
+the variables it reads.** A runner for one provider carries that provider's
+three and no others, and a job that consumes none — the container job is
+one — carries none at all. Widening a job's mapping to variables it does
+not read is the thing this rule exists to prevent.
+
+The `target` input picks the job. `containers` brings up the compose stack,
+waits for both servers, confirms each answers `OPTIONS` on its CalDAV root
+with a `DAV` header, and tears the stack down; it takes no secret and
+passes without one. `credentials` prints which providers a dispatch can
+reach, by variable name — it is where the secret mapping lives today, and
+it treats a whitespace-only variable as unset so that it and the resolver
+never disagree about what counts as configured. Targets for the protocol
+runners arrive with the issues that add those runners.
 
 ## Conventions for what lands here
+
+Live verification is not part of `npm test` or `ci-ok`: nothing that
+reaches a server may run there. Pure unit tests of the code in this
+directory are a different thing and belong in the ordinary suite, where the
+required check gates regressions in them.
 
 Vitest collects `test/**/*.test.ts`, so a file here named `*.test.ts` runs
 in `npm test`. That is correct for
