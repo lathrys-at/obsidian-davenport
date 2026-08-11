@@ -1,0 +1,438 @@
+import { describe, expect, it } from 'vitest';
+import type { MockServerCapabilities } from './capabilities';
+import {
+	calendarQueryBody,
+	errorConditionIn,
+	hrefsIn,
+	icsEvent,
+	propfindBody,
+	readMultistatus,
+	syncCollectionBody,
+	syncTokenIn,
+} from './fixtures';
+import { unfoldLines } from './ics';
+import { MockCalDavServer } from './server';
+
+const EVENT = icsEvent({
+	uid: 'one',
+	start: '20260310T090000Z',
+	end: '20260310T100000Z',
+});
+
+function server(
+	capabilities: Partial<MockServerCapabilities> = {},
+): MockCalDavServer {
+	return new MockCalDavServer({
+		capabilities,
+		accounts: [
+			{
+				name: 'alice',
+				collections: [
+					{
+						name: 'work',
+						resources: [{ name: 'one.ics', ics: EVENT }],
+					},
+				],
+			},
+		],
+	});
+}
+
+function collectionProps(
+	mock: MockCalDavServer,
+	properties: readonly string[],
+): Promise<{ status: number; text: string }> {
+	return mock.request({
+		url: mock.collectionUrl('alice', 'work'),
+		method: 'PROPFIND',
+		headers: { Depth: '0' },
+		body: propfindBody(properties),
+	});
+}
+
+function get(mock: MockCalDavServer) {
+	return mock.request({
+		url: mock.resourceUrl('alice', 'work', 'one.ics'),
+		method: 'GET',
+	});
+}
+
+describe('capability: WebDAV-Sync support', () => {
+	it('serves the report and the token when supported', async () => {
+		const mock = server();
+		const props = await collectionProps(mock, ['d:sync-token']);
+		expect(readMultistatus(props.text)[0]?.found.get('d:sync-token')).toBe(
+			mock.syncToken('alice', 'work'),
+		);
+		const report = await mock.request({
+			url: mock.collectionUrl('alice', 'work'),
+			method: 'REPORT',
+			body: syncCollectionBody(''),
+		});
+		expect(report.status).toBe(207);
+	});
+
+	it('withholds the token and refuses the report when unsupported', async () => {
+		const mock = server({ syncCollection: 'unsupported' });
+		const props = await collectionProps(mock, ['d:sync-token']);
+		expect(readMultistatus(props.text)[0]?.missing).toContain(
+			'd:sync-token',
+		);
+		const report = await mock.request({
+			url: mock.collectionUrl('alice', 'work'),
+			method: 'REPORT',
+			body: syncCollectionBody(''),
+		});
+		expect(report.status).toBe(403);
+		expect(errorConditionIn(report.text)).toBe('d:supported-report');
+	});
+
+	it('rejects a token it issued once told to', async () => {
+		const mock = server();
+		const initial = await mock.request({
+			url: mock.collectionUrl('alice', 'work'),
+			method: 'REPORT',
+			body: syncCollectionBody(''),
+		});
+		const token = syncTokenIn(initial.text) ?? '';
+
+		mock.configure({ rejectSyncToken: true });
+		const rejected = await mock.request({
+			url: mock.collectionUrl('alice', 'work'),
+			method: 'REPORT',
+			body: syncCollectionBody(token),
+		});
+		expect(rejected.status).toBe(403);
+		expect(errorConditionIn(rejected.text)).toBe('d:valid-sync-token');
+
+		// An initial sync carries no token, so it is still answerable and is
+		// the fallback a client drops to.
+		const restart = await mock.request({
+			url: mock.collectionUrl('alice', 'work'),
+			method: 'REPORT',
+			body: syncCollectionBody(''),
+		});
+		expect(restart.status).toBe(207);
+	});
+});
+
+describe('capability: CTag behavior', () => {
+	it('advertises a CTag that moves with every write', async () => {
+		const mock = server();
+		const before = mock.collectionCtag('alice', 'work');
+		mock.seedResource('alice', 'work', 'two.ics', icsEvent({ uid: 'two' }));
+		const props = await collectionProps(mock, ['cs:getctag']);
+		const after = readMultistatus(props.text)[0]?.found.get('cs:getctag');
+		expect(after).toBe(mock.collectionCtag('alice', 'work'));
+		expect(after).not.toBe(before);
+	});
+
+	it('omits the CTag when absent', async () => {
+		const mock = server({ ctag: 'absent' });
+		expect(mock.collectionCtag('alice', 'work')).toBeNull();
+		const props = await collectionProps(mock, ['cs:getctag']);
+		expect(readMultistatus(props.text)[0]?.missing).toContain('cs:getctag');
+	});
+
+	it('holds the CTag still across a write when frozen', async () => {
+		const mock = server({ ctag: 'frozen' });
+		const before = readMultistatus(
+			(await collectionProps(mock, ['cs:getctag'])).text,
+		)[0]?.found.get('cs:getctag');
+		mock.seedResource('alice', 'work', 'two.ics', icsEvent({ uid: 'two' }));
+		const after = readMultistatus(
+			(await collectionProps(mock, ['cs:getctag'])).text,
+		)[0]?.found.get('cs:getctag');
+		expect(before).toBeDefined();
+		expect(after).toBe(before);
+	});
+});
+
+describe('capability: precondition enforcement', () => {
+	it('refuses a stale If-Match when enforcing', async () => {
+		const mock = server();
+		const response = await mock.request({
+			url: mock.resourceUrl('alice', 'work', 'one.ics'),
+			method: 'PUT',
+			headers: { 'If-Match': '"etag-stale"' },
+			body: EVENT,
+		});
+		expect(response.status).toBe(412);
+	});
+
+	it('accepts a stale If-Match when not enforcing', async () => {
+		const mock = server({ enforceIfMatch: false });
+		const response = await mock.request({
+			url: mock.resourceUrl('alice', 'work', 'one.ics'),
+			method: 'PUT',
+			headers: { 'If-Match': '"etag-stale"' },
+			body: icsEvent({ uid: 'one', summary: 'overwritten' }),
+		});
+		expect(response.status).toBe(204);
+		expect(mock.resourceIcs('alice', 'work', 'one.ics')).toContain(
+			'overwritten',
+		);
+	});
+
+	it('refuses If-None-Match on an existing resource when enforcing', async () => {
+		const mock = server();
+		const response = await mock.request({
+			url: mock.resourceUrl('alice', 'work', 'one.ics'),
+			method: 'PUT',
+			headers: { 'If-None-Match': '*' },
+			body: EVENT,
+		});
+		expect(response.status).toBe(412);
+	});
+
+	it('accepts If-None-Match on an existing resource when not enforcing', async () => {
+		const mock = server({ enforceIfNoneMatch: false });
+		const response = await mock.request({
+			url: mock.resourceUrl('alice', 'work', 'one.ics'),
+			method: 'PUT',
+			headers: { 'If-None-Match': '*' },
+			body: EVENT,
+		});
+		expect(response.status).toBe(204);
+	});
+
+	it('refuses a DELETE whose If-Match no longer matches', async () => {
+		const mock = server();
+		const response = await mock.request({
+			url: mock.resourceUrl('alice', 'work', 'one.ics'),
+			method: 'DELETE',
+			headers: { 'If-Match': '"etag-stale"' },
+		});
+		expect(response.status).toBe(412);
+		expect(mock.resourceNames('alice', 'work')).toStrictEqual(['one.ics']);
+	});
+});
+
+describe('capability: ETag stability', () => {
+	it('reports the same ETag across fetches when stable', async () => {
+		const mock = server();
+		const first = await get(mock);
+		const second = await get(mock);
+		expect(first.headers.ETag).toBe(second.headers.ETag);
+	});
+
+	it('mints a new ETag on every fetch when unstable', async () => {
+		const mock = server({ etags: 'per-fetch' });
+		const first = await get(mock);
+		const second = await get(mock);
+		expect(first.headers.ETag).not.toBe(second.headers.ETag);
+	});
+});
+
+describe('capability: response body stability', () => {
+	it('returns the stored octets when byte-stable', async () => {
+		const mock = server();
+		expect((await get(mock)).text).toBe(EVENT);
+	});
+
+	it('returns a reformatted body when re-serializing', async () => {
+		const mock = server({ getBodies: 're-serialized' });
+		const lowercased = EVENT.replace('SUMMARY:', 'summary:');
+		mock.seedResource('alice', 'work', 'one.ics', lowercased);
+		const fetched = await get(mock);
+		expect(fetched.text).not.toBe(lowercased);
+		expect(fetched.text).toBe(EVENT);
+	});
+
+	it('refolds a long line and leaves its content intact', async () => {
+		const mock = server({ getBodies: 're-serialized' });
+		const summary = 'é'.repeat(60);
+		mock.seedResource(
+			'alice',
+			'work',
+			'one.ics',
+			icsEvent({ uid: 'one', summary }),
+		);
+		const fetched = await get(mock);
+		const longest = Math.max(
+			...fetched.text
+				.split('\r\n')
+				.map((line) => new TextEncoder().encode(line).length),
+		);
+		expect(longest).toBeLessThanOrEqual(75);
+		expect(unfoldLines(fetched.text)).toContain(`SUMMARY:${summary}`);
+	});
+});
+
+describe('determinism', () => {
+	it('answers the same sequence with the same bytes on a fresh server', async () => {
+		const play = async (mock: MockCalDavServer): Promise<string[]> => {
+			const out: string[] = [];
+			out.push(
+				(
+					await mock.request({
+						url: mock.resourceUrl('alice', 'work', 'new.ics'),
+						method: 'PUT',
+						headers: { 'If-None-Match': '*' },
+						body: icsEvent({ uid: 'new' }),
+					})
+				).headers.ETag ?? '',
+			);
+			out.push((await collectionProps(mock, ['cs:getctag'])).text);
+			out.push(
+				(
+					await mock.request({
+						url: mock.collectionUrl('alice', 'work'),
+						method: 'REPORT',
+						body: syncCollectionBody(''),
+					})
+				).text,
+			);
+			return out;
+		};
+		expect(await play(server())).toStrictEqual(await play(server()));
+	});
+});
+
+describe('capability: calendar-query UID filter', () => {
+	it('filters by UID when supported', async () => {
+		const mock = server();
+		const response = await mock.request({
+			url: mock.collectionUrl('alice', 'work'),
+			method: 'REPORT',
+			body: calendarQueryBody({ uid: 'one' }),
+		});
+		expect(hrefsIn(response.text)).toStrictEqual([
+			'/calendars/alice/work/one.ics',
+		]);
+	});
+
+	it('names the filter unsupported rather than returning nothing', async () => {
+		const mock = server({ calendarQueryUidFilter: false });
+		const response = await mock.request({
+			url: mock.collectionUrl('alice', 'work'),
+			method: 'REPORT',
+			body: calendarQueryBody({ uid: 'one' }),
+		});
+		expect(response.status).toBe(403);
+		expect(errorConditionIn(response.text)).toBe('c:supported-filter');
+	});
+
+	it('still answers a query that names no UID', async () => {
+		const mock = server({ calendarQueryUidFilter: false });
+		const response = await mock.request({
+			url: mock.collectionUrl('alice', 'work'),
+			method: 'REPORT',
+			body: calendarQueryBody({}),
+		});
+		expect(response.status).toBe(207);
+	});
+});
+
+describe('capability: managed attachments', () => {
+	it('advertises neither the property nor the compliance class when off', async () => {
+		const mock = server();
+		const props = await mock.request({
+			url: mock.homeUrl('alice'),
+			method: 'PROPFIND',
+			headers: { Depth: '0' },
+			body: propfindBody(['c:managed-attachments-server-URL']),
+		});
+		expect(readMultistatus(props.text)[0]?.missing).toContain(
+			'c:managed-attachments-server-URL',
+		);
+		const options = await mock.request({
+			url: mock.homeUrl('alice'),
+			method: 'OPTIONS',
+		});
+		expect(options.headers.DAV).not.toContain(
+			'calendar-managed-attachments',
+		);
+	});
+
+	it('advertises both when on', async () => {
+		const mock = server({ managedAttachments: true });
+		const props = await mock.request({
+			url: mock.homeUrl('alice'),
+			method: 'PROPFIND',
+			headers: { Depth: '0' },
+			body: propfindBody(['c:managed-attachments-server-URL']),
+		});
+		expect(
+			readMultistatus(props.text)[0]?.found.get(
+				'c:managed-attachments-server-URL',
+			),
+		).toBe('/attachments/');
+		const options = await mock.request({
+			url: mock.homeUrl('alice'),
+			method: 'OPTIONS',
+		});
+		expect(options.headers.DAV).toContain('calendar-managed-attachments');
+	});
+});
+
+describe('capability: fault injection', () => {
+	it('answers a matching request with the injected status the stated number of times', async () => {
+		const mock = server({
+			faults: [{ kind: 'status', method: 'PUT', status: 503, times: 2 }],
+		});
+		const attempts = [];
+		for (let attempt = 0; attempt < 3; attempt += 1) {
+			attempts.push(
+				(
+					await mock.request({
+						url: mock.resourceUrl('alice', 'work', 'one.ics'),
+						method: 'PUT',
+						body: EVENT,
+					})
+				).status,
+			);
+		}
+		expect(attempts).toStrictEqual([503, 503, 204]);
+	});
+
+	it('leaves other requests alone', async () => {
+		const mock = server({
+			faults: [{ kind: 'status', pathContains: '/chores/', status: 500 }],
+		});
+		expect((await get(mock)).text).toBe(EVENT);
+	});
+
+	it('cuts a response short without changing its status', async () => {
+		const mock = server({
+			faults: [{ kind: 'truncate', method: 'GET', truncateAfter: 20 }],
+		});
+		const response = await mock.request({
+			url: mock.resourceUrl('alice', 'work', 'one.ics'),
+			method: 'GET',
+		});
+		expect(response.status).toBe(200);
+		expect(response.text).toBe(EVENT.slice(0, 20));
+		expect(response.arrayBuffer.byteLength).toBe(20);
+	});
+});
+
+describe('capability: discovery redirects', () => {
+	it('answers an injected hop with a redirect the client must follow', async () => {
+		const mock = server({
+			redirects: {
+				'/.well-known/caldav': {
+					location: '/principals/alice/',
+					status: 302,
+				},
+			},
+		});
+		const response = await mock.request({
+			url: mock.wellKnownUrl,
+			method: 'PROPFIND',
+			body: propfindBody(['d:current-user-principal']),
+		});
+		expect(response.status).toBe(302);
+		expect(response.headers.Location).toBe(mock.principalUrl('alice'));
+	});
+
+	it('serves nothing at the well-known path without a redirect', async () => {
+		const mock = server();
+		const response = await mock.request({
+			url: mock.wellKnownUrl,
+			method: 'PROPFIND',
+			body: propfindBody(['d:current-user-principal']),
+		});
+		expect(response.status).toBe(404);
+	});
+});
