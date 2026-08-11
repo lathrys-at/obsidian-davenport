@@ -9,11 +9,9 @@
 ## Environment & tooling
 
 - Node.js: use current LTS (Node 18+ recommended).
-- **Package manager: npm** (required for this sample - `package.json` defines npm scripts and dependencies).
-- **Bundler: esbuild** (required for this sample - `esbuild.config.mjs` and build scripts depend on it). Alternative bundlers like Rollup or webpack are acceptable for other projects if they bundle all external dependencies into `main.js`.
+- **Package manager: npm** (`package.json` defines the scripts and dependencies).
+- **Bundler: esbuild** (`esbuild.config.mjs` and the build scripts depend on it).
 - Types: `obsidian` type definitions.
-
-**Note**: This sample project has specific technical dependencies on npm and esbuild. If you're creating a plugin from scratch, you can choose different tools, but you'll need to replace the build configuration accordingly.
 
 ### Install
 
@@ -43,21 +41,16 @@ npm run build
 
 - **Organize code into multiple files**: Split functionality across separate modules rather than putting everything in `main.ts`.
 - Source lives in `src/`. Keep `main.ts` small and focused on plugin lifecycle (loading, unloading, registering commands).
-- **Example file structure**:
+- **File structure** (ports-and-adapters; the boundary rule is in `src/adapters/README.md`):
     ```
     src/
-      main.ts           # Plugin entry point, lifecycle management
-      settings.ts       # Settings interface and defaults
-      commands/         # Command implementations
-        command1.ts
-        command2.ts
-      ui/              # UI components, modals, views
-        modal.ts
-        view.ts
-      utils/           # Utility functions, helpers
-        helpers.ts
-        constants.ts
-      types.ts         # TypeScript interfaces and types
+      main.ts           # Plugin entry point, lifecycle only
+      core/             # Platform-free engine: no obsidian/electron/node
+        model/          # Domain types (events, records, identity, registry)
+        ports/          # Interfaces the engine depends on (transport,
+                        #   vault, device store, clock, logger)
+      adapters/         # Port implementations over platform APIs
+      ui/               # Views, modals, settings tab (arrives with features)
     ```
 - **Do not commit build artifacts**: Never commit `node_modules/`, `main.js`, or other generated files to version control.
 - Keep the plugin small. Avoid large dependencies. Prefer browser-compatible packages.
@@ -130,6 +123,7 @@ Follow Obsidian's **Developer Policies** and **Plugin Guidelines**. In particula
 ## Coding conventions
 
 - TypeScript with `"strict": true` preferred.
+- Code comments are plain prose stating the contract. Subsection anchors — spec `§` references, test-plan IDs, issue numbers — never appear in code comments; link out to documentation only when absolutely necessary.
 - **Keep `main.ts` minimal**: Focus only on plugin lifecycle (onload, onunload, addCommand calls). Delegate all feature logic to separate modules.
 - **Split large files**: If any file exceeds ~200-300 lines, consider breaking it into smaller, focused modules.
 - **Use clear module boundaries**: Each file should have a single, well-defined responsibility.
@@ -162,55 +156,12 @@ Follow Obsidian's **Developer Policies** and **Plugin Guidelines**. In particula
 
 ### Organize code across multiple files
 
-**main.ts** (minimal, lifecycle only):
-
-```ts
-import { Plugin } from 'obsidian';
-import { MySettings, DEFAULT_SETTINGS } from './settings';
-import { registerCommands } from './commands';
-
-export default class MyPlugin extends Plugin {
-	settings!: MySettings;
-
-	async onload() {
-		this.settings = Object.assign(
-			{},
-			DEFAULT_SETTINGS,
-			(await this.loadData()) as Partial<MySettings>,
-		);
-		registerCommands(this);
-	}
-}
-```
-
-**settings.ts**:
-
-```ts
-export interface MySettings {
-	enabled: boolean;
-	apiKey: string;
-}
-
-export const DEFAULT_SETTINGS: MySettings = {
-	enabled: true,
-	apiKey: '',
-};
-```
-
-**commands/index.ts**:
-
-```ts
-import { Plugin } from 'obsidian';
-import { doSomething } from './my-command';
-
-export function registerCommands(plugin: Plugin) {
-	plugin.addCommand({
-		id: 'do-something',
-		name: 'Do something',
-		callback: () => doSomething(plugin),
-	});
-}
-```
+`src/main.ts` stays lifecycle-only: it constructs adapters, wires them into
+core through the port interfaces, and registers commands and views as
+features land. Engine logic lives in `src/core/` and never imports platform
+modules; adapters implement `src/core/ports/` over the Obsidian API. When
+adding a feature, put its domain logic in core, its platform glue in an
+adapter, and only its registration in `main.ts`.
 
 ### Add a command
 
@@ -225,11 +176,11 @@ this.addCommand({
 ### Persist settings
 
 ```ts
-interface MySettings { enabled: boolean }
-const DEFAULT_SETTINGS: MySettings = { enabled: true };
+interface PluginSettings { enabled: boolean }
+const DEFAULT_SETTINGS: PluginSettings = { enabled: true };
 
 async onload() {
-  this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData() as Partial<MySettings>);
+  this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData() as Partial<PluginSettings>);
   await this.saveData(this.settings);
 }
 ```
