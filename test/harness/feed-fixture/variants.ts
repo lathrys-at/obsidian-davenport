@@ -4,14 +4,10 @@
  * time, so the same declaration always produces the same octets.
  */
 
+import { encodeIcsBytes } from '../ics-octets';
 import type { FeedEventSpec } from './events';
 import { instantLine } from './events';
-import {
-	encodeIcsBytes,
-	escapeIcsText,
-	icsText,
-	icsUtcStamp,
-} from './ics-text';
+import { escapeIcsText, icsText, icsUtcStamp } from './ics-text';
 
 export interface FeedVariantContext {
 	/** One-based count of polls this feed has served, this one included. */
@@ -31,7 +27,12 @@ export interface ServedBody {
 export interface EventsVariantOptions {
 	/** Re-stamps DTSTAMP on every poll, deriving it from the poll counter. */
 	readonly dtstampChurn?: boolean;
-	/** Mints a fresh UID for every event on every poll. */
+	/**
+	 * Mints a fresh UID for every event on every poll, keyed by the UID the
+	 * event declares: two events declaring one UID are served one minted UID,
+	 * so an in-feed duplicate stays a duplicate. An event declaring no UID
+	 * still serves no UID line.
+	 */
 	readonly uidReminting?: boolean;
 	readonly prodId?: string;
 	readonly calendarName?: string;
@@ -148,27 +149,41 @@ function dtstampFor(
 }
 
 /**
- * A re-minting generator hands out UIDs bearing no trace of the previous
- * poll's, so a consumer cannot pair polls by UID text — only by content.
+ * What each declared UID is served as. A re-minting generator hands out UIDs
+ * bearing no trace of the previous poll's, so a consumer cannot pair polls by
+ * UID text — only by content. A minted UID is derived from the position of
+ * the first event declaring it rather than from each event's own position,
+ * which is what keeps two events sharing a UID sharing the minted one. A feed
+ * that does not re-mint declares nothing here and serves every UID as it
+ * stands.
  */
-function uidFor(
-	event: FeedEventSpec,
-	index: number,
+function mintedUids(
+	specs: readonly FeedEventSpec[],
 	options: EventsVariantOptions,
 	context: FeedVariantContext,
-): string | undefined {
-	if (event.uid === undefined) return undefined;
-	if (options.uidReminting !== true) return event.uid;
-	return `p${String(context.poll)}-e${String(index)}@remint.feed.test`;
+): ReadonlyMap<string, string> {
+	const minted = new Map<string, string>();
+	if (options.uidReminting !== true) return minted;
+	specs.forEach((spec, index) => {
+		if (spec.uid === undefined || minted.has(spec.uid)) return;
+		minted.set(
+			spec.uid,
+			`p${String(context.poll)}-e${String(index)}@remint.feed.test`,
+		);
+	});
+	return minted;
 }
 
 function eventLines(
 	event: FeedEventSpec,
-	index: number,
+	minted: ReadonlyMap<string, string>,
 	options: EventsVariantOptions,
 	context: FeedVariantContext,
 ): string[] {
-	const uid = uidFor(event, index, options, context);
+	const uid =
+		event.uid === undefined
+			? undefined
+			: (minted.get(event.uid) ?? event.uid);
 	const lines = ['BEGIN:VEVENT'];
 	if (uid !== undefined) lines.push(`UID:${uid}`);
 	lines.push(`DTSTAMP:${dtstampFor(options, context)}`);
@@ -203,9 +218,10 @@ function calendarLines(
 	if (options.calendarName !== undefined) {
 		lines.push(`X-WR-CALNAME:${escapeIcsText(options.calendarName)}`);
 	}
-	specs.forEach((spec, index) => {
-		lines.push(...eventLines(spec, index, options, context));
-	});
+	const minted = mintedUids(specs, options, context);
+	for (const spec of specs) {
+		lines.push(...eventLines(spec, minted, options, context));
+	}
 	lines.push('END:VCALENDAR');
 	return lines;
 }

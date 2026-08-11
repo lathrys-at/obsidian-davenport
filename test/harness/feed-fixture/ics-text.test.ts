@@ -1,12 +1,11 @@
 import { describe, expect, it } from 'vitest';
+import { ICS_LINE_OCTET_LIMIT, octetLength } from '../ics-octets';
 import {
-	ICS_LINE_OCTET_LIMIT,
 	escapeIcsText,
 	foldIcsLine,
 	icsDateStamp,
 	icsText,
 	icsUtcStamp,
-	octetLength,
 } from './ics-text';
 
 /** The physical lines of an iCalendar text, their CRLF terminators removed. */

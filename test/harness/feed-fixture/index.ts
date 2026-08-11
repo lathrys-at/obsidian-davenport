@@ -19,12 +19,15 @@ export {
 } from './events';
 export {
 	ICS_LINE_OCTET_LIMIT,
+	encodeIcsBytes,
+	octetLength,
+} from '../ics-octets';
+export {
 	escapeIcsText,
 	foldIcsLine,
 	icsDateStamp,
 	icsText,
 	icsUtcStamp,
-	octetLength,
 } from './ics-text';
 export type {
 	BeyondScript,
@@ -34,7 +37,7 @@ export type {
 	FeedScript,
 	ScriptedPollsOptions,
 } from './server';
-export { createFeedFixture, scriptedPolls } from './server';
+export { FeedScriptError, createFeedFixture, scriptedPolls } from './server';
 export type {
 	EventsVariantOptions,
 	FeedVariant,

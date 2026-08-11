@@ -14,15 +14,35 @@ import type {
 	HttpResponse,
 	HttpTransport,
 } from '../../../src/core/ports/transport';
-import { encodeIcsBytes } from './ics-text';
+import { encodeIcsBytes } from '../ics-octets';
 import type { FeedVariant, ServedBody } from './variants';
 import { renderVariant } from './variants';
 
-/** What a feed serves once its scripted polls run out. */
+/**
+ * A script that cannot serve what it was asked for. Everything a script can
+ * get wrong on its own — no polls, a gap in the run, a poll named outside it —
+ * raises this while the script is being built; a script that runs out under
+ * `exhausted` raises it when the poll it cannot answer arrives.
+ */
+export class FeedScriptError extends Error {
+	constructor(message: string) {
+		super(message);
+		this.name = 'FeedScriptError';
+	}
+}
+
+/**
+ * What a feed serves once its scripted polls run out. `exhausted` serves
+ * nothing and raises a script error instead.
+ */
 export type BeyondScript = FeedVariant | 'repeat-last' | 'exhausted';
 
 export interface FeedScript {
-	/** Variants for polls one upward, in order. */
+	/**
+	 * Variants for polls one upward, in order. The run has to be complete: a
+	 * gap in it is a script the fixture refuses to build, rather than a poll
+	 * that falls through to the beyond-the-script behavior.
+	 */
 	readonly polls: readonly FeedVariant[];
 	readonly beyond?: BeyondScript;
 }
@@ -40,10 +60,20 @@ export interface FeedRequestRecord {
 	readonly url: string;
 	readonly method: string;
 	readonly status: number;
-	/** Which poll of that feed this was; zero when the URL is not a feed. */
+	/** Which poll of that feed this was; zero when no poll was served. */
 	readonly poll: number;
 }
 
+/**
+ * The transport a suite holds. Every scripted answer resolves, whatever
+ * status it carries, and the fixture models no transport failure of its own,
+ * so the only rejection it produces is a `FeedScriptError` from a script that
+ * ran out. A suite tells that apart from a modelled failure by type —
+ * `error instanceof FeedScriptError` — rather than by which channel it
+ * arrived on, which is what keeps the distinction through a transport that
+ * wraps this one. A script error leaves the poll counter and the request log
+ * where they were, so the same poll is asked for again.
+ */
 export interface FeedFixture extends HttpTransport {
 	/** Every request the fixture has answered, in order. */
 	readonly log: readonly FeedRequestRecord[];
@@ -63,11 +93,13 @@ export interface ScriptedPollsOptions {
 /** A run of polls serving one variant, with named polls serving another. */
 export function scriptedPolls(options: ScriptedPollsOptions): FeedVariant[] {
 	const { base, count, at = {} } = options;
-	if (count < 1) throw new Error('a feed script needs at least one poll');
+	if (count < 1) {
+		throw new FeedScriptError('a feed script needs at least one poll');
+	}
 	for (const key of Object.keys(at)) {
 		const poll = Number(key);
 		if (!Number.isInteger(poll) || poll < 1 || poll > count) {
-			throw new Error(
+			throw new FeedScriptError(
 				`poll ${key} falls outside the scripted 1..${String(count)}`,
 			);
 		}
@@ -99,29 +131,63 @@ function toResponse(body: ServedBody): HttpResponse {
 	};
 }
 
+/** A script whose run is complete and whose beyond-the-script answer is fixed. */
+interface PreparedScript {
+	readonly polls: readonly FeedVariant[];
+	readonly beyond:
+		| { readonly kind: 'variant'; readonly variant: FeedVariant }
+		| { readonly kind: 'exhausted' };
+}
+
+/**
+ * Checks a declared script and settles what it serves past its last poll, so
+ * serving a poll answers from data that is already known to be complete.
+ */
+function prepareScript(url: string, script: FeedScript): PreparedScript {
+	const polls: FeedVariant[] = [];
+	for (let index = 0; index < script.polls.length; index++) {
+		const variant = script.polls[index];
+		if (variant === undefined) {
+			throw new FeedScriptError(
+				`feed ${url} declares no variant for poll ${String(index + 1)} of ${String(script.polls.length)}`,
+			);
+		}
+		polls.push(variant);
+	}
+	const beyond = script.beyond ?? 'repeat-last';
+	if (typeof beyond !== 'string') {
+		return { polls, beyond: { kind: 'variant', variant: beyond } };
+	}
+	const last = polls[polls.length - 1];
+	if (last === undefined) {
+		throw new FeedScriptError(`feed ${url} declares no polls`);
+	}
+	return {
+		polls,
+		beyond:
+			beyond === 'exhausted'
+				? { kind: 'exhausted' }
+				: { kind: 'variant', variant: last },
+	};
+}
+
 function variantForPoll(
-	script: FeedScript,
+	script: PreparedScript,
 	poll: number,
 	url: string,
 ): FeedVariant {
 	const scripted = script.polls[poll - 1];
 	if (scripted !== undefined) return scripted;
-	const beyond = script.beyond ?? 'repeat-last';
-	if (beyond === 'exhausted') {
-		throw new Error(
+	if (script.beyond.kind === 'exhausted') {
+		throw new FeedScriptError(
 			`feed ${url} scripted ${String(script.polls.length)} polls and poll ${String(poll)} has nothing to serve`,
 		);
 	}
-	if (beyond !== 'repeat-last') return beyond;
-	const last = script.polls[script.polls.length - 1];
-	if (last === undefined) {
-		throw new Error(`feed ${url} declares no poll to repeat`);
-	}
-	return last;
+	return script.beyond.variant;
 }
 
 class ScriptedFeedFixture implements FeedFixture {
-	private readonly scripts: Map<string, FeedScript>;
+	private readonly scripts: Map<string, PreparedScript>;
 	private readonly polls = new Map<string, number>();
 	private readonly entries: FeedRequestRecord[] = [];
 	private readonly referenceTime: number;
@@ -130,15 +196,12 @@ class ScriptedFeedFixture implements FeedFixture {
 	constructor(options: FeedFixtureOptions) {
 		this.referenceTime = options.referenceTime;
 		this.churnStepMs = options.churnStepMs ?? DEFAULT_CHURN_STEP_MS;
-		this.scripts = new Map(Object.entries(options.feeds));
-		for (const [url, script] of this.scripts) {
-			const repeats =
-				script.beyond === undefined ||
-				typeof script.beyond === 'string';
-			if (script.polls.length === 0 && repeats) {
-				throw new Error(`feed ${url} declares no polls`);
-			}
-		}
+		this.scripts = new Map(
+			Object.entries(options.feeds).map(([url, script]) => [
+				url,
+				prepareScript(url, script),
+			]),
+		);
 	}
 
 	get log(): readonly FeedRequestRecord[] {
