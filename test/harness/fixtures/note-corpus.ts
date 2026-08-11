@@ -5,11 +5,11 @@
  * a mapping, and one that does not parse.
  *
  * The notes are data files under `notes/`; this module is the typed way
- * into them. Anything driving a real vault can read the same files from
- * disk.
+ * into them, read when it loads. Anything driving a real vault can read the
+ * same files from disk.
  */
 
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 
 export interface NoteFixture {
@@ -42,6 +42,14 @@ const IDS: readonly string[] = [
 ];
 
 export const NOTE_FIXTURES: readonly NoteFixture[] = IDS.map(readFixture);
+
+/** The fixture names present on disk, whatever the list above holds. */
+export function noteFixtureNamesOnDisk(): readonly string[] {
+	return readdirSync(FIXTURE_DIR)
+		.filter((file) => file.endsWith(FIXTURE_EXTENSION))
+		.map((file) => file.slice(0, -FIXTURE_EXTENSION.length))
+		.sort();
+}
 
 /** The fixture with this id, or an error naming the ids there are. */
 export function noteFixture(id: string): NoteFixture {

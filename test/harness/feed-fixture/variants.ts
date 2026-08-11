@@ -149,32 +149,41 @@ function dtstampFor(
 }
 
 /**
- * A re-minting generator hands out UIDs bearing no trace of the previous
- * poll's, so a consumer cannot pair polls by UID text — only by content. The
- * minted UID is derived from the position of the first event declaring that
- * UID rather than from the event's own position, which is what keeps two
- * events sharing a UID sharing the minted one.
+ * What each declared UID is served as. A re-minting generator hands out UIDs
+ * bearing no trace of the previous poll's, so a consumer cannot pair polls by
+ * UID text — only by content. A minted UID is derived from the position of
+ * the first event declaring it rather than from each event's own position,
+ * which is what keeps two events sharing a UID sharing the minted one. A feed
+ * that does not re-mint declares nothing here and serves every UID as it
+ * stands.
  */
-function uidFor(
-	event: FeedEventSpec,
+function mintedUids(
 	specs: readonly FeedEventSpec[],
 	options: EventsVariantOptions,
 	context: FeedVariantContext,
-): string | undefined {
-	const declared = event.uid;
-	if (declared === undefined) return undefined;
-	if (options.uidReminting !== true) return declared;
-	const slot = specs.findIndex((spec) => spec.uid === declared);
-	return `p${String(context.poll)}-e${String(slot)}@remint.feed.test`;
+): ReadonlyMap<string, string> {
+	const minted = new Map<string, string>();
+	if (options.uidReminting !== true) return minted;
+	specs.forEach((spec, index) => {
+		if (spec.uid === undefined || minted.has(spec.uid)) return;
+		minted.set(
+			spec.uid,
+			`p${String(context.poll)}-e${String(index)}@remint.feed.test`,
+		);
+	});
+	return minted;
 }
 
 function eventLines(
 	event: FeedEventSpec,
-	specs: readonly FeedEventSpec[],
+	minted: ReadonlyMap<string, string>,
 	options: EventsVariantOptions,
 	context: FeedVariantContext,
 ): string[] {
-	const uid = uidFor(event, specs, options, context);
+	const uid =
+		event.uid === undefined
+			? undefined
+			: (minted.get(event.uid) ?? event.uid);
 	const lines = ['BEGIN:VEVENT'];
 	if (uid !== undefined) lines.push(`UID:${uid}`);
 	lines.push(`DTSTAMP:${dtstampFor(options, context)}`);
@@ -209,8 +218,9 @@ function calendarLines(
 	if (options.calendarName !== undefined) {
 		lines.push(`X-WR-CALNAME:${escapeIcsText(options.calendarName)}`);
 	}
+	const minted = mintedUids(specs, options, context);
 	for (const spec of specs) {
-		lines.push(...eventLines(spec, specs, options, context));
+		lines.push(...eventLines(spec, minted, options, context));
 	}
 	lines.push('END:VCALENDAR');
 	return lines;

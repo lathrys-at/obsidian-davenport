@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import type { HttpTransport } from '../../../src/core/ports/transport';
 import type { FeedEventSpec } from './events';
 import { applyFeedDeltas, decadeSpanningCorpus, timedAt } from './events';
 import type { FeedFixture, FeedScript } from './server';
@@ -115,34 +116,49 @@ describe('scripted polls', () => {
 		expect(await poll(fixture)).toContain('Sign in required');
 	});
 
-	it('raises a script error, not a rejection, once an exhausting script runs out', async () => {
+	it('rejects with a script error once an exhausting script runs out', async () => {
 		const fixture = fixtureFor({
 			polls: [events([meeting])],
 			beyond: 'exhausted',
 		});
 		await poll(fixture);
-		expect(() => fixture.request({ url: FEED_URL })).toThrow(
-			FeedScriptError,
-		);
-		expect(() => fixture.request({ url: FEED_URL })).toThrow(
-			/nothing to serve/,
-		);
+		const rejection = fixture.request({ url: FEED_URL });
+		await expect(rejection).rejects.toBeInstanceOf(FeedScriptError);
+		await expect(rejection).rejects.toThrow(/nothing to serve/);
 		expect(fixture.pollsServed(FEED_URL)).toBe(1);
 		expect(fixture.log).toHaveLength(1);
 	});
 
-	it('raises a script error for a hole inside the scripted run', () => {
+	it('carries the script error through a transport wrapping the fixture', async () => {
+		const fixture = fixtureFor({
+			polls: [events([meeting])],
+			beyond: 'exhausted',
+		});
+		const retrying: HttpTransport = {
+			async request(req) {
+				return fixture.request(req);
+			},
+		};
+		expect((await retrying.request({ url: FEED_URL })).status).toBe(200);
+		await expect(
+			retrying.request({ url: FEED_URL }),
+		).rejects.toBeInstanceOf(FeedScriptError);
+	});
+
+	it('refuses a script with a hole in its run', () => {
 		const polls: FeedVariant[] = [];
 		polls[2] = events([meeting]);
-		const fixture = fixtureFor({ polls });
-		expect(() => fixture.request({ url: FEED_URL })).toThrow(
-			/no variant for poll 1/,
+		expect(() => fixtureFor({ polls })).toThrow(FeedScriptError);
+		expect(() => fixtureFor({ polls })).toThrow(
+			/no variant for poll 1 of 3/,
 		);
-		expect(fixture.pollsServed(FEED_URL)).toBe(0);
 	});
 
 	it('refuses a feed declaring no polls', () => {
 		expect(() => fixtureFor({ polls: [] })).toThrow(/declares no polls/);
+		expect(() => fixtureFor({ polls: [], beyond: 'exhausted' })).toThrow(
+			/declares no polls/,
+		);
 	});
 });
 

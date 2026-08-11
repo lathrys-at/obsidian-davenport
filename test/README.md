@@ -31,9 +31,10 @@ port. A feed is a script — poll N serves the variant declared for it — and
 the fixture takes its reference time from the caller, so identical scripts
 serve identical octets.
 
-`test/harness/ics-octets.ts` holds the octet limit and the UTF-8 encoding
-both directions measure with; `ics-lines.ts` reads folded text and the feed
-fixture's `ics-text.ts` writes it.
+`test/harness/ics-octets.ts` holds the octet limit and the UTF-8 encoding:
+the feed fixture's `ics-text.ts` folds against them, and the suites measure
+stored bytes with them. `ics-lines.ts` reads folded text back and needs no
+octet arithmetic of its own.
 
 Commands: `npm test` (single run), `npm run test:watch`, `npm run coverage`.
 Coverage is report-only for now.
