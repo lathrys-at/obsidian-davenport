@@ -5,6 +5,9 @@ on:
         branches: ['**']
     pull_request:
 
+permissions:
+    contents: read
+
 jobs:
     lint:
         runs-on: ubuntu-latest
@@ -53,7 +56,8 @@ jobs:
             - run: node scripts/scan-bundle.mjs
 
     # The single required check gating merges to main. Fails unless every
-    # job above succeeded.
+    # job in needs succeeded; evaluating the whole needs context means a
+    # job added to needs is gated without editing the step.
     ci-ok:
         needs: [lint, typecheck, test, build]
         if: always()
@@ -61,7 +65,4 @@ jobs:
         steps:
             - name: All required jobs succeeded
               run: |
-                  test "${{ needs.lint.result }}" = "success"
-                  test "${{ needs.typecheck.result }}" = "success"
-                  test "${{ needs.test.result }}" = "success"
-                  test "${{ needs.build.result }}" = "success"
+                  echo '${{ toJSON(needs) }}' | jq -e 'all(.[].result; . == "success")'

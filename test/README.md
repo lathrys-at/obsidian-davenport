@@ -14,5 +14,8 @@ Layout:
 - Colocated `src/**/*.test.ts` micro-unit tests are allowed for internal
   helpers; anything asserting a plan ID lives under `test/suites/`.
 
+The `harness/` and `suites/` directories are created by the issues that
+populate them; git carries no empty directories.
+
 Commands: `npm test` (single run), `npm run test:watch`, `npm run coverage`.
 Coverage is report-only for now.

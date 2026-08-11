@@ -1,8 +1,31 @@
+import { builtinModules } from 'node:module';
 import obsidianmd from 'eslint-plugin-obsidianmd';
 import globals from 'globals';
 import { globalIgnores, defineConfig } from 'eslint/config';
 import tseslint from 'typescript-eslint';
 import prettier from 'eslint-config-prettier';
+
+// Bare and node:-prefixed specifier forms of every node builtin; the prefix
+// is a convention, not a requirement, so a ban must cover both.
+const nodeBuiltinPatterns = [
+	'node:*',
+	...builtinModules,
+	...builtinModules.map((m) => `${m}/*`),
+];
+
+// no-restricted-globals only sees bare identifiers, so member spellings
+// (window.fetch, globalThis.setTimeout) need selector-based guards too.
+const globalObjects = '/^(window|globalThis|self|global|activeWindow)$/';
+const memberFetch = [
+	`MemberExpression[computed=false][object.name=${globalObjects}][property.name='fetch']`,
+	`MemberExpression[computed=true][object.name=${globalObjects}][property.value='fetch']`,
+];
+const memberTimers = [
+	`MemberExpression[computed=false][object.name=${globalObjects}][property.name=/^(setTimeout|setInterval|setImmediate)$/]`,
+	`MemberExpression[computed=true][object.name=${globalObjects}][property.value=/^(setTimeout|setInterval|setImmediate)$/]`,
+];
+const fetchMessage =
+	'Network I/O goes through the transport port (requestUrl-backed).';
 
 export default defineConfig(
 	globalIgnores([
@@ -11,7 +34,6 @@ export default defineConfig(
 		'coverage',
 		'esbuild.config.mjs',
 		'version-bump.mjs',
-		'scripts',
 		'versions.json',
 		'main.js',
 		'package.json',
@@ -25,7 +47,11 @@ export default defineConfig(
 			},
 			parserOptions: {
 				projectService: {
-					allowDefaultProject: ['eslint.config.mts', 'manifest.json'],
+					allowDefaultProject: [
+						'eslint.config.mts',
+						'manifest.json',
+						'scripts/*.mjs',
+					],
 				},
 				tsconfigRootDir: import.meta.dirname,
 				extraFileExtensions: ['.json'],
@@ -40,6 +66,21 @@ export default defineConfig(
 			tseslint.configs.stylisticTypeChecked,
 		],
 	},
+	// Build tooling and this config run under node by design; the
+	// obsidianmd rules police plugin code, not tooling.
+	{
+		name: 'davenport/tooling',
+		files: ['scripts/**/*.mjs', 'eslint.config.mts'],
+		languageOptions: {
+			globals: {
+				...globals.node,
+			},
+		},
+		rules: {
+			'obsidianmd/no-nodejs-modules': 'off',
+			'obsidianmd/rule-custom-message': 'off',
+		},
+	},
 	// All network I/O flows through the transport port; the Obsidian
 	// adapter backs it with requestUrl. A direct fetch breaks on mobile.
 	{
@@ -50,9 +91,15 @@ export default defineConfig(
 				'error',
 				{
 					name: 'fetch',
-					message:
-						'Network I/O goes through the transport port (requestUrl-backed).',
+					message: fetchMessage,
 				},
+			],
+			'no-restricted-syntax': [
+				'error',
+				...memberFetch.map((selector) => ({
+					selector,
+					message: fetchMessage,
+				})),
 			],
 		},
 	},
@@ -68,7 +115,7 @@ export default defineConfig(
 				{
 					patterns: [
 						{
-							group: ['node:*'],
+							group: nodeBuiltinPatterns,
 							message:
 								'Node APIs are desktop-only; they live in src/adapters/desktop/.',
 						},
@@ -78,11 +125,14 @@ export default defineConfig(
 		},
 	},
 	// The engine core is platform-free: no Obsidian, no Electron, no Node,
-	// no ambient time or timers — time flows through the clock port.
+	// no ambient time or timers — time flows through the clock port. The
+	// obsidianmd rules steering code toward window.setTimeout are disabled
+	// here because core may not use any spelling of ambient timers.
 	{
 		name: 'davenport/core-boundary',
 		files: ['src/core/**/*.ts'],
 		rules: {
+			'obsidianmd/prefer-window-timers': 'off',
 			'no-restricted-imports': [
 				'error',
 				{
@@ -99,7 +149,7 @@ export default defineConfig(
 					],
 					patterns: [
 						{
-							group: ['node:*'],
+							group: nodeBuiltinPatterns,
 							message: 'Core is platform-free.',
 						},
 					],
@@ -109,8 +159,7 @@ export default defineConfig(
 				'error',
 				{
 					name: 'fetch',
-					message:
-						'Network I/O goes through the transport port (requestUrl-backed).',
+					message: fetchMessage,
 				},
 				{
 					name: 'setTimeout',
@@ -137,6 +186,14 @@ export default defineConfig(
 					message:
 						'Zero-argument new Date() reads ambient time; use the clock port.',
 				},
+				...memberFetch.map((selector) => ({
+					selector,
+					message: fetchMessage,
+				})),
+				...memberTimers.map((selector) => ({
+					selector,
+					message: 'Timers come from the clock port.',
+				})),
 			],
 		},
 	},

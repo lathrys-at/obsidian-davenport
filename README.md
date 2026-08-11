@@ -13,9 +13,12 @@ ship read-only ICS feed subscriptions; CalDAV sync follows.
 
 ```
 npm install
-npm run dev     # watch build
-npm run build   # production build
+npm run dev        # watch build
+npm run build      # production build
+npm test           # test suite (see test/README.md)
+npm run typecheck
 npm run lint
+npm run format
 ```
 
 Design documentation: [docs/davenport-spec.md](docs/davenport-spec.md) and

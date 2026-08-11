@@ -2,6 +2,5 @@ node_modules
 main.js
 coverage
 package-lock.json
-docs/
 *.md
 .github/
