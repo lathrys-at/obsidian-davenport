@@ -5,14 +5,37 @@
  * serves the attachment back at the URI it minted, so the capability is
  * observable in the resource and not only in what the server advertises.
  *
+ * Three rules bound an attachment's life, because a suite asserting on the
+ * attachment path is entitled to know them rather than discover them:
+ *
+ * An attachment POST rewrites the resource, so it is a write like a PUT
+ * and carries the same `If-Match` gate where the run enforces one. A
+ * refused POST stores no bytes, rewrites nothing, and enters nothing in
+ * the scheduling record, since nothing left the server.
+ *
+ * An attachment belongs to the resource it was minted against and does not
+ * outlive it: removing that resource, by request or out of band, removes
+ * its attachments and their URIs answer 404 from then on. A write that
+ * merely drops the ATTACH property is not a removal — the bytes stay
+ * reachable, as they do on a server that collects them on its own schedule.
+ *
+ * Turning the capability off is the server not having it: the store is kept
+ * but nothing reaches it, so a stored attachment answers 404 for as long as
+ * the capability is off and is reachable again when it comes back. Nothing
+ * is deleted by the toggle, so a suite can turn the capability off mid-run
+ * without the state under it changing.
+ *
  * Boundaries: there are no size or count limits, no per-attendee access
  * control, and an attachment belongs to the whole resource rather than to
  * one recurrence instance.
  */
 
 import type { MockServerCapabilities } from './capabilities';
+import { icsLineParts } from '../ics-lines';
+import { octetLength } from '../ics-octets';
 import { readIcs } from './ics';
 import type { SchedulingFact } from './observation';
+import { checkIfMatch } from './resource';
 import { plain, preconditionError, type MockResponse } from './response';
 import type { AttachmentState, Route, ServerState } from './state';
 import { CALDAV_NS } from './xml';
@@ -28,6 +51,7 @@ export interface AttachmentContext {
 	readonly origin: string;
 	readonly contentType: string | null;
 	readonly disposition: string | null;
+	readonly ifMatch: string | null;
 	readonly recordScheduling: (fact: SchedulingFact) => void;
 }
 
@@ -49,6 +73,10 @@ export function handleAttachmentPost(
 	if (route.kind !== 'resource') {
 		return plain(405);
 	}
+	const refusal = checkIfMatch(route.resource.etag, context);
+	if (refusal) {
+		return refusal;
+	}
 	const managedId = query.get('managed-id');
 	switch (action) {
 		case 'attachment-add':
@@ -62,7 +90,17 @@ export function handleAttachmentPost(
 	}
 }
 
-export function attachmentBody(attachment: AttachmentState): MockResponse {
+/**
+ * The bytes stored at an attachment URI. A server without the capability
+ * has no such URI, so one is served only while the capability is on.
+ */
+export function handleAttachmentGet(
+	attachment: AttachmentState,
+	caps: MockServerCapabilities,
+): MockResponse {
+	if (!caps.managedAttachments) {
+		return plain(404);
+	}
 	return plain(
 		200,
 		{
@@ -78,11 +116,12 @@ function addAttachment(
 	body: string,
 	context: AttachmentContext,
 ): MockResponse {
-	const attachment = context.state.addAttachment(
-		filenameOf(context.disposition),
-		context.contentType ?? DEFAULT_CONTENT_TYPE,
+	const attachment = context.state.addAttachment({
+		owner: route.resource.href,
+		filename: filenameOf(context.disposition),
+		contentType: context.contentType ?? DEFAULT_CONTENT_TYPE,
 		body,
-	);
+	});
 	const etag = store(
 		route,
 		withProperty(
@@ -179,7 +218,7 @@ function store(
 }
 
 function attachLine(attachment: AttachmentState, origin: string): string {
-	const size = new TextEncoder().encode(attachment.body).length;
+	const size = octetLength(attachment.body);
 	return [
 		'ATTACH',
 		`;MANAGED-ID=${attachment.managedId}`,
@@ -192,7 +231,7 @@ function attachLine(attachment: AttachmentState, origin: string): string {
 
 /** Places a property last in the component the resource is about. */
 function withProperty(ics: string, property: string): string {
-	const lines = physicalLines(ics);
+	const lines = icsLineParts(ics);
 	const component = readIcs(ics).component;
 	const end =
 		component === null
@@ -207,7 +246,7 @@ function withProperty(ics: string, property: string): string {
 function withoutProperty(ics: string, managedId: string): string {
 	const kept: string[] = [];
 	let dropping = false;
-	for (const line of physicalLines(ics)) {
+	for (const line of icsLineParts(ics)) {
 		if (dropping && (line.startsWith(' ') || line.startsWith('\t'))) {
 			continue;
 		}
@@ -220,7 +259,7 @@ function withoutProperty(ics: string, managedId: string): string {
 }
 
 function carriesAttachment(ics: string, managedId: string): boolean {
-	return physicalLines(ics).some((line) => namesAttachment(line, managedId));
+	return icsLineParts(ics).some((line) => namesAttachment(line, managedId));
 }
 
 /**
@@ -239,10 +278,6 @@ function namesAttachment(line: string, managedId: string): boolean {
 		upper.includes(`${parameter}:`) ||
 		upper.endsWith(parameter)
 	);
-}
-
-function physicalLines(ics: string): string[] {
-	return ics.split(/\r\n|\n|\r/);
 }
 
 function endingOf(ics: string): string {

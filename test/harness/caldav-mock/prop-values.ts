@@ -6,6 +6,7 @@
  */
 
 import type { MockServerCapabilities } from './capabilities';
+import { octetLength } from '../ics-octets';
 import { reserialize } from './ics';
 import type { PropContext, PropTarget } from './props';
 import type { ServerState } from './state';
@@ -202,7 +203,7 @@ function resolveResourceProp(
 		};
 	}
 	if (name.ns === DAV_NS && name.local === 'getcontentlength') {
-		const length = new TextEncoder().encode(target.resource.ics).length;
+		const length = octetLength(target.resource.ics);
 		return (prop) => {
 			out.child(prop, DAV_NS, 'getcontentlength', String(length));
 		};

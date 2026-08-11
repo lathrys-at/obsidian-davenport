@@ -12,6 +12,17 @@
 export type ReportKind =
 	'sync-collection' | 'calendar-query' | 'calendar-multiget';
 
+/**
+ * How much of a request body an entry keeps: 4096 characters, after which
+ * the body is cut and the entry says it was. A calendar object is far
+ * smaller than that, so a run asserting on what it sent sees all of it,
+ * while a run that uploads something large does not hold a second copy of
+ * it for as long as the log lives. Anything scanning bodies for credential
+ * material reads what is kept, so a value hidden past the cut is a value
+ * the scan cannot report.
+ */
+export const REQUEST_BODY_CAP = 4096;
+
 export interface RequestLogEntry {
 	/** Arrival order, from zero. */
 	readonly index: number;
@@ -25,6 +36,12 @@ export interface RequestLogEntry {
 	readonly report: ReportKind | null;
 	/** The token a sync-collection presented; empty text for initial sync. */
 	readonly syncToken: string | null;
+	/** Every header the request carried, keyed by its lowercased name. */
+	readonly headers: Readonly<Record<string, string>>;
+	/** The body as sent, cut at the cap; empty text where none was sent. */
+	readonly body: string;
+	/** Whether the cap cut the body short. */
+	readonly bodyTruncated: boolean;
 	readonly status: number;
 }
 
@@ -37,10 +54,12 @@ export interface RequestLogDraft {
 	readonly ifNoneMatch: string | null;
 	readonly report: ReportKind | null;
 	readonly syncToken: string | null;
+	readonly headers: Readonly<Record<string, string>>;
+	/** The whole body; the log keeps as much of it as the cap allows. */
+	readonly body: string;
 }
 
-interface MutableLogEntry extends RequestLogDraft {
-	readonly index: number;
+interface MutableLogEntry extends RequestLogEntry {
 	status: number;
 }
 
@@ -60,7 +79,13 @@ export class RequestLog {
 	 */
 	begin(draft: RequestLogDraft): number {
 		const index = this.items.length;
-		this.items.push({ ...draft, index, status: PENDING_STATUS });
+		this.items.push({
+			...draft,
+			index,
+			body: draft.body.slice(0, REQUEST_BODY_CAP),
+			bodyTruncated: draft.body.length > REQUEST_BODY_CAP,
+			status: PENDING_STATUS,
+		});
 		return index;
 	}
 

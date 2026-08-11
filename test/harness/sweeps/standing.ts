@@ -39,9 +39,12 @@ const fetchPoisonActive: Sweep = {
 /**
  * Credential material in anything the run produced. The run declares what
  * is sensitive and this looks for it everywhere, so a value that reaches
- * frontmatter, a record, a request, or a log entry is found wherever it
- * landed. A violation names the value's label and never the value: the
- * report goes to a terminal and a CI log like any other test failure.
+ * frontmatter, a record, a request line, a request body or header, a file
+ * a sync channel carried to another device, or a log entry is found
+ * wherever it landed — the walk crosses every surface the record holds,
+ * so a surface added to the record is scanned without this being told. A
+ * violation names the value's label and never the value: the report goes
+ * to a terminal and a CI log like any other test failure.
  */
 const secretsScan: Sweep = {
 	name: 'secrets-scan',

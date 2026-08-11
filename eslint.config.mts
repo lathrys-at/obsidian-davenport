@@ -20,6 +20,12 @@ const memberFetch = [
 	`MemberExpression[computed=false][object.name=${globalObjects}][property.name='fetch']`,
 	`MemberExpression[computed=true][object.name=${globalObjects}][property.value='fetch']`,
 ];
+// Reflect.get reaches a property without naming it in a member expression,
+// so the guards above see nothing. The holder is left unconstrained: the
+// object a caller reads fetch off is as often a variable as it is a global.
+const reflectFetch = [
+	`CallExpression[callee.object.name='Reflect'][callee.property.name='get'][arguments.1.value='fetch']`,
+];
 const memberTimers = [
 	`MemberExpression[computed=false][object.name=${globalObjects}][property.name=/^(setTimeout|setInterval|setImmediate)$/]`,
 	`MemberExpression[computed=true][object.name=${globalObjects}][property.value=/^(setTimeout|setInterval|setImmediate)$/]`,
@@ -140,6 +146,24 @@ export default defineConfig(
 			],
 			'no-restricted-syntax': [
 				'error',
+				...[...memberFetch, ...reflectFetch].map((selector) => ({
+					selector,
+					message: fetchMessage,
+				})),
+			],
+		},
+	},
+	// The poison's own tests read fetch off a global by name to prove the
+	// poison replaced it, and Reflect.get is the only spelling left once the
+	// member forms are banned everywhere. The exemption is that one selector
+	// in that one file: the member spellings stay banned there, so nothing
+	// but the test's own reader gets through.
+	{
+		name: 'davenport/fetch-poison-reflect',
+		files: ['test/harness/sweeps/fetch-poison.test.ts'],
+		rules: {
+			'no-restricted-syntax': [
+				'error',
 				...memberFetch.map((selector) => ({
 					selector,
 					message: fetchMessage,
@@ -230,7 +254,7 @@ export default defineConfig(
 					message:
 						'Zero-argument new Date() reads ambient time; use the clock port.',
 				},
-				...memberFetch.map((selector) => ({
+				...[...memberFetch, ...reflectFetch].map((selector) => ({
 					selector,
 					message: fetchMessage,
 				})),

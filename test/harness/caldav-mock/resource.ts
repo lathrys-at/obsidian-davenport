@@ -125,7 +125,7 @@ function checkPreconditions(
 	currentEtag: string | null,
 	context: WriteContext,
 ): MockResponse | null {
-	const { caps, ifMatch, ifNoneMatch } = context;
+	const { caps, ifNoneMatch } = context;
 	if (caps.enforceIfNoneMatch && ifNoneMatch !== null) {
 		const wanted = ifNoneMatch.trim();
 		const blocked =
@@ -137,14 +137,28 @@ function checkPreconditions(
 			return plain(412);
 		}
 	}
-	if (caps.enforceIfMatch && ifMatch !== null) {
-		const wanted = ifMatch.trim();
-		if (currentEtag === null) {
-			return plain(412);
-		}
-		if (wanted !== '*' && !matchesEtag(wanted, currentEtag, 'strong')) {
-			return plain(412);
-		}
+	return checkIfMatch(currentEtag, context);
+}
+
+/**
+ * The `If-Match` half on its own, for the write paths that have no
+ * creation to guard. A resource that is not there fails the header
+ * however it is spelled, since there is no ETag for it to have named.
+ */
+export function checkIfMatch(
+	currentEtag: string | null,
+	context: Pick<WriteContext, 'caps' | 'ifMatch'>,
+): MockResponse | null {
+	const { caps, ifMatch } = context;
+	if (!caps.enforceIfMatch || ifMatch === null) {
+		return null;
+	}
+	const wanted = ifMatch.trim();
+	if (currentEtag === null) {
+		return plain(412);
+	}
+	if (wanted !== '*' && !matchesEtag(wanted, currentEtag, 'strong')) {
+		return plain(412);
 	}
 	return null;
 }

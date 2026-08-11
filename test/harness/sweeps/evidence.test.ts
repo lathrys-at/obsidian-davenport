@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+	NETWORK_SURFACES,
 	evidence,
 	evidenceStrings,
 	networkCursor,
@@ -26,6 +27,7 @@ describe('the evidence builder', () => {
 			caldav: { requests: [], scheduling: [] },
 			feed: { requests: [] },
 			vault: { changes: [], files: {} },
+			vaultSync: { deliveries: [] },
 			syncLog: [],
 			network: { poisoned: true, attempts: [] },
 			remoteObserved: [],
@@ -41,6 +43,16 @@ describe('the evidence builder', () => {
 describe('network cursors', () => {
 	it('count zero for a surface the caller left out', () => {
 		expect(networkCursor({ feed: 3 })).toEqual({ caldav: 0, feed: 3 });
+	});
+
+	// The vault-sync channel is evidence and not a network surface: a
+	// delivery is a sync tool moving a file, not a request to a server.
+	it('cover the surfaces that talk to a server and no others', () => {
+		expect(NETWORK_SURFACES.map((surface) => surface.key)).toEqual([
+			'caldav',
+			'feed',
+		]);
+		expect(Object.keys(networkCursor())).toEqual(['caldav', 'feed']);
 	});
 });
 

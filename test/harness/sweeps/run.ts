@@ -17,6 +17,7 @@ import type {
 import type { MockCalDavServer } from '../caldav-mock/server';
 import type { FeedFixture } from '../feed-fixture/server';
 import type { FakeVault } from '../obsidian-fake/vault';
+import type { VaultSyncChannel } from '../vault-sync/channel';
 import {
 	evidence,
 	type NetworkCursor,
@@ -40,6 +41,8 @@ export interface SimulationOptions {
 	readonly caldav?: MockCalDavServer;
 	readonly feed?: FeedFixture;
 	readonly vault?: FakeVault;
+	/** The sync channel whose landed deliveries the run answers for. */
+	readonly vaultSync?: VaultSyncChannel;
 	/** Values the run treats as credential material from the start. */
 	readonly secrets?: readonly SensitiveValue[];
 	/** Defaults to the module registry the setup file resets. */
@@ -144,7 +147,7 @@ class Simulation implements SimulationRun {
 	}
 
 	async evidence(): Promise<RunEvidence> {
-		const { caldav, feed, vault } = this.options;
+		const { caldav, feed, vault, vaultSync } = this.options;
 		return evidence({
 			name: this.name,
 			caldav: {
@@ -163,6 +166,7 @@ class Simulation implements SimulationRun {
 				),
 				files: await filesOf(vault),
 			},
+			vaultSync: { deliveries: [...(vaultSync?.log ?? [])] },
 			syncLog: [...this.syncLog],
 			network: {
 				poisoned: this.poisonedAtStart && fetchPoisonHolds(),

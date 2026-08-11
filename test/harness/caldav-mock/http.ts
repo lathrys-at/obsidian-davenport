@@ -3,6 +3,11 @@
  * port hands over a URL, headers, and a body that may be text or octets;
  * it expects back a status, headers, and both text and octets of the same
  * response.
+ *
+ * The octets counted here are an HTTP body's and not an iCalendar line's —
+ * a multistatus and an error page cross this module too — so the encoder
+ * and its decoder stay together here rather than coming from the module
+ * that holds the iCalendar line arithmetic.
  */
 
 import type { HttpResponse } from '../../../src/core/ports/transport';
@@ -19,6 +24,28 @@ export function headerReader(
 		lowered.set(key.toLowerCase(), value);
 	}
 	return (name) => lowered.get(name.toLowerCase()) ?? null;
+}
+
+/**
+ * The headers a request carried, keyed by their lowercased names. Nothing
+ * is filtered out and nothing is redacted: the log exists to be asserted
+ * against and swept, and a credential the sweeps cannot see is one they
+ * cannot report. `Authorization` is therefore here like any other header,
+ * and a request that states its content type through the port's own member
+ * rather than a header is recorded as having sent the header.
+ */
+export function headerEntries(
+	headers: Readonly<Record<string, string>> | undefined,
+	contentType: string | undefined,
+): Readonly<Record<string, string>> {
+	const lowered: Record<string, string> = {};
+	if (contentType !== undefined) {
+		lowered['content-type'] = contentType;
+	}
+	for (const [key, value] of Object.entries(headers ?? {})) {
+		lowered[key.toLowerCase()] = value;
+	}
+	return lowered;
 }
 
 export function bodyText(body: string | ArrayBuffer | undefined): string {
