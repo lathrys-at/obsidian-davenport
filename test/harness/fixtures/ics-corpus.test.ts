@@ -10,12 +10,11 @@ import {
 	type IcsCategory,
 } from './ics-corpus';
 import {
-	ICS_LINE_OCTET_LIMIT,
 	icsLogicalLines,
 	icsPhysicalLines,
 	isFoldedContinuation,
-	octetLength,
 } from '../ics-lines';
+import { ICS_LINE_OCTET_LIMIT, octetLength } from '../ics-octets';
 
 const BEGIN = 'BEGIN:';
 const END = 'END:';

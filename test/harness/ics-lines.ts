@@ -4,16 +4,6 @@
  * lines end in CRLF and that a long line is folded across several of them.
  */
 
-const encoder = new TextEncoder();
-
-/** The octet count a physical line may reach, its line break excluded. */
-export const ICS_LINE_OCTET_LIMIT = 75;
-
-/** The number of octets the text occupies encoded as UTF-8. */
-export function octetLength(text: string): number {
-	return encoder.encode(text).length;
-}
-
 /**
  * The physical lines of an iCalendar text, in order and without their line
  * breaks. The CRLF that terminates the last line ends it rather than opening

@@ -9,20 +9,8 @@
  * disk.
  */
 
-import bodyWithDashes from './notes/body-with-dashes.md?raw';
-import comments from './notes/comments.md?raw';
-import emptyFrontmatter from './notes/empty-frontmatter.md?raw';
-import keyOrderAlpha from './notes/key-order-alpha.md?raw';
-import keyOrderReverse from './notes/key-order-reverse.md?raw';
-import lists from './notes/lists.md?raw';
-import minimal from './notes/minimal.md?raw';
-import nested from './notes/nested.md?raw';
-import noFrontmatter from './notes/no-frontmatter.md?raw';
-import nonMapping from './notes/non-mapping.md?raw';
-import quoteStyles from './notes/quote-styles.md?raw';
-import scalars from './notes/scalars.md?raw';
-import unicode from './notes/unicode.md?raw';
-import unparseable from './notes/unparseable.md?raw';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 
 export interface NoteFixture {
 	/** The file name without its extension. */
@@ -32,22 +20,28 @@ export interface NoteFixture {
 	readonly content: string;
 }
 
-export const NOTE_FIXTURES: readonly NoteFixture[] = [
-	fixture('body-with-dashes', bodyWithDashes),
-	fixture('comments', comments),
-	fixture('empty-frontmatter', emptyFrontmatter),
-	fixture('key-order-alpha', keyOrderAlpha),
-	fixture('key-order-reverse', keyOrderReverse),
-	fixture('lists', lists),
-	fixture('minimal', minimal),
-	fixture('nested', nested),
-	fixture('no-frontmatter', noFrontmatter),
-	fixture('non-mapping', nonMapping),
-	fixture('quote-styles', quoteStyles),
-	fixture('scalars', scalars),
-	fixture('unicode', unicode),
-	fixture('unparseable', unparseable),
+const FIXTURE_EXTENSION = '.md';
+const FIXTURE_DIR = join(import.meta.dirname, 'notes');
+const utf8 = new TextDecoder('utf-8', { fatal: true });
+
+const IDS: readonly string[] = [
+	'body-with-dashes',
+	'comments',
+	'empty-frontmatter',
+	'key-order-alpha',
+	'key-order-reverse',
+	'lists',
+	'minimal',
+	'nested',
+	'no-frontmatter',
+	'non-mapping',
+	'quote-styles',
+	'scalars',
+	'unicode',
+	'unparseable',
 ];
+
+export const NOTE_FIXTURES: readonly NoteFixture[] = IDS.map(readFixture);
 
 /** The fixture with this id, or an error naming the ids there are. */
 export function noteFixture(id: string): NoteFixture {
@@ -61,6 +55,18 @@ export function noteFixture(id: string): NoteFixture {
 	return found;
 }
 
-function fixture(id: string, content: string): NoteFixture {
-	return { id, fileName: `${id}.md`, content };
+function readFixture(id: string): NoteFixture {
+	const fileName = `${id}${FIXTURE_EXTENSION}`;
+	const path = join(FIXTURE_DIR, fileName);
+	let content: string;
+	try {
+		content = utf8.decode(readFileSync(path));
+	} catch (error) {
+		throw new Error(
+			`note corpus: cannot read ${path}: ${
+				error instanceof Error ? error.message : String(error)
+			}`,
+		);
+	}
+	return { id, fileName, content };
 }

@@ -41,7 +41,11 @@ export interface FeedEventSpec {
 	readonly sequence?: number;
 	readonly location?: string;
 	readonly description?: string;
-	/** Content lines emitted verbatim inside the component, unescaped. */
+	/**
+	 * Content lines emitted inside the component with nothing escaped. They
+	 * are folded like every other line, so a line handed over pre-folded is
+	 * folded again rather than passed through.
+	 */
 	readonly extraLines?: readonly string[];
 }
 

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { FeedEventSpec } from './events';
 import { timedAt } from './events';
-import { ICS_LINE_OCTET_LIMIT, octetLength } from './ics-text';
+import { ICS_LINE_OCTET_LIMIT, octetLength } from '../ics-octets';
 import type { FeedVariant, FeedVariantContext } from './variants';
 import {
 	LOGIN_WALL_HTML,
@@ -137,6 +137,28 @@ describe('per-fetch misbehavior', () => {
 			expect(line).not.toContain('standup@feed.test');
 		}
 		expect(linesMatching(bodyText(reminting, 1), 'UID:')).toEqual(first);
+	});
+
+	it('mints one UID for two events declaring one, poll after poll', () => {
+		const twin: FeedEventSpec = {
+			...standup,
+			id: 'twin',
+			uid: 'meeting@feed.test',
+		};
+		const reminting = events([meeting, twin, standup], {
+			uidReminting: true,
+		});
+		const first = linesMatching(bodyText(reminting, 1), 'UID:');
+		expect(first).toHaveLength(3);
+		expect(first[0]).toBe(first[1]);
+		expect(first[2]).not.toBe(first[0]);
+		const second = linesMatching(bodyText(reminting, 2), 'UID:');
+		expect(second[0]).toBe(second[1]);
+		expect(new Set([...first, ...second]).size).toBe(4);
+		for (const line of [...first, ...second]) {
+			expect(line).not.toContain('meeting@feed.test');
+			expect(line).not.toContain('standup@feed.test');
+		}
 	});
 
 	it('leaves a UID-less event UID-less under re-minting', () => {

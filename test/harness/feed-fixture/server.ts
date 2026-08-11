@@ -14,15 +14,36 @@ import type {
 	HttpResponse,
 	HttpTransport,
 } from '../../../src/core/ports/transport';
-import { encodeIcsBytes } from './ics-text';
+import { encodeIcsBytes } from '../ics-octets';
 import type { FeedVariant, ServedBody } from './variants';
 import { renderVariant } from './variants';
 
-/** What a feed serves once its scripted polls run out. */
+/**
+ * A script that cannot answer the poll it was asked for: it ran out, it
+ * carries a hole where that poll's variant belongs, or it declares nothing to
+ * repeat. The fixture throws this out of `request` rather than rejecting the
+ * promise it returns, because the transport port reserves rejection for
+ * transport failure and a script that cannot answer is a defect in the suite.
+ */
+export class FeedScriptError extends Error {
+	constructor(message: string) {
+		super(message);
+		this.name = 'FeedScriptError';
+	}
+}
+
+/**
+ * What a feed serves once its scripted polls run out. `exhausted` serves
+ * nothing and raises a script error instead.
+ */
 export type BeyondScript = FeedVariant | 'repeat-last' | 'exhausted';
 
 export interface FeedScript {
-	/** Variants for polls one upward, in order. */
+	/**
+	 * Variants for polls one upward, in order. A gap in the run is a hole in
+	 * the script rather than the end of it, and raises a script error when the
+	 * poll it belongs to comes round.
+	 */
 	readonly polls: readonly FeedVariant[];
 	readonly beyond?: BeyondScript;
 }
@@ -40,7 +61,7 @@ export interface FeedRequestRecord {
 	readonly url: string;
 	readonly method: string;
 	readonly status: number;
-	/** Which poll of that feed this was; zero when the URL is not a feed. */
+	/** Which poll of that feed this was; zero when no poll was served. */
 	readonly poll: number;
 }
 
@@ -63,11 +84,13 @@ export interface ScriptedPollsOptions {
 /** A run of polls serving one variant, with named polls serving another. */
 export function scriptedPolls(options: ScriptedPollsOptions): FeedVariant[] {
 	const { base, count, at = {} } = options;
-	if (count < 1) throw new Error('a feed script needs at least one poll');
+	if (count < 1) {
+		throw new FeedScriptError('a feed script needs at least one poll');
+	}
 	for (const key of Object.keys(at)) {
 		const poll = Number(key);
 		if (!Number.isInteger(poll) || poll < 1 || poll > count) {
-			throw new Error(
+			throw new FeedScriptError(
 				`poll ${key} falls outside the scripted 1..${String(count)}`,
 			);
 		}
@@ -106,16 +129,21 @@ function variantForPoll(
 ): FeedVariant {
 	const scripted = script.polls[poll - 1];
 	if (scripted !== undefined) return scripted;
+	if (poll <= script.polls.length) {
+		throw new FeedScriptError(
+			`feed ${url} scripted ${String(script.polls.length)} polls and declares no variant for poll ${String(poll)}`,
+		);
+	}
 	const beyond = script.beyond ?? 'repeat-last';
 	if (beyond === 'exhausted') {
-		throw new Error(
+		throw new FeedScriptError(
 			`feed ${url} scripted ${String(script.polls.length)} polls and poll ${String(poll)} has nothing to serve`,
 		);
 	}
 	if (beyond !== 'repeat-last') return beyond;
 	const last = script.polls[script.polls.length - 1];
 	if (last === undefined) {
-		throw new Error(`feed ${url} declares no poll to repeat`);
+		throw new FeedScriptError(`feed ${url} declares no poll to repeat`);
 	}
 	return last;
 }
@@ -136,7 +164,7 @@ class ScriptedFeedFixture implements FeedFixture {
 				script.beyond === undefined ||
 				typeof script.beyond === 'string';
 			if (script.polls.length === 0 && repeats) {
-				throw new Error(`feed ${url} declares no polls`);
+				throw new FeedScriptError(`feed ${url} declares no polls`);
 			}
 		}
 	}
@@ -154,14 +182,13 @@ class ScriptedFeedFixture implements FeedFixture {
 		this.entries.length = 0;
 	}
 
+	/**
+	 * Every scripted answer resolves, whatever status it carries. A script
+	 * that cannot answer throws synchronously, so the rejection channel keeps
+	 * the one meaning the port gives it.
+	 */
 	request(req: HttpRequest): Promise<HttpResponse> {
-		try {
-			return Promise.resolve(this.serve(req));
-		} catch (error) {
-			return Promise.reject(
-				error instanceof Error ? error : new Error(String(error)),
-			);
-		}
+		return Promise.resolve(this.serve(req));
 	}
 
 	private serve(req: HttpRequest): HttpResponse {
