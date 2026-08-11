@@ -36,5 +36,12 @@ the feed fixture's `ics-text.ts` folds against them, and the suites measure
 stored bytes with them. `ics-lines.ts` reads folded text back and needs no
 octet arithmetic of its own.
 
+`test/harness/caldav-mock/` is the in-process CalDAV server. It implements
+the transport port, so a run wires it where the Obsidian adapter goes and
+issues no network call at all. A test states the server it wants through
+the capability switchboard, then asserts against the ordered request log
+and the scheduling record — the ledger of writes that would have mailed
+attendees.
+
 Commands: `npm test` (single run), `npm run test:watch`, `npm run coverage`.
 Coverage is report-only for now.
