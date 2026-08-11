@@ -5,6 +5,7 @@ export default defineConfig({
 		environment: 'node',
 		unstubGlobals: true,
 		include: ['test/**/*.test.ts', 'src/**/*.test.ts'],
+		setupFiles: ['./test/harness/sweeps/setup.ts'],
 		coverage: {
 			provider: 'v8',
 			reporter: ['text', 'lcov'],
