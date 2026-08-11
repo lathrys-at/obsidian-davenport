@@ -6,7 +6,9 @@
  * rather than a wrong write.
  */
 export interface DeviceStore {
-	get<T>(key: string): Promise<T | null>;
-	set<T>(key: string, value: T): Promise<void>;
+	/** Returns what was stored, or null. Callers validate the shape; a
+	 * typed getter here would be an unchecked cast in disguise. */
+	get(key: string): Promise<unknown>;
+	set(key: string, value: unknown): Promise<void>;
 	delete(key: string): Promise<void>;
 }

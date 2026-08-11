@@ -1,0 +1,68 @@
+name: CI
+
+on:
+    push:
+        branches: ['**']
+    pull_request:
+
+permissions:
+    contents: read
+
+jobs:
+    lint:
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v6
+            - uses: actions/setup-node@v6
+              with:
+                  node-version-file: .nvmrc
+                  cache: npm
+            - run: npm ci
+            - run: npm run lint
+            - run: npm run format:check
+
+    typecheck:
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v6
+            - uses: actions/setup-node@v6
+              with:
+                  node-version-file: .nvmrc
+                  cache: npm
+            - run: npm ci
+            - run: npm run typecheck
+
+    test:
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v6
+            - uses: actions/setup-node@v6
+              with:
+                  node-version-file: .nvmrc
+                  cache: npm
+            - run: npm ci
+            - run: npm run coverage
+
+    build:
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v6
+            - uses: actions/setup-node@v6
+              with:
+                  node-version-file: .nvmrc
+                  cache: npm
+            - run: npm ci
+            - run: npm run build
+            - run: node scripts/scan-bundle.mjs
+
+    # The single required check gating merges to main. Fails unless every
+    # job in needs succeeded; evaluating the whole needs context means a
+    # job added to needs is gated without editing the step.
+    ci-ok:
+        needs: [lint, typecheck, test, build]
+        if: always()
+        runs-on: ubuntu-latest
+        steps:
+            - name: All required jobs succeeded
+              run: |
+                  echo '${{ toJSON(needs) }}' | jq -e '(length > 0) and all(.[].result; . == "success")'

@@ -33,9 +33,9 @@ npm run build
 
 ## Linting
 
-- ESLint is preconfigured with `eslint-plugin-obsidianmd` for Obsidian-specific rules.
-- Run `npm run lint` to lint the project.
-- A GitHub Action automatically lints every commit on all branches.
+- ESLint is preconfigured with `eslint-plugin-obsidianmd` and typescript-eslint strict-type-checked, plus invariant guards: no global `fetch` anywhere, and `src/core/` bans platform imports and ambient time (the clock port supplies time).
+- Run `npm run lint` to lint the project; `npm run format` for Prettier.
+- CI runs lint, typecheck, tests, and the build with a bundle scan on every commit on all branches, aggregated into the required `ci-ok` check.
 
 ## File & folder conventions
 
@@ -72,6 +72,7 @@ npm run build
 
 ## Testing
 
+- Automated tests run under Vitest: `npm test`. Layout and naming conventions: `test/README.md`.
 - Manual install for testing: copy `main.js`, `manifest.json`, `styles.css` (if any) to:
     ```
     <Vault>/.obsidian/plugins/<plugin-id>/
