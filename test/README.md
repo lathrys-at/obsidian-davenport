@@ -26,5 +26,10 @@ files, stored as the octets a server would send and read back byte for
 byte, which `.gitattributes` keeps git from converting. `ics-corpus.ts`
 indexes them by the adversarial property each one carries.
 
+`test/harness/feed-fixture/` is the ICS feed server behind the transport
+port. A feed is a script — poll N serves the variant declared for it — and
+the fixture takes its reference time from the caller, so identical scripts
+serve identical octets.
+
 Commands: `npm test` (single run), `npm run test:watch`, `npm run coverage`.
 Coverage is report-only for now.
