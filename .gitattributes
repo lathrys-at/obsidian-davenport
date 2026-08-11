@@ -1,0 +1,3 @@
+# The ICS corpus is stored as the octets a CalDAV server would send: CRLF
+# line endings, and tests that count them. Keep git out of the conversion.
+test/harness/fixtures/ics/*.ics -text

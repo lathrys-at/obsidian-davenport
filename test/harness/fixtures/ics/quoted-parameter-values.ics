@@ -1,0 +1,17 @@
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Davenport//Adversarial ICS corpus//EN
+BEGIN:VEVENT
+UID:quoted-parameter-values@corpus.davenport.test
+DTSTAMP:20260101T000000Z
+DTSTART:20260318T150000Z
+DTEND:20260318T160000Z
+SUMMARY:Parameter values quoting the structural characters
+ORGANIZER;CN="Doe, Jane; the third":mailto:jane@example.test
+ATTENDEE;CN="Smith, Ann";ROLE=REQ-PARTICIPANT;PARTSTAT=NEEDS-ACTION:
+ mailto:ann@example.test
+LOCATION;ALTREP="https://example.test/rooms?id=1&name=A,B":Room A\,B
+X-CORPUS-CARET;X-LABEL="He said ^'so^' twice":a caret-escaped quote
+X-CORPUS-LIST;X-TAGS=alpha,"beta, still beta",gamma:a mixed list
+END:VEVENT
+END:VCALENDAR

@@ -9,3 +9,10 @@ indent_style = tab
 indent_size = 4
 quote_type = single
 tab_width = 4
+
+# iCalendar files are CRLF-terminated and their leading white space is
+# significant: it is what a fold inserts.
+[test/harness/fixtures/ics/*.ics]
+end_of_line = crlf
+indent_style = space
+trim_trailing_whitespace = false

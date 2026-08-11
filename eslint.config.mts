@@ -98,6 +98,17 @@ export default defineConfig(
 			'obsidianmd/no-nodejs-modules': 'off',
 		},
 	},
+	// Tests run under vitest on node and never ship, so the harness reads
+	// its fixtures from disk. The node-import ban below is scoped to plugin
+	// source for the same reason; this turns off the obsidianmd rule that
+	// would otherwise police the tests as if they ran on a phone.
+	{
+		name: 'davenport/test-harness',
+		files: ['test/**/*.ts'],
+		rules: {
+			'obsidianmd/no-nodejs-modules': 'off',
+		},
+	},
 	// All network I/O flows through the transport port; the Obsidian
 	// adapter backs it with requestUrl. A direct fetch breaks on mobile.
 	{
