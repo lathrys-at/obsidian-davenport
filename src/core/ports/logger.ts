@@ -4,7 +4,8 @@
  * renders these entries.
  */
 
-export type LogOutcome = 'success' | 'refused' | 'skipped' | 'failed' | 'conflict';
+export type LogOutcome =
+	'success' | 'refused' | 'skipped' | 'failed' | 'conflict';
 
 export interface SyncLogEntry {
 	/** Epoch milliseconds, from the Clock port. */

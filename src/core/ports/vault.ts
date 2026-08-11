@@ -12,7 +12,11 @@
 export type VaultFileEvent =
 	| { readonly kind: 'created'; readonly path: string }
 	| { readonly kind: 'modified'; readonly path: string }
-	| { readonly kind: 'renamed'; readonly path: string; readonly oldPath: string }
+	| {
+			readonly kind: 'renamed';
+			readonly path: string;
+			readonly oldPath: string;
+	  }
 	| { readonly kind: 'deleted'; readonly path: string };
 
 export type Unsubscribe = () => void;
@@ -29,7 +33,9 @@ export interface VaultPort {
 	 */
 	trash(path: string): Promise<void>;
 	/** Parsed frontmatter, or null where absent or unparseable. */
-	frontmatter(path: string): Promise<Readonly<Record<string, unknown>> | null>;
+	frontmatter(
+		path: string,
+	): Promise<Readonly<Record<string, unknown>> | null>;
 	/**
 	 * Update frontmatter through the platform writer. Cross-device byte
 	 * determinism of the real writer is verified empirically, never assumed
