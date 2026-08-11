@@ -82,7 +82,9 @@ export function networkCursor(
 /**
  * A stretch of the run spent on work the engine observed remotely rather
  * than work a user asked for. Every request a surface recorded between the
- * two cursors was issued inside it.
+ * two cursors was issued inside it. Stretches must not run concurrently:
+ * overlapping windows attribute one request to several stretches and the
+ * report names the wrong one.
  */
 export interface RemoteObservedWindow {
 	readonly label: string;
@@ -106,8 +108,15 @@ export interface NetworkSurface {
 	requests(evidence: RunEvidence): readonly RecordedRequest[];
 }
 
-export const NETWORK_SURFACES: readonly NetworkSurface[] = [
-	{
+/**
+ * Keyed by cursor field so the compiler holds the table and the cursor in
+ * lockstep: a new cursor field fails to compile here until its surface is
+ * listed, which is what keeps every surface under the request sweeps.
+ */
+const NETWORK_SURFACE_TABLE: {
+	readonly [K in keyof NetworkCursor]: NetworkSurface & { readonly key: K };
+} = {
+	caldav: {
 		key: 'caldav',
 		requests: (record) =>
 			record.caldav.requests.map((entry, index) => ({
@@ -115,7 +124,7 @@ export const NETWORK_SURFACES: readonly NetworkSurface[] = [
 				detail: `${entry.method} ${entry.path}`,
 			})),
 	},
-	{
+	feed: {
 		key: 'feed',
 		requests: (record) =>
 			record.feed.requests.map((entry, index) => ({
@@ -123,7 +132,11 @@ export const NETWORK_SURFACES: readonly NetworkSurface[] = [
 				detail: `${entry.method} ${entry.url}`,
 			})),
 	},
-];
+};
+
+export const NETWORK_SURFACES: readonly NetworkSurface[] = Object.values(
+	NETWORK_SURFACE_TABLE,
+);
 
 /** A value the run declared sensitive, named so a report can cite it. */
 export interface SensitiveValue {
