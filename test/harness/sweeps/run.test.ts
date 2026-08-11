@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
+import { ControlledClock } from '../clock';
 import { icsEvent } from '../caldav-mock/fixtures';
 import { MockCalDavServer } from '../caldav-mock/server';
 import { createFeedFixture } from '../feed-fixture/server';
 import { emptyCalendar } from '../feed-fixture/variants';
 import { FakeVault } from '../obsidian-fake/vault';
+import { VaultSyncChannel } from '../vault-sync/channel';
 import { SweepRegistry } from './registry';
 import { runSimulation, type SimulationOptions } from './run';
 import { SweepFailure, type Sweep } from './sweep';
@@ -117,6 +119,24 @@ describe('simulation runs', () => {
 			expect(
 				evidence.caldav.scheduling.map((entry) => entry.transition),
 			).toEqual(['gains']);
+		});
+	});
+
+	it('gathers the deliveries the sync channel landed', async () => {
+		const channel = new VaultSyncChannel({
+			devices: ['laptop', 'phone'],
+			clock: new ControlledClock(),
+		});
+		await runSimulation(options({ vaultSync: channel }), async (run) => {
+			await channel.device('laptop').write('Events/one.md', 'written');
+			await channel.deliver();
+			const evidence = await run.evidence();
+			expect(
+				evidence.vaultSync.deliveries.map((landed) => [
+					landed.delivery.to,
+					landed.outcome,
+				]),
+			).toEqual([['phone', 'created']]);
 		});
 	});
 
@@ -297,6 +317,69 @@ describe('sweep failures', () => {
 		).catch((error: unknown) => error);
 		expect((failure as SweepFailure).message).toContain(
 			'vault.changes[0].content',
+		);
+	});
+
+	it('catches a registered value that only a request body carried', async () => {
+		const caldav = server();
+		const failure = await runSimulation(
+			{ name: 'a run', caldav },
+			async (run) => {
+				run.registerSecret({ label: 'app password', value: PASSWORD });
+				await caldav.request({
+					url: caldav.resourceUrl('alice', 'work', 'two.ics'),
+					method: 'PUT',
+					body: icsEvent({
+						uid: 'two',
+						start: '20260311T090000Z',
+						summary: PASSWORD,
+					}),
+				});
+			},
+		).catch((error: unknown) => error);
+		expect((failure as SweepFailure).message).toContain('secrets-scan');
+		expect((failure as SweepFailure).message).toContain(
+			'caldav.requests[0].body',
+		);
+		expect((failure as SweepFailure).message).not.toContain(PASSWORD);
+	});
+
+	it('catches a registered value that only an Authorization header carried', async () => {
+		const caldav = server();
+		const failure = await runSimulation(
+			{ name: 'a run', caldav },
+			async (run) => {
+				run.registerSecret({ label: 'app password', value: PASSWORD });
+				await caldav.request({
+					url: caldav.collectionUrl('alice', 'work'),
+					method: 'PROPFIND',
+					headers: {
+						Authorization: `Basic ${PASSWORD}`,
+						Depth: '0',
+					},
+				});
+			},
+		).catch((error: unknown) => error);
+		expect((failure as SweepFailure).message).toContain(
+			'caldav.requests[0].headers.authorization',
+		);
+	});
+
+	it('catches a registered value the sync channel carried to a peer', async () => {
+		const channel = new VaultSyncChannel({
+			devices: ['laptop', 'phone'],
+			clock: new ControlledClock(),
+		});
+		const failure = await runSimulation(
+			{ name: 'a run', vaultSync: channel },
+			async (run) => {
+				run.registerSecret({ label: 'app password', value: PASSWORD });
+				await channel.device('laptop').write('Events/one.md', PASSWORD);
+				await channel.deliver();
+			},
+		).catch((error: unknown) => error);
+		expect((failure as SweepFailure).message).toContain(
+			'vaultSync.deliveries[0].delivery.change.content',
 		);
 	});
 

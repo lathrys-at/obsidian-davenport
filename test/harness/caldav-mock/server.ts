@@ -25,9 +25,10 @@ import {
 	type FaultInjection,
 	type MockServerCapabilities,
 } from './capabilities';
-import { attachmentBody, handleAttachmentPost } from './attachments';
+import { handleAttachmentGet, handleAttachmentPost } from './attachments';
 import {
 	bodyText,
+	headerEntries,
 	headerReader,
 	pathOf,
 	queryOf,
@@ -241,6 +242,8 @@ export class MockCalDavServer implements HttpTransport {
 			ifNoneMatch: headers('if-none-match'),
 			report: reportKindOf(document),
 			syncToken: presentedSyncToken(document),
+			headers: headerEntries(req.headers, req.contentType),
+			body,
 		});
 
 		const answered =
@@ -339,7 +342,7 @@ export class MockCalDavServer implements HttpTransport {
 				return handleReport(route, parsed, context);
 			case 'GET':
 				return route.kind === 'attachment'
-					? attachmentBody(route.attachment)
+					? handleAttachmentGet(route.attachment, this.config)
 					: handleGet(route, this.state, this.config);
 			case 'PUT':
 				return handlePut(route, body, writeContext);
@@ -347,7 +350,10 @@ export class MockCalDavServer implements HttpTransport {
 				return handleDelete(route, writeContext);
 			case 'POST':
 				return handleAttachmentPost(route, incoming.query, body, {
-					...writeContext,
+					state: writeContext.state,
+					caps: writeContext.caps,
+					ifMatch: writeContext.ifMatch,
+					recordScheduling: writeContext.recordScheduling,
 					origin: this.origin,
 					contentType: incoming.contentType,
 					disposition: headers('content-disposition'),

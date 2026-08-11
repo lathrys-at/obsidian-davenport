@@ -3,10 +3,17 @@
  * port hands over a URL, headers, and a body that may be text or octets;
  * it expects back a status, headers, and both text and octets of the same
  * response.
+ *
+ * The octets counted here are an HTTP body's and not an iCalendar line's —
+ * a multistatus and an error page cross this module too — so the encoder
+ * and its decoder are this module's own.
  */
 
 import type { HttpResponse } from '../../../src/core/ports/transport';
 import type { MockResponse } from './response';
+
+const encoder = new TextEncoder();
+const decoder = new TextDecoder();
 
 export type HeaderReader = (name: string) => string | null;
 
@@ -21,11 +28,35 @@ export function headerReader(
 	return (name) => lowered.get(name.toLowerCase()) ?? null;
 }
 
+/**
+ * The headers a request carried, keyed by their lowercased names. Nothing
+ * is filtered out and nothing is redacted: the log exists to be asserted
+ * against and swept, and a credential the sweeps cannot see is one they
+ * cannot report. `Authorization` is therefore here like any other header,
+ * and a request that states its content type through the port's own member
+ * rather than a header is recorded as having sent the header. A request
+ * that does both is recorded with the header, which is what a server would
+ * have read.
+ */
+export function headerEntries(
+	headers: Readonly<Record<string, string>> | undefined,
+	contentType: string | undefined,
+): Readonly<Record<string, string>> {
+	const lowered: Record<string, string> = {};
+	if (contentType !== undefined) {
+		lowered['content-type'] = contentType;
+	}
+	for (const [key, value] of Object.entries(headers ?? {})) {
+		lowered[key.toLowerCase()] = value;
+	}
+	return lowered;
+}
+
 export function bodyText(body: string | ArrayBuffer | undefined): string {
 	if (body === undefined) {
 		return '';
 	}
-	return typeof body === 'string' ? body : new TextDecoder().decode(body);
+	return typeof body === 'string' ? body : decoder.decode(body);
 }
 
 /** Null when the request names a different server, which answers nothing. */
@@ -56,7 +87,7 @@ export function toHttpResponse(
 	response: MockResponse,
 	truncateAfter: number | null,
 ): HttpResponse {
-	const encoded = new TextEncoder().encode(response.body);
+	const encoded = encoder.encode(response.body);
 	const kept =
 		truncateAfter === null ? encoded : encoded.slice(0, truncateAfter);
 	const buffer = new ArrayBuffer(kept.byteLength);
@@ -64,7 +95,7 @@ export function toHttpResponse(
 	return {
 		status: response.status,
 		headers: response.headers,
-		text: new TextDecoder().decode(kept),
+		text: decoder.decode(kept),
 		arrayBuffer: buffer,
 	};
 }

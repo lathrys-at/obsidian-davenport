@@ -18,6 +18,7 @@ import type {
 	SchedulingEntry,
 } from '../caldav-mock/observation';
 import type { FeedRequestRecord } from '../feed-fixture/server';
+import type { LandedDelivery } from '../vault-sync/types';
 import { fetchPoisonHolds, type FetchAttempt } from './fetch-poison';
 
 export interface CalDavEvidence {
@@ -53,6 +54,22 @@ export interface VaultEvidence {
 	readonly files: Readonly<Record<string, string>>;
 }
 
+/**
+ * What the vault-sync channel moved during the run: every delivery that
+ * landed, with the change it carried and how the destination took it.
+ *
+ * This is an evidence surface and not a network one. The channel models a
+ * sync tool moving files between two vaults, so a delivery is not a
+ * request the engine issued to a server and counting it as one would put
+ * the wrong name in a report — which is why there is no cursor field for
+ * it below and no entry in the surface table. A sweep that walks strings,
+ * the secrets scan among them, reads it like every other surface; a sweep
+ * that counts requests must not see it at all.
+ */
+export interface VaultSyncEvidence {
+	readonly deliveries: readonly LandedDelivery[];
+}
+
 export interface NetworkEvidence {
 	/** Whether global fetch was a thrower for the whole run. */
 	readonly poisoned: boolean;
@@ -63,9 +80,10 @@ export interface NetworkEvidence {
 /**
  * How many requests each network surface had handled at one moment. A
  * stretch of a run is bounded on all of them at once, so no surface can be
- * the one nobody thought to count; a surface that arrives later is a field
- * here and an entry in the table below, not a change to the shape a
- * stretch carries.
+ * the one nobody thought to count; a network surface that arrives later is
+ * a field here and an entry in the table below, not a change to the shape
+ * a stretch carries. A surface that talks to no server — the vault-sync
+ * channel is one — belongs in the record above and not here.
  */
 export interface NetworkCursor {
 	readonly caldav: number;
@@ -150,6 +168,7 @@ export interface RunEvidence {
 	readonly caldav: CalDavEvidence;
 	readonly feed: FeedEvidence;
 	readonly vault: VaultEvidence;
+	readonly vaultSync: VaultSyncEvidence;
 	readonly syncLog: readonly SyncLogEntry[];
 	readonly network: NetworkEvidence;
 	readonly remoteObserved: readonly RemoteObservedWindow[];
@@ -159,6 +178,7 @@ export interface RunEvidence {
 const NO_CALDAV: CalDavEvidence = { requests: [], scheduling: [] };
 const NO_FEED: FeedEvidence = { requests: [] };
 const NO_VAULT: VaultEvidence = { changes: [], files: {} };
+const NO_VAULT_SYNC: VaultSyncEvidence = { deliveries: [] };
 
 /**
  * Builds a record, filling every surface the caller left out. A run states
@@ -172,6 +192,7 @@ export function evidence(parts: Partial<RunEvidence> = {}): RunEvidence {
 		caldav: parts.caldav ?? NO_CALDAV,
 		feed: parts.feed ?? NO_FEED,
 		vault: parts.vault ?? NO_VAULT,
+		vaultSync: parts.vaultSync ?? NO_VAULT_SYNC,
 		syncLog: parts.syncLog ?? [],
 		network: parts.network ?? {
 			poisoned: fetchPoisonHolds(),

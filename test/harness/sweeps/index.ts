@@ -17,6 +17,7 @@ export type {
 	SensitiveValue,
 	VaultChange,
 	VaultEvidence,
+	VaultSyncEvidence,
 } from './evidence';
 export {
 	NETWORK_SURFACES,

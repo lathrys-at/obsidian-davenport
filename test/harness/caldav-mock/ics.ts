@@ -9,7 +9,9 @@
  * matched on its first instance only.
  */
 
-const FOLD_WIDTH = 75;
+import { icsPhysicalLines, readIcsLogicalLines } from '../ics-lines';
+import { ICS_LINE_OCTET_LIMIT, octetLength } from '../ics-octets';
+
 const MONTH_LENGTHS = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
 
 export interface IcsFacts {
@@ -22,23 +24,14 @@ export interface IcsFacts {
 	readonly end: string | null;
 }
 
-/** Splits on any line ending and rejoins folded continuation lines. */
-export function unfoldLines(ics: string): string[] {
-	const lines: string[] = [];
-	for (const raw of ics.split(/\r\n|\n|\r/)) {
-		const continuation = raw.startsWith(' ') || raw.startsWith('\t');
-		const previous = lines.length - 1;
-		const head = lines[previous];
-		if (continuation && head !== undefined) {
-			lines[previous] = head + raw.slice(1);
-		} else {
-			lines.push(raw);
-		}
-	}
-	while (lines.length > 0 && lines[lines.length - 1] === '') {
-		lines.pop();
-	}
-	return lines;
+/**
+ * The content lines of a stored or submitted resource. A client sends what
+ * it likes, so the shared reader is used in the form that takes text of
+ * any shape: the mock answers a request about a malformed body rather than
+ * failing the run that sent it.
+ */
+function contentLines(ics: string): readonly string[] {
+	return readIcsLogicalLines(icsPhysicalLines(ics)).lines;
 }
 
 export function readIcs(ics: string): IcsFacts {
@@ -50,7 +43,7 @@ export function readIcs(ics: string): IcsFacts {
 	let end: string | null = null;
 	let startIsDate = false;
 
-	for (const line of unfoldLines(ics)) {
+	for (const line of contentLines(ics)) {
 		const { name, value } = splitLine(line);
 		if (name === 'BEGIN') {
 			stack.push(value);
@@ -159,7 +152,7 @@ export function normalizeStamp(value: string): string {
  */
 export function reserialize(ics: string): string {
 	const rebuilt: string[] = [];
-	for (const line of unfoldLines(ics)) {
+	for (const line of contentLines(ics)) {
 		const marker = nameEnd(line);
 		const upper =
 			marker === -1
@@ -171,8 +164,7 @@ export function reserialize(ics: string): string {
 }
 
 function foldLine(line: string): string[] {
-	const encoder = new TextEncoder();
-	if (encoder.encode(line).length <= FOLD_WIDTH) {
+	if (octetLength(line) <= ICS_LINE_OCTET_LIMIT) {
 		return [line];
 	}
 	const pieces: string[] = [];
@@ -180,14 +172,14 @@ function foldLine(line: string): string[] {
 	let width = 0;
 	// The continuation space counts toward the octet budget, so every line
 	// after the first has one octet less room for content.
-	let budget = FOLD_WIDTH;
+	let budget = ICS_LINE_OCTET_LIMIT;
 	for (const character of line) {
-		const size = encoder.encode(character).length;
+		const size = octetLength(character);
 		if (width + size > budget) {
 			pieces.push(current);
 			current = '';
 			width = 0;
-			budget = FOLD_WIDTH - 1;
+			budget = ICS_LINE_OCTET_LIMIT - 1;
 		}
 		current += character;
 		width += size;

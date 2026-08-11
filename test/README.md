@@ -17,6 +17,10 @@ Layout:
   IDs, so titles are the traceability surface — keep them exact.
 - Colocated `src/**/*.test.ts` micro-unit tests are allowed for internal
   helpers; anything asserting a plan ID lives under `test/suites/`.
+- `test/fetch-guards.test.ts` — the static halves of the network-discipline
+  ban: the lint selectors, read out of the lint configuration itself, and
+  `scripts/scan-bundle.mjs`, run as a process over a bundle it is handed.
+  The runtime half is the fetch poison, tested with the sweeps.
 - `test/live/` — what verification runs against real servers need: the
   credential resolver, and the self-hosted CalDAV containers. Nothing here
   reaches a server during `npm test`; `test/live/README.md` states the
@@ -36,9 +40,14 @@ the fixture takes its reference time from the caller, so identical scripts
 serve identical octets.
 
 `test/harness/ics-octets.ts` holds the octet limit and the UTF-8 encoding:
-the feed fixture's `ics-text.ts` folds against them, and the suites measure
-stored bytes with them. `ics-lines.ts` reads folded text back and needs no
-octet arithmetic of its own.
+the feed fixture's `ics-text.ts` folds against them, the mock server folds
+and measures with them, and the suites measure stored bytes with them.
+`ics-lines.ts` reads folded text back and needs no octet arithmetic of its
+own. It takes any line ending, since a client sends what it likes, and
+offers both a reader that throws on text no legal writer produces and one
+that reports the problem and reads on — the mock takes the second, because
+a malformed request body is something it answers rather than something
+that fails the run.
 
 `test/harness/caldav-mock/` is the in-process CalDAV server. It implements
 the transport port, so a run wires it where the Obsidian adapter goes and

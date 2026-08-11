@@ -10,7 +10,8 @@ import {
 	syncCollectionBody,
 	syncTokenIn,
 } from './fixtures';
-import { unfoldLines } from './ics';
+import { icsLogicalLines, icsPhysicalLines } from '../ics-lines';
+import { ICS_LINE_OCTET_LIMIT, octetLength } from '../ics-octets';
 import { MockCalDavServer } from './server';
 import { CALDAV_NS, descendantsNamed, parseXml } from './xml';
 
@@ -309,13 +310,11 @@ describe('capability: response body stability', () => {
 			icsEvent({ uid: 'one', summary }),
 		);
 		const fetched = await get(mock);
-		const longest = Math.max(
-			...fetched.text
-				.split('\r\n')
-				.map((line) => new TextEncoder().encode(line).length),
+		const physical = icsPhysicalLines(fetched.text);
+		expect(Math.max(...physical.map(octetLength))).toBeLessThanOrEqual(
+			ICS_LINE_OCTET_LIMIT,
 		);
-		expect(longest).toBeLessThanOrEqual(75);
-		expect(unfoldLines(fetched.text)).toContain(`SUMMARY:${summary}`);
+		expect(icsLogicalLines(physical)).toContain(`SUMMARY:${summary}`);
 	});
 });
 
@@ -563,6 +562,139 @@ describe('capability: managed attachments', () => {
 		const response = await addAttachment(mock, 'agenda text');
 		expect(response.status).toBe(405);
 		expect(mock.resourceIcs('alice', 'work', 'one.ics')).toBe(EVENT);
+	});
+
+	it('refuses a POST whose If-Match names a stale ETag', async () => {
+		const mock = server({ managedAttachments: true });
+		const stored = mock.resourceIcs('alice', 'work', 'one.ics');
+		const refused = await mock.request({
+			url: `${mock.resourceUrl('alice', 'work', 'one.ics')}?action=attachment-add`,
+			method: 'POST',
+			headers: {
+				'Content-Type': 'text/plain',
+				'If-Match': '"etag-stale"',
+			},
+			body: 'agenda text',
+		});
+		expect(refused.status).toBe(412);
+		expect(mock.resourceIcs('alice', 'work', 'one.ics')).toBe(stored);
+		expect(mock.scheduling.entries).toStrictEqual([]);
+		expect(
+			(await mock.request({ url: mock.url('/attachments/attachment-1') }))
+				.status,
+		).toBe(404);
+	});
+
+	it('accepts a POST whose If-Match names the current ETag', async () => {
+		const mock = server({ managedAttachments: true });
+		const accepted = await mock.request({
+			url: `${mock.resourceUrl('alice', 'work', 'one.ics')}?action=attachment-add`,
+			method: 'POST',
+			headers: {
+				'Content-Type': 'text/plain',
+				'If-Match': mock.resourceEtag('alice', 'work', 'one.ics') ?? '',
+			},
+			body: 'agenda text',
+		});
+		expect(accepted.status).toBe(201);
+	});
+
+	it('ignores a stale If-Match on a server that enforces none', async () => {
+		const mock = server({
+			managedAttachments: true,
+			enforceIfMatch: false,
+		});
+		const accepted = await mock.request({
+			url: `${mock.resourceUrl('alice', 'work', 'one.ics')}?action=attachment-add`,
+			method: 'POST',
+			headers: {
+				'Content-Type': 'text/plain',
+				'If-Match': '"etag-stale"',
+			},
+			body: 'agenda text',
+		});
+		expect(accepted.status).toBe(201);
+	});
+
+	it('takes the attachments of a resource away with the resource', async () => {
+		const mock = server({ managedAttachments: true });
+		await addAttachment(mock, 'agenda text');
+		const deleted = await mock.request({
+			url: mock.resourceUrl('alice', 'work', 'one.ics'),
+			method: 'DELETE',
+		});
+		expect(deleted.status).toBe(204);
+		expect(
+			(await mock.request({ url: mock.url('/attachments/attachment-1') }))
+				.status,
+		).toBe(404);
+	});
+
+	it('takes them away for a removal made out of band too', async () => {
+		const mock = server({ managedAttachments: true });
+		await addAttachment(mock, 'agenda text');
+		expect(mock.removeResource('alice', 'work', 'one.ics')).toBe(true);
+		expect(
+			(await mock.request({ url: mock.url('/attachments/attachment-1') }))
+				.status,
+		).toBe(404);
+	});
+
+	it('drops the continuation lines of a folded ATTACH property', async () => {
+		const mock = server({ managedAttachments: true });
+		await addAttachment(mock, 'agenda text');
+		mock.seedResource(
+			'alice',
+			'work',
+			'one.ics',
+			EVENT.replace(
+				'END:VEVENT',
+				'ATTACH;MANAGED-ID=attachment-1;FMTTYPE=text/plain\r\n ;FILENAME="agenda.txt":https://caldav.davenport.test/attachments/attachment-1\r\nEND:VEVENT',
+			),
+		);
+		const removed = await mock.request({
+			url: `${mock.resourceUrl('alice', 'work', 'one.ics')}?action=attachment-remove&managed-id=attachment-1`,
+			method: 'POST',
+		});
+		expect(removed.status).toBe(204);
+		const stored = mock.resourceIcs('alice', 'work', 'one.ics') ?? '';
+		expect(stored).not.toContain('ATTACH');
+		expect(stored).not.toContain('FILENAME');
+	});
+
+	it('leaves the bytes alone when a write only drops the property', async () => {
+		const mock = server({ managedAttachments: true });
+		await addAttachment(mock, 'agenda text');
+		const rewritten = await mock.request({
+			url: mock.resourceUrl('alice', 'work', 'one.ics'),
+			method: 'PUT',
+			body: EVENT,
+		});
+		expect(rewritten.status).toBe(204);
+		expect(mock.resourceIcs('alice', 'work', 'one.ics')).not.toContain(
+			'ATTACH',
+		);
+		expect(
+			(await mock.request({ url: mock.url('/attachments/attachment-1') }))
+				.status,
+		).toBe(200);
+	});
+
+	it('puts a stored attachment out of reach while the capability is off', async () => {
+		const mock = server({ managedAttachments: true });
+		await addAttachment(mock, 'agenda text');
+		mock.configure({ managedAttachments: false });
+		const gone = await mock.request({
+			url: mock.url('/attachments/attachment-1'),
+		});
+		expect(gone.status).toBe(404);
+
+		mock.configure({ managedAttachments: true });
+		const back = await mock.request({
+			url: mock.url('/attachments/attachment-1'),
+		});
+		expect(back.status).toBe(200);
+		expect(back.text).toBe('agenda text');
 	});
 });
 

@@ -82,12 +82,12 @@ describe('ICS corpus index', () => {
 });
 
 describe('ICS corpus files', () => {
+	// The line reader takes any ending, so this asks the octets directly:
+	// every CR is followed by an LF and every LF is preceded by a CR.
 	it.each(icsCorpus())('$id ends every line with CRLF', (fixture) => {
 		expect(fixture.content).not.toHaveLength(0);
 		expect(fixture.content.endsWith('\r\n')).toBe(true);
-		for (const line of icsPhysicalLines(fixture.content)) {
-			expect(line).not.toMatch(/[\r\n]/);
-		}
+		expect(fixture.content).not.toMatch(/\r(?!\n)|(?<!\r)\n/);
 	});
 
 	it.each(icsCorpus())('$id folds within the octet limit', (fixture) => {

@@ -17,6 +17,7 @@ export {
 	type SyncCollectionSupport,
 } from './capabilities';
 export {
+	REQUEST_BODY_CAP,
 	RequestLog,
 	SchedulingRecord,
 	type AttendeeTransition,

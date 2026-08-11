@@ -5,6 +5,7 @@ import {
 	propfindBody,
 	syncCollectionBody,
 } from './fixtures';
+import { REQUEST_BODY_CAP } from './observation';
 import { MockCalDavServer } from './server';
 
 const WORK = '/calendars/alice/work/';
@@ -133,6 +134,75 @@ describe('request log', () => {
 		mock.removeResource('alice', 'work', 'two.ics');
 		expect(mock.log.entries).toStrictEqual([]);
 	});
+
+	it('keeps the body a write carried', async () => {
+		const mock = server();
+		await mock.request({
+			url: mock.resourceUrl('alice', 'work', 'one.ics'),
+			method: 'PUT',
+			body: WITH_GUEST,
+		});
+		const [entry] = mock.log.entries;
+		expect(entry?.body).toBe(WITH_GUEST);
+		expect(entry?.bodyTruncated).toBe(false);
+	});
+
+	it('records an empty body for a request that carried none', async () => {
+		const mock = server();
+		await mock.request({
+			url: mock.resourceUrl('alice', 'work', 'one.ics'),
+			method: 'GET',
+		});
+		expect(mock.log.entries[0]?.body).toBe('');
+	});
+
+	it('cuts a body at the cap and says that it did', async () => {
+		const mock = server();
+		const long = icsEvent({
+			uid: 'one',
+			summary: 'x'.repeat(REQUEST_BODY_CAP),
+		});
+		await mock.request({
+			url: mock.resourceUrl('alice', 'work', 'one.ics'),
+			method: 'PUT',
+			body: long,
+		});
+		const [entry] = mock.log.entries;
+		expect(entry?.body).toBe(long.slice(0, REQUEST_BODY_CAP));
+		expect(entry?.bodyTruncated).toBe(true);
+	});
+
+	it('keeps every header the request carried, credentials included', async () => {
+		const mock = server();
+		await mock.request({
+			url: mock.resourceUrl('alice', 'work', 'one.ics'),
+			method: 'PUT',
+			headers: {
+				Authorization: 'Basic YWxpY2U6aHVudGVyMg==',
+				'If-Match': '"etag-1"',
+				'X-Vendor-Token': 'vendor-token',
+			},
+			body: SOLO,
+		});
+		expect(mock.log.entries[0]?.headers).toStrictEqual({
+			authorization: 'Basic YWxpY2U6aHVudGVyMg==',
+			'if-match': '"etag-1"',
+			'x-vendor-token': 'vendor-token',
+		});
+	});
+
+	it('records the content type the port states without a header', async () => {
+		const mock = server();
+		await mock.request({
+			url: mock.resourceUrl('alice', 'work', 'one.ics'),
+			method: 'PUT',
+			contentType: 'text/calendar; charset=utf-8',
+			body: SOLO,
+		});
+		expect(mock.log.entries[0]?.headers['content-type']).toBe(
+			'text/calendar; charset=utf-8',
+		);
+	});
 });
 
 describe('scheduling record', () => {
@@ -221,6 +291,20 @@ describe('scheduling record', () => {
 		expect(entry?.transition).toBe('retains');
 		expect(entry?.attendeesAfter).toStrictEqual([ORGANIZER, GUEST]);
 		expect(entry?.requestIndex).toBe(0);
+	});
+
+	it('reads the attendees off a body written with LF endings', async () => {
+		const mock = server();
+		const lineFed = WITH_GUEST.replace(/\r\n/g, '\n');
+		await mock.request({
+			url: mock.resourceUrl('alice', 'work', 'one.ics'),
+			method: 'PUT',
+			body: lineFed,
+		});
+		const [entry] = mock.scheduling.entries;
+		expect(entry?.transition).toBe('gains');
+		expect(entry?.attendeesAfter).toStrictEqual([ORGANIZER, GUEST]);
+		expect(mock.resourceIcs('alice', 'work', 'one.ics')).toBe(lineFed);
 	});
 
 	it('records nothing for writes that touch no attendee', async () => {

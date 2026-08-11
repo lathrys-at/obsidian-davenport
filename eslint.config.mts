@@ -20,6 +20,22 @@ const memberFetch = [
 	`MemberExpression[computed=false][object.name=${globalObjects}][property.name='fetch']`,
 	`MemberExpression[computed=true][object.name=${globalObjects}][property.value='fetch']`,
 ];
+// Reflect.get reaches a property without naming it in a member expression,
+// so the guards above see nothing. The holder is left unconstrained: the
+// object a caller reads fetch off is as often a variable as it is a global.
+// Both literal spellings of the key are covered, quoted and templated.
+//
+// A key held in a variable — `const k = 'fetch'; Reflect.get(x, k)` — is
+// past what a syntax rule can see, and bundling keeps it that way: esbuild
+// does not inline such a constant, so the bundle scan cannot see it either.
+// That is the stated division of labour rather than a gap to close. Lint
+// answers for the spellings a reader can recognise on the page; the fetch
+// poison answers for every spelling there is, because it replaces the
+// property itself, so a call throws whatever name it was reached through.
+const reflectFetch = [
+	`CallExpression[callee.object.name='Reflect'][callee.property.name='get'][arguments.1.value='fetch']`,
+	`CallExpression[callee.object.name='Reflect'][callee.property.name='get'][arguments.1.expressions.length=0][arguments.1.quasis.0.value.cooked='fetch']`,
+];
 const memberTimers = [
 	`MemberExpression[computed=false][object.name=${globalObjects}][property.name=/^(setTimeout|setInterval|setImmediate)$/]`,
 	`MemberExpression[computed=true][object.name=${globalObjects}][property.value=/^(setTimeout|setInterval|setImmediate)$/]`,
@@ -140,6 +156,29 @@ export default defineConfig(
 			],
 			'no-restricted-syntax': [
 				'error',
+				...[...memberFetch, ...reflectFetch].map((selector) => ({
+					selector,
+					message: fetchMessage,
+				})),
+			],
+		},
+	},
+	// The poison and its tests read fetch off a global to install it, to put
+	// it back, and to prove they did, and Reflect.get is the only spelling
+	// left once the member forms are banned everywhere. The exemption is
+	// that one selector in these two files: the member spellings stay banned
+	// in them, so nothing but their own readers gets through. They spell the
+	// key as a literal so that the one pattern neither static half can see
+	// is written nowhere in the repository, not even here.
+	{
+		name: 'davenport/fetch-poison-reflect',
+		files: [
+			'test/harness/sweeps/fetch-poison.ts',
+			'test/harness/sweeps/fetch-poison.test.ts',
+		],
+		rules: {
+			'no-restricted-syntax': [
+				'error',
 				...memberFetch.map((selector) => ({
 					selector,
 					message: fetchMessage,
@@ -230,7 +269,7 @@ export default defineConfig(
 					message:
 						'Zero-argument new Date() reads ambient time; use the clock port.',
 				},
-				...memberFetch.map((selector) => ({
+				...[...memberFetch, ...reflectFetch].map((selector) => ({
 					selector,
 					message: fetchMessage,
 				})),

@@ -60,9 +60,19 @@ export interface CollectionState {
 export interface AttachmentState {
 	readonly managedId: string;
 	readonly href: string;
+	/** Href of the resource it was minted against, which bounds its life. */
+	readonly owner: string;
 	readonly filename: string;
 	readonly contentType: string;
 	body: string;
+}
+
+/** What an attachment is minted from; its identifier is the server's. */
+export interface AttachmentSeed {
+	readonly owner: string;
+	readonly filename: string;
+	readonly contentType: string;
+	readonly body: string;
 }
 
 export interface AccountState {
@@ -248,19 +258,16 @@ export class ServerState {
 	}
 
 	/** Stores attachment bytes and hands back the resource that holds them. */
-	addAttachment(
-		filename: string,
-		contentType: string,
-		body: string,
-	): AttachmentState {
+	addAttachment(seed: AttachmentSeed): AttachmentState {
 		this.attachmentCounter += 1;
 		const managedId = `attachment-${String(this.attachmentCounter)}`;
 		const attachment: AttachmentState = {
 			managedId,
 			href: `${ATTACHMENTS_PATH}${managedId}`,
-			filename,
-			contentType,
-			body,
+			owner: seed.owner,
+			filename: seed.filename,
+			contentType: seed.contentType,
+			body: seed.body,
 		};
 		this.attachments.set(managedId, attachment);
 		return attachment;
@@ -270,11 +277,24 @@ export class ServerState {
 		return this.attachments.delete(managedId);
 	}
 
+	/**
+	 * Removes a resource and the attachments minted against it. Collection
+	 * happens here rather than on the request path, so a resource removed
+	 * out of band leaves no attachment behind either: an attachment URI
+	 * outliving the only resource that could name it would answer for a
+	 * calendar object no client can still reach.
+	 */
 	remove(collection: CollectionState, name: string): boolean {
 		if (!collection.resources.delete(name)) {
 			return false;
 		}
-		this.registerChange(collection, `${collection.href}${name}`, 'removed');
+		const href = `${collection.href}${name}`;
+		for (const [managedId, attachment] of [...this.attachments]) {
+			if (attachment.owner === href) {
+				this.attachments.delete(managedId);
+			}
+		}
+		this.registerChange(collection, href, 'removed');
 		return true;
 	}
 

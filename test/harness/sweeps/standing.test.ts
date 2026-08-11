@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { RequestLogEntry } from '../caldav-mock/observation';
 import type { FeedRequestRecord } from '../feed-fixture/server';
+import type { LandedDelivery } from '../vault-sync/types';
 import {
 	evidence,
 	evidenceStrings,
@@ -31,9 +32,32 @@ function request(index: number, patch: Partial<RequestLogEntry> = {}) {
 		ifNoneMatch: null,
 		report: null,
 		syncToken: null,
+		headers: {},
+		body: '',
+		bodyTruncated: false,
 		status: 204,
 		...patch,
 	} satisfies RequestLogEntry;
+}
+
+/** A delivery that landed, carrying the given file content to a peer. */
+function delivery(content: string) {
+	return {
+		delivery: {
+			id: 1,
+			from: 'laptop',
+			to: 'phone',
+			change: { kind: 'upsert', path: 'Events/one.md', content },
+			previousContent: null,
+			version: { laptop: 1 },
+			modifiedAt: 0,
+			preserveModifiedAt: true,
+			conflictCopy: false,
+		},
+		outcome: 'created',
+		conflictPath: null,
+		modifiedAt: 0,
+	} satisfies LandedDelivery;
 }
 
 function poll(index: number) {
@@ -156,6 +180,35 @@ describe('secrets-scan', () => {
 		]);
 	});
 
+	it('finds a value in a request body and in a request header', () => {
+		const record = evidence({
+			secrets: [{ label: 'app password', value: PASSWORD }],
+			caldav: {
+				requests: [
+					request(0, {
+						body: `DESCRIPTION:${PASSWORD}\r\n`,
+						headers: { authorization: `Basic ${PASSWORD}` },
+					}),
+				],
+				scheduling: [],
+			},
+		});
+		expect(violations(sweep, record)).toEqual([
+			'caldav.requests[0].headers.authorization: carries the value registered as "app password"',
+			'caldav.requests[0].body: carries the value registered as "app password"',
+		]);
+	});
+
+	it('finds a value in a file the sync channel carried to a peer', () => {
+		const record = evidence({
+			secrets: [{ label: 'app password', value: PASSWORD }],
+			vaultSync: { deliveries: [delivery(PASSWORD)] },
+		});
+		expect(violations(sweep, record)).toEqual([
+			'vaultSync.deliveries[0].delivery.change.content: carries the value registered as "app password"',
+		]);
+	});
+
 	it('finds a value in note content the end of the run no longer holds', () => {
 		const record = evidence({
 			secrets: [{ label: 'app password', value: PASSWORD }],
@@ -254,6 +307,20 @@ describe('remote-observed-no-server-requests', () => {
 					label: 'processing',
 					from: networkCursor({ caldav: 1 }),
 					to: networkCursor({ caldav: 1 }),
+				},
+			],
+		});
+		expect(sweep.check(record)).toEqual([]);
+	});
+
+	it('says nothing about deliveries the sync channel made inside one', () => {
+		const record = evidence({
+			vaultSync: { deliveries: [delivery('note text')] },
+			remoteObserved: [
+				{
+					label: 'processing',
+					from: networkCursor(),
+					to: networkCursor({ caldav: 9, feed: 9 }),
 				},
 			],
 		});
