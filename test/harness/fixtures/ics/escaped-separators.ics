@@ -1,0 +1,17 @@
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Davenport//Adversarial ICS corpus//EN
+BEGIN:VEVENT
+UID:escaped-separators@corpus.davenport.test
+DTSTAMP:20260101T000000Z
+DTSTART:20260317T113000Z
+DTEND:20260317T123000Z
+SUMMARY:Escaped separators inside and between text values
+LOCATION:Room 1\, Building 2\; Floor 3
+DESCRIPTION:This sentence ends in an escaped backslash\\
+CATEGORIES:Escaped\, comma,Escaped\; semicolon,Backslash\\pair
+RESOURCES:Projector,Whiteboard\, large
+COMMENT:A colon needs no escape - a:b:c - and neither does a quote "q"
+X-CORPUS-TRAILING-BACKSLASH:this value ends escaped too\\
+END:VEVENT
+END:VCALENDAR
