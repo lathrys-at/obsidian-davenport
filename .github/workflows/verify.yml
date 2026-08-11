@@ -1,0 +1,105 @@
+name: Verify
+
+# Live verification against real servers. Dispatch only: this workflow
+# reads the provider secrets, and no push or pull request — least of all
+# one from a fork — may reach them.
+on:
+    workflow_dispatch:
+        inputs:
+            target:
+                description: What to verify
+                type: choice
+                required: true
+                default: containers
+                options:
+                    - containers
+
+permissions:
+    contents: read
+
+jobs:
+    # Brings up the self-hosted pair and confirms both speak DAV, which is
+    # what the Radicale and Baikal columns need before a protocol runner
+    # can use them. Needs no secret, and passes without one.
+    containers:
+        if: inputs.target == 'containers'
+        runs-on: ubuntu-latest
+        env:
+            DAVENPORT_TEST_ICLOUD_URL: ${{ secrets.DAVENPORT_TEST_ICLOUD_URL }}
+            DAVENPORT_TEST_ICLOUD_USERNAME: ${{ secrets.DAVENPORT_TEST_ICLOUD_USERNAME }}
+            DAVENPORT_TEST_ICLOUD_SECRET: ${{ secrets.DAVENPORT_TEST_ICLOUD_SECRET }}
+            DAVENPORT_TEST_FASTMAIL_URL: ${{ secrets.DAVENPORT_TEST_FASTMAIL_URL }}
+            DAVENPORT_TEST_FASTMAIL_USERNAME: ${{ secrets.DAVENPORT_TEST_FASTMAIL_USERNAME }}
+            DAVENPORT_TEST_FASTMAIL_SECRET: ${{ secrets.DAVENPORT_TEST_FASTMAIL_SECRET }}
+            DAVENPORT_TEST_NEXTCLOUD_URL: ${{ secrets.DAVENPORT_TEST_NEXTCLOUD_URL }}
+            DAVENPORT_TEST_NEXTCLOUD_USERNAME: ${{ secrets.DAVENPORT_TEST_NEXTCLOUD_USERNAME }}
+            DAVENPORT_TEST_NEXTCLOUD_SECRET: ${{ secrets.DAVENPORT_TEST_NEXTCLOUD_SECRET }}
+            DAVENPORT_TEST_RADICALE_URL: ${{ secrets.DAVENPORT_TEST_RADICALE_URL }}
+            DAVENPORT_TEST_RADICALE_USERNAME: ${{ secrets.DAVENPORT_TEST_RADICALE_USERNAME }}
+            DAVENPORT_TEST_RADICALE_SECRET: ${{ secrets.DAVENPORT_TEST_RADICALE_SECRET }}
+            DAVENPORT_TEST_BAIKAL_URL: ${{ secrets.DAVENPORT_TEST_BAIKAL_URL }}
+            DAVENPORT_TEST_BAIKAL_USERNAME: ${{ secrets.DAVENPORT_TEST_BAIKAL_USERNAME }}
+            DAVENPORT_TEST_BAIKAL_SECRET: ${{ secrets.DAVENPORT_TEST_BAIKAL_SECRET }}
+            DAVENPORT_TEST_GOOGLE_URL: ${{ secrets.DAVENPORT_TEST_GOOGLE_URL }}
+            DAVENPORT_TEST_GOOGLE_USERNAME: ${{ secrets.DAVENPORT_TEST_GOOGLE_USERNAME }}
+            DAVENPORT_TEST_GOOGLE_SECRET: ${{ secrets.DAVENPORT_TEST_GOOGLE_SECRET }}
+        steps:
+            - uses: actions/checkout@v6
+
+            # Names only. A configured provider's values stay in the
+            # environment and out of the log.
+            - name: Report which providers this run can reach
+              run: |
+                  for provider in ICLOUD FASTMAIL NEXTCLOUD RADICALE BAIKAL GOOGLE; do
+                      missing=
+                      for part in URL USERNAME SECRET; do
+                          name="DAVENPORT_TEST_${provider}_${part}"
+                          value=$(printenv "$name" || true)
+                          if [ -z "$value" ]; then
+                              missing="$missing $name"
+                          fi
+                      done
+                      if [ -z "$missing" ]; then
+                          echo "$provider: configured"
+                      else
+                          echo "$provider: unavailable, unset:$missing"
+                      fi
+                  done
+
+            - name: Start the self-hosted servers
+              run: docker compose --file test/live/docker-compose.yml up --detach
+
+            # The credentials are the throwaway pair baked into the
+            # compose file, not a secret.
+            - name: Probe the CalDAV roots
+              run: |
+                  probe() {
+                      name=$1
+                      url=$2
+                      attempt=1
+                      while [ "$attempt" -le 60 ]; do
+                          headers=$(curl --silent --max-time 10 --user davenport:davenport \
+                              --request OPTIONS --dump-header - --output /dev/null "$url" || true)
+                          if printf '%s\n' "$headers" | grep -qi '^dav:'; then
+                              echo "$name: $url answers OPTIONS with"
+                              printf '%s\n' "$headers" | grep -i '^dav:'
+                              return 0
+                          fi
+                          attempt=$((attempt + 1))
+                          sleep 2
+                      done
+                      echo "$name: $url sent no DAV response in 60 attempts" >&2
+                      printf '%s\n' "$headers" >&2
+                      return 1
+                  }
+
+                  probe radicale http://127.0.0.1:5232/
+                  probe baikal http://127.0.0.1:8801/dav.php/
+
+            - name: Server logs
+              if: failure()
+              run: docker compose --file test/live/docker-compose.yml logs
+
+            - name: Stop the self-hosted servers
+              if: always()
+              run: docker compose --file test/live/docker-compose.yml down --volumes

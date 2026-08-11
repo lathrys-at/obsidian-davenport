@@ -21,6 +21,11 @@ main.js
 # obsidian
 data.json
 
+# Live verification credentials. .env.example is the committed template.
+.env
+.env.*
+!.env.example
+
 # Exclude macOS Finder (System Explorer) View States
 .DS_Store
 

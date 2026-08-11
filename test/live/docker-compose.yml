@@ -1,0 +1,43 @@
+# Self-hosted CalDAV servers for live verification runs, so the Radicale
+# and Baikal columns need no account anywhere.
+#
+#     docker compose -f test/live/docker-compose.yml up -d
+#     docker compose -f test/live/docker-compose.yml down -v
+#
+# Radicale answers on http://localhost:5232/ and Baikal on
+# http://localhost:8801/dav.php/, both as davenport/davenport. Those
+# credentials are throwaway and public by design: the stack binds to
+# loopback, holds nothing but test data, and goes away with its volumes.
+# Radicale keeps its upstream default port; Baikal's upstream default is
+# 80, so it takes one clear of the range dev servers and proxies compete
+# for. Image tags are pinned, and the Baikal seed script names the same
+# version its tag does.
+#
+# See test/live/README.md.
+
+services:
+    radicale:
+        image: tomsquest/docker-radicale:3.7.6.0
+        ports:
+            - '127.0.0.1:5232:5232'
+        volumes:
+            - ./radicale:/config:ro
+            - radicale-data:/data
+        # The image's healthcheck fetches the root without credentials,
+        # which is a 401 once authentication is configured.
+        healthcheck:
+            disable: true
+
+    baikal:
+        image: ckulka/baikal:0.10.1-nginx
+        ports:
+            - '127.0.0.1:8801:80'
+        volumes:
+            - ./baikal/35-davenport-seed.sh:/docker-entrypoint.d/35-davenport-seed.sh:ro
+            - baikal-config:/var/www/baikal/config
+            - baikal-specific:/var/www/baikal/Specific
+
+volumes:
+    radicale-data:
+    baikal-config:
+    baikal-specific:
