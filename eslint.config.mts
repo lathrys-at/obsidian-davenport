@@ -110,6 +110,21 @@ export default defineConfig(
 			'obsidianmd/no-nodejs-modules': 'off',
 		},
 	},
+	// The fetch poison is the runtime half of the ban below: it replaces
+	// fetch on every global spelling a caller could reach it through, and
+	// its tests reach back through the same names to prove it did. The rule
+	// steering plugin code toward the popout-safe window has nothing to say
+	// about the two files whose subject is the global object itself.
+	{
+		name: 'davenport/fetch-poison',
+		files: [
+			'test/harness/sweeps/fetch-poison.ts',
+			'test/harness/sweeps/fetch-poison.test.ts',
+		],
+		rules: {
+			'obsidianmd/no-global-this': 'off',
+		},
+	},
 	// All network I/O flows through the transport port; the Obsidian
 	// adapter backs it with requestUrl. A direct fetch breaks on mobile.
 	{

@@ -47,5 +47,15 @@ the capability switchboard, then asserts against the ordered request log
 and the scheduling record — the ledger of writes that would have mailed
 attendees.
 
+`test/harness/sweeps/` holds the standing assertions and the helper a
+simulation is built through. `runSimulation` gathers what the run's surfaces
+recorded, evaluates every registered sweep over the result, and fails the
+test with the sweep's name and the evidence it objected to. Sweeps are named
+predicates over that evidence; the standing set is in `standing.ts` and grows
+with the behavior it polices, and a suite may register its own. `setup.ts` is
+wired into `vitest.config.ts` and applies to every test file: it poisons
+global fetch, so a call outside the transport port throws where it is
+written, and returns the registry to the standing set before each test.
+
 Commands: `npm test` (single run), `npm run test:watch`, `npm run coverage`.
 Coverage is report-only for now.
