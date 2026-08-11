@@ -5,6 +5,7 @@ import {
 	icsEvent,
 	multigetBody,
 	propfindBody,
+	propnameBody,
 	readMultistatus,
 	hrefsIn,
 	errorConditionIn,
@@ -160,6 +161,79 @@ describe('mock CalDAV server: discovery', () => {
 		expect(responses[1]?.missing).toContain('c:calendar-description');
 	});
 
+	it('answers a property in a namespace it never heard of', async () => {
+		const mock = server();
+		const vendor = { x: 'http://apple.com/ns/ical/' };
+		const propfind = await mock.request({
+			url: mock.collectionUrl('alice', 'work'),
+			method: 'PROPFIND',
+			headers: { Depth: '0' },
+			body: propfindBody(
+				['d:displayname', 'x:calendar-color', 'x:calendar-order'],
+				vendor,
+			),
+		});
+		expect(propfind.status).toBe(207);
+		const [collection] = readMultistatus(propfind.text);
+		expect(collection?.found.get('d:displayname')).toBe('Work');
+		expect(collection?.missing).toStrictEqual([
+			'http://apple.com/ns/ical/:calendar-color',
+			'http://apple.com/ns/ical/:calendar-order',
+		]);
+
+		const report = await mock.request({
+			url: mock.collectionUrl('alice', 'work'),
+			method: 'REPORT',
+			body: `<?xml version="1.0" encoding="utf-8" ?>
+<C:calendar-multiget xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav" xmlns:x="http://apple.com/ns/ical/">
+	<D:prop><D:getetag/><x:calendar-color/></D:prop>
+	<D:href>${WORK}one.ics</D:href>
+</C:calendar-multiget>`,
+		});
+		expect(report.status).toBe(207);
+		expect(readMultistatus(report.text)[0]?.missing).toStrictEqual([
+			'http://apple.com/ns/ical/:calendar-color',
+		]);
+		expect(mock.log.entries.map((entry) => entry.status)).toStrictEqual([
+			207, 207,
+		]);
+	});
+
+	it('answers a PROPFIND for property names without their values', async () => {
+		const mock = server();
+		const response = await mock.request({
+			url: mock.collectionUrl('alice', 'work'),
+			method: 'PROPFIND',
+			headers: { Depth: '0' },
+			body: propnameBody(),
+		});
+		const [collection] = readMultistatus(response.text);
+		expect(collection?.found.get('d:displayname')).toBe('');
+		expect(collection?.found.has('cs:getctag')).toBe(true);
+		expect(collection?.missing).toStrictEqual([]);
+	});
+
+	it('tells a corrupt PROPFIND body from an absent one', async () => {
+		const mock = server();
+		const corrupt = await mock.request({
+			url: mock.collectionUrl('alice', 'work'),
+			method: 'PROPFIND',
+			headers: { Depth: '0' },
+			body: '<d:propfind xmlns:d="DAV:"><d:prop><d:displayname/>',
+		});
+		expect(corrupt.status).toBe(400);
+
+		const absent = await mock.request({
+			url: mock.collectionUrl('alice', 'work'),
+			method: 'PROPFIND',
+			headers: { Depth: '0' },
+		});
+		expect(absent.status).toBe(207);
+		expect(
+			readMultistatus(absent.text)[0]?.found.get('d:displayname'),
+		).toBe('Work');
+	});
+
 	it('names each collection its own component set', async () => {
 		const mock = server();
 		const response = await mock.request({
@@ -231,6 +305,72 @@ describe('mock CalDAV server: reports', () => {
 		expect(errorConditionIn(response.text)).toBe('d:valid-sync-token');
 	});
 
+	it('refuses a token it never issued, whatever it looks like', async () => {
+		const mock = server();
+		const issued = mock.syncToken('alice', 'work');
+		const prefix = issued.replace(/\d+$/, '');
+		const forged = ['', ' 1', '0x1', '1e0', '01', '+1', '1.0'];
+
+		const answers: Record<string, string> = {};
+		for (const suffix of forged) {
+			const response = await mock.request({
+				url: mock.collectionUrl('alice', 'work'),
+				method: 'REPORT',
+				body: syncCollectionBody(`${prefix}${suffix}`),
+			});
+			answers[suffix] =
+				`${String(response.status)} ${errorConditionIn(response.text) ?? 'no condition'}`;
+		}
+		expect(answers).toStrictEqual(
+			Object.fromEntries(
+				forged.map((suffix) => [suffix, '403 d:valid-sync-token']),
+			),
+		);
+
+		const genuine = await mock.request({
+			url: mock.collectionUrl('alice', 'work'),
+			method: 'REPORT',
+			body: syncCollectionBody(issued),
+		});
+		expect(genuine.status).toBe(207);
+	});
+
+	it('spans a whole day for an all-day event with no end', async () => {
+		const mock = server();
+		mock.seedResource(
+			'alice',
+			'work',
+			'allday.ics',
+			icsEvent({ uid: 'allday', start: '20260501' }),
+		);
+		const query = async (
+			start: string,
+			end: string,
+		): Promise<readonly string[]> =>
+			hrefsIn(
+				(
+					await mock.request({
+						url: mock.collectionUrl('alice', 'work'),
+						method: 'REPORT',
+						body: calendarQueryBody({ start, end }),
+					})
+				).text,
+			);
+
+		expect(
+			await query('20260501T120000Z', '20260502T000000Z'),
+		).toStrictEqual([`${WORK}allday.ics`]);
+		expect(
+			await query('20260430T000000Z', '20260501T000000Z'),
+		).toStrictEqual([]);
+		expect(
+			await query('20260502T000000Z', '20260503T000000Z'),
+		).toStrictEqual([]);
+		expect(
+			await query('20260501T235959Z', '20260502T000000Z'),
+		).toStrictEqual([`${WORK}allday.ics`]);
+	});
+
 	it('filters a calendar-query by half-open time range', async () => {
 		const mock = server();
 		const inRange = await mock.request({
@@ -281,6 +421,17 @@ describe('mock CalDAV server: reports', () => {
 			body: calendarQueryBody({ component: 'VTODO' }),
 		});
 		expect(hrefsIn(byComponent.text)).toStrictEqual([]);
+	});
+
+	it('answers a multiget aimed at one calendar object resource', async () => {
+		const mock = server();
+		const response = await mock.request({
+			url: mock.resourceUrl('alice', 'work', 'one.ics'),
+			method: 'REPORT',
+			body: multigetBody([`${WORK}one.ics`]),
+		});
+		expect(response.status).toBe(207);
+		expect(hrefsIn(response.text)).toStrictEqual([`${WORK}one.ics`]);
 	});
 
 	it('answers a multiget with the found resources and a 404 for the rest', async () => {
@@ -361,6 +512,83 @@ describe('mock CalDAV server: resources', () => {
 		expect(fetched.headers['Content-Type']).toBe(
 			'text/calendar; charset=utf-8',
 		);
+	});
+
+	it('lists members in name order however they were written', async () => {
+		const mock = server();
+		mock.removeResource('alice', 'work', 'one.ics');
+		mock.seedResource('alice', 'work', 'one.ics', icsEvent({ uid: 'one' }));
+		const response = await mock.request({
+			url: mock.collectionUrl('alice', 'work'),
+			method: 'PROPFIND',
+			headers: { Depth: '1' },
+			body: propfindBody(['d:getetag']),
+		});
+		expect(hrefsIn(response.text)).toStrictEqual([
+			WORK,
+			`${WORK}one.ics`,
+			`${WORK}two.ics`,
+		]);
+		expect(mock.resourceNames('alice', 'work')).toStrictEqual([
+			'one.ics',
+			'two.ics',
+		]);
+	});
+
+	it('refuses a component the collection does not hold', async () => {
+		const mock = server();
+		const response = await mock.request({
+			url: mock.resourceUrl('alice', 'chores', 'event.ics'),
+			method: 'PUT',
+			body: icsEvent({ uid: 'event' }),
+		});
+		expect(response.status).toBe(403);
+		expect(errorConditionIn(response.text)).toBe(
+			'c:supported-calendar-component',
+		);
+		expect(mock.resourceNames('alice', 'chores')).toStrictEqual([]);
+
+		const accepted = await mock.request({
+			url: mock.resourceUrl('alice', 'chores', 'task.ics'),
+			method: 'PUT',
+			body: icsEvent({ uid: 'task', component: 'VTODO' }),
+		});
+		expect(accepted.status).toBe(201);
+	});
+
+	it('names nothing at a resource path spelled as a collection', async () => {
+		const mock = server();
+		const response = await mock.request({
+			url: `${mock.resourceUrl('alice', 'work', 'one.ics')}/`,
+			method: 'GET',
+		});
+		expect(response.status).toBe(404);
+	});
+
+	it('answers a write under a missing collection with a conflict', async () => {
+		const mock = server();
+		const response = await mock.request({
+			url: mock.url('/calendars/alice/nowhere/one.ics'),
+			method: 'PUT',
+			body: icsEvent({ uid: 'one' }),
+		});
+		expect(response.status).toBe(409);
+	});
+
+	it('answers OPTIONS only where something is served', async () => {
+		const mock = server();
+		const served = await mock.request({
+			url: mock.collectionUrl('alice', 'work'),
+			method: 'OPTIONS',
+		});
+		expect(served.status).toBe(200);
+		expect(served.headers.DAV).toContain('calendar-access');
+
+		const nowhere = await mock.request({
+			url: mock.url('/nowhere/at/all'),
+			method: 'OPTIONS',
+		});
+		expect(nowhere.status).toBe(404);
 	});
 
 	it('refuses a body that is not calendar data', async () => {

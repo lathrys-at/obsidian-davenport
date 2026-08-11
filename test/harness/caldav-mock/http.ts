@@ -39,6 +39,15 @@ export function pathOf(url: string, origin: string): string | null {
 	return parsed.origin === new URL(origin).origin ? parsed.pathname : null;
 }
 
+/** The query the request carries; empty for a URL that will not parse. */
+export function queryOf(url: string, origin: string): URLSearchParams {
+	try {
+		return new URL(url, origin).searchParams;
+	} catch {
+		return new URLSearchParams();
+	}
+}
+
 /**
  * A truncated response keeps its status and headers: the failure is in the
  * body, and cutting octets mid-character is part of what it does.

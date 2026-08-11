@@ -5,6 +5,7 @@
  */
 
 export { MockCalDavServer, type MockServerConfig } from './server';
+export { MANAGED_ID_HEADER } from './attachments';
 export {
 	DEFAULT_CAPABILITIES,
 	type CtagBehavior,

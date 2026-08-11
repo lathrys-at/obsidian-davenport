@@ -194,6 +194,35 @@ describe('scheduling record', () => {
 		expect(entry?.attendeesBefore).toStrictEqual([ORGANIZER, GUEST]);
 	});
 
+	it('records an attachment write against a resource with attendees', async () => {
+		const mock = new MockCalDavServer({
+			capabilities: { managedAttachments: true },
+			accounts: [
+				{
+					name: 'alice',
+					collections: [
+						{
+							name: 'work',
+							resources: [{ name: 'one.ics', ics: WITH_GUEST }],
+						},
+					],
+				},
+			],
+		});
+		const added = await mock.request({
+			url: `${mock.resourceUrl('alice', 'work', 'one.ics')}?action=attachment-add`,
+			method: 'POST',
+			headers: { 'Content-Type': 'text/plain' },
+			body: 'agenda text',
+		});
+		expect(added.status).toBe(201);
+		const [entry] = mock.scheduling.entries;
+		expect(entry?.method).toBe('POST');
+		expect(entry?.transition).toBe('retains');
+		expect(entry?.attendeesAfter).toStrictEqual([ORGANIZER, GUEST]);
+		expect(entry?.requestIndex).toBe(0);
+	});
+
 	it('records nothing for writes that touch no attendee', async () => {
 		const mock = server();
 		await mock.request({

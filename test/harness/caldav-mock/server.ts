@@ -7,6 +7,11 @@
  * capability configuration, and the requests it has received. Identifiers
  * come from counters, so two runs of the same sequence produce the same
  * bytes.
+ *
+ * The model accessors set a scene or check one without going through a
+ * request. None of them touches the request log or the scheduling record:
+ * state changed that way stands for another client's work, not for a write
+ * by the engine under test.
  */
 
 import type {
@@ -20,10 +25,12 @@ import {
 	type FaultInjection,
 	type MockServerCapabilities,
 } from './capabilities';
+import { attachmentBody, handleAttachmentPost } from './attachments';
 import {
 	bodyText,
 	headerReader,
 	pathOf,
+	queryOf,
 	toHttpResponse,
 	type HeaderReader,
 } from './http';
@@ -38,12 +45,13 @@ import { handleReport, presentedSyncToken, reportKindOf } from './report';
 import { plain, type MockResponse } from './response';
 import { handleDelete, handleGet, handlePut } from './resource';
 import {
+	membersOf,
 	PRINCIPAL_ROOT_PATH,
 	ServerState,
 	WELL_KNOWN_PATH,
 	type AccountSeed,
 } from './state';
-import { parseXml, type XmlDocument } from './xml';
+import { ABSENT_BODY, documentOf, parseBody, type XmlBody } from './xml';
 
 export interface MockServerConfig {
 	readonly accounts: readonly AccountSeed[];
@@ -53,6 +61,28 @@ export interface MockServerConfig {
 
 const DEFAULT_ORIGIN = 'https://caldav.davenport.test';
 const XML_METHODS = new Set(['PROPFIND', 'REPORT']);
+
+/** A request the server has taken apart and entered in the log. */
+interface Incoming {
+	readonly method: string;
+	readonly path: string;
+	readonly headers: HeaderReader;
+	readonly body: string;
+	readonly parsed: XmlBody;
+	readonly query: URLSearchParams;
+	readonly contentType: string | null;
+	/** Its place in the request log, which a write points back at. */
+	readonly index: number;
+}
+
+/** A failure inside the mock reads as a server failure, which is a 500. */
+function serverFailure(error: unknown): MockResponse {
+	return plain(
+		500,
+		{ 'Content-Type': 'text/plain; charset=utf-8' },
+		`mock server failed: ${String(error)}`,
+	);
+}
 
 export class MockCalDavServer implements HttpTransport {
 	readonly log = new RequestLog();
@@ -87,10 +117,6 @@ export class MockCalDavServer implements HttpTransport {
 	request(req: HttpRequest): Promise<HttpResponse> {
 		return Promise.resolve(this.handle(req));
 	}
-
-	// Model access for setting a scene or checking one. None of it touches
-	// the request log or the scheduling record: state changed this way
-	// stands for another client's work, not for a write by the engine.
 
 	authenticateAs(account: string): void {
 		this.state.authenticateAs(account);
@@ -139,8 +165,8 @@ export class MockCalDavServer implements HttpTransport {
 	}
 
 	resourceNames(account: string, collection: string): readonly string[] {
-		return Array.from(
-			this.state.collection(account, collection).resources.keys(),
+		return membersOf(this.state.collection(account, collection)).map(
+			(resource) => resource.name,
 		);
 	}
 
@@ -156,8 +182,6 @@ export class MockCalDavServer implements HttpTransport {
 			this.state.collection(account, collection),
 		);
 	}
-
-	// URL helpers, so tests and engine wiring name the same places.
 
 	url(path: string): string {
 		return `${this.origin}${path}`;
@@ -188,12 +212,25 @@ export class MockCalDavServer implements HttpTransport {
 	}
 
 	private handle(req: HttpRequest): HttpResponse {
+		try {
+			return this.answer(req);
+		} catch (error) {
+			// The port rejects only for transport failure, so a fault in the
+			// mock's own code has to come back as a response like any other.
+			return toHttpResponse(serverFailure(error), null);
+		}
+	}
+
+	private answer(req: HttpRequest): HttpResponse {
 		const method = (req.method ?? 'GET').toUpperCase();
 		const headers = headerReader(req.headers);
 		const body = bodyText(req.body);
 		const path = pathOf(req.url, this.origin);
-		const document =
-			path !== null && XML_METHODS.has(method) ? parseXml(body) : null;
+		const parsed =
+			path !== null && XML_METHODS.has(method)
+				? parseBody(body)
+				: ABSENT_BODY;
+		const document = documentOf(parsed);
 
 		const index = this.log.begin({
 			method,
@@ -206,82 +243,114 @@ export class MockCalDavServer implements HttpTransport {
 			syncToken: presentedSyncToken(document),
 		});
 
-		const fault = this.matchFault(method, path ?? req.url);
-		const response =
-			fault?.kind === 'status'
-				? plain(fault.status ?? 503)
-				: this.route(method, path, headers, body, document, index);
-
-		this.log.complete(index, response.status);
-		return toHttpResponse(
-			response,
-			fault?.kind === 'truncate' ? (fault.truncateAfter ?? 0) : null,
-		);
+		const answered =
+			path === null
+				? { response: plain(404), truncateAfter: null }
+				: this.serve({
+						method,
+						path,
+						headers,
+						body,
+						parsed,
+						query: queryOf(req.url, this.origin),
+						contentType:
+							headers('content-type') ?? req.contentType ?? null,
+						index,
+					});
+		this.log.complete(index, answered.response.status);
+		return toHttpResponse(answered.response, answered.truncateAfter);
 	}
 
-	private route(
-		method: string,
-		path: string | null,
-		headers: HeaderReader,
-		body: string,
-		document: XmlDocument | null,
-		requestIndex: number,
-	): MockResponse {
-		if (path === null) {
-			return plain(404);
-		}
-		const redirect = this.config.redirects[path];
+	/**
+	 * Faults are matched only once the request is one this server would
+	 * have handled, so a request for another origin and a redirected hop
+	 * leave a fault's budget alone.
+	 */
+	private serve(incoming: Incoming): {
+		response: MockResponse;
+		truncateAfter: number | null;
+	} {
+		const redirect = this.config.redirects[incoming.path];
 		if (redirect) {
-			return plain(redirect.status ?? 301, {
-				Location: this.url(redirect.location),
-			});
+			return {
+				response: plain(redirect.status ?? 301, {
+					Location: this.url(redirect.location),
+				}),
+				truncateAfter: null,
+			};
 		}
-		const route = this.state.resolve(path);
-		const context: PropContext = { state: this.state, caps: this.config };
+		const fault = this.matchFault(incoming.method, incoming.path);
+		if (fault?.kind === 'status') {
+			return {
+				response: plain(fault.status ?? 503),
+				truncateAfter: null,
+			};
+		}
+		let response: MockResponse;
+		try {
+			response = this.route(incoming);
+		} catch (error) {
+			response = serverFailure(error);
+		}
+		return {
+			response,
+			truncateAfter:
+				fault?.kind === 'truncate' ? (fault.truncateAfter ?? 0) : null,
+		};
+	}
 
-		if (method === 'OPTIONS') {
-			return plain(200, {
-				DAV: this.davHeader(),
-				Allow: 'OPTIONS, GET, PUT, DELETE, PROPFIND, REPORT',
-			});
-		}
+	private route(incoming: Incoming): MockResponse {
+		const { method, headers, body, parsed } = incoming;
+		const route = this.state.resolve(incoming.path);
+		const context: PropContext = { state: this.state, caps: this.config };
+		const writeContext = {
+			state: this.state,
+			caps: this.config,
+			ifMatch: headers('if-match'),
+			ifNoneMatch: headers('if-none-match'),
+			recordScheduling: (fact: SchedulingFact) => {
+				this.scheduling.record(incoming.index, fact);
+			},
+		};
+
 		if (route.kind === 'well-known') {
 			// Nothing is served here: a well-known URI either redirects to
 			// the principal or is not there at all.
 			return plain(404);
+		}
+		if (method === 'OPTIONS') {
+			return route.kind === 'unknown'
+				? plain(404)
+				: plain(200, {
+						DAV: this.davHeader(),
+						Allow: this.allowHeader(),
+					});
 		}
 		switch (method) {
 			case 'PROPFIND':
 				return handlePropfind(
 					route,
 					headers('depth'),
-					document,
+					parsed,
 					context,
 					this.state.currentAccount,
 				);
 			case 'REPORT':
-				return handleReport(route, document, context);
+				return handleReport(route, parsed, context);
 			case 'GET':
-				return handleGet(route, this.state, this.config);
+				return route.kind === 'attachment'
+					? attachmentBody(route.attachment)
+					: handleGet(route, this.state, this.config);
 			case 'PUT':
-				return handlePut(route, body, {
-					state: this.state,
-					caps: this.config,
-					ifMatch: headers('if-match'),
-					ifNoneMatch: headers('if-none-match'),
-					recordScheduling: (fact: SchedulingFact) => {
-						this.scheduling.record(requestIndex, fact);
-					},
-				});
+				return handlePut(route, body, writeContext);
 			case 'DELETE':
-				return handleDelete(route, {
-					state: this.state,
-					caps: this.config,
-					ifMatch: headers('if-match'),
-					ifNoneMatch: headers('if-none-match'),
-					recordScheduling: (fact: SchedulingFact) => {
-						this.scheduling.record(requestIndex, fact);
-					},
+				return handleDelete(route, writeContext);
+			case 'POST':
+				return handleAttachmentPost(route, incoming.query, body, {
+					...writeContext,
+					origin: this.origin,
+					contentType: incoming.contentType,
+					disposition: headers('content-disposition'),
 				});
 			default:
 				return plain(405);
@@ -294,6 +363,21 @@ export class MockCalDavServer implements HttpTransport {
 			tokens.push('calendar-managed-attachments');
 		}
 		return tokens.join(', ');
+	}
+
+	private allowHeader(): string {
+		const methods = [
+			'OPTIONS',
+			'GET',
+			'PUT',
+			'DELETE',
+			'PROPFIND',
+			'REPORT',
+		];
+		if (this.config.managedAttachments) {
+			methods.push('POST');
+		}
+		return methods.join(', ');
 	}
 
 	private matchFault(method: string, path: string): FaultInjection | null {

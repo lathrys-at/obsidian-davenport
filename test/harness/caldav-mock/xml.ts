@@ -34,17 +34,50 @@ export interface PropName {
 	readonly local: string;
 }
 
-/** Null when the body is empty or not well-formed; callers answer 400. */
+/**
+ * A request body, told apart by what it is: no body at all is a legal
+ * request shape, and bytes that will not parse are a bad request.
+ */
+export type XmlBody =
+	| { readonly kind: 'absent' }
+	| { readonly kind: 'malformed' }
+	| { readonly kind: 'document'; readonly document: XmlDocument };
+
+export const ABSENT_BODY: XmlBody = { kind: 'absent' };
+
+export function parseBody(text: string): XmlBody {
+	if (text.trim() === '') {
+		return ABSENT_BODY;
+	}
+	const document = parseXml(text);
+	return document === null
+		? { kind: 'malformed' }
+		: { kind: 'document', document };
+}
+
+/** Null when the body is empty or not well-formed. */
 export function parseXml(text: string): XmlDocument | null {
 	if (text.trim() === '') {
 		return null;
 	}
 	try {
-		const doc = new DOMParser().parseFromString(text, 'text/xml');
+		const doc = new DOMParser({
+			onError: swallowParseError,
+		}).parseFromString(text, 'text/xml');
 		return doc.documentElement ? doc : null;
 	} catch {
 		return null;
 	}
+}
+
+/** A body that will not parse is answered with a status, not with output. */
+function swallowParseError(): void {
+	return;
+}
+
+/** The document a parsed body carries, or null for absent and malformed. */
+export function documentOf(body: XmlBody): XmlDocument | null {
+	return body.kind === 'document' ? body.document : null;
 }
 
 function isElement(node: XmlNode): node is XmlElement {
@@ -104,16 +137,23 @@ export function nameOf(el: XmlElement): PropName {
 }
 
 /**
- * Builds a response document. All three namespaces are declared on the
- * root, as servers do, so nested elements carry no declarations of their
- * own and output stays byte-stable for a given tree.
+ * Builds a response document. The three namespaces the server speaks are
+ * declared on the root, as servers do, so nested elements carry no
+ * declarations of their own and output stays byte-stable for a given tree.
+ *
+ * A request may name a property in any namespace at all, and the response
+ * has to echo that name back in a 404 propstat. Namespaces beyond the
+ * three get a prefix minted on first use and declared on the root, in the
+ * order the tree needs them, so output stays byte-stable there too.
  */
 export class XmlOutput {
 	private readonly doc: XmlDocument;
+	private readonly prefixes = new Map<string, string>(PREFIX_BY_NAMESPACE);
 	readonly root: XmlElement;
 
 	constructor(namespace: string, local: string) {
-		const prefix = prefixFor(namespace);
+		const prefix = this.prefixes.get(namespace) ?? mintedPrefix(0);
+		this.prefixes.set(namespace, prefix);
 		const doc = new DOMParser().parseFromString(
 			`<${prefix}:${local} xmlns:${prefix}="${namespace}"/>`,
 			'text/xml',
@@ -124,7 +164,7 @@ export class XmlOutput {
 		}
 		this.doc = doc;
 		this.root = root;
-		for (const [ns, other] of PREFIX_BY_NAMESPACE) {
+		for (const [ns, other] of this.prefixes) {
 			if (other !== prefix) {
 				root.setAttributeNS(XMLNS_NS, `xmlns:${other}`, ns);
 			}
@@ -137,7 +177,13 @@ export class XmlOutput {
 		local: string,
 		text?: string,
 	): XmlElement {
-		const el = this.doc.createElementNS(ns, `${prefixFor(ns)}:${local}`);
+		const el =
+			ns === ''
+				? this.doc.createElementNS(null, local)
+				: this.doc.createElementNS(
+						ns,
+						`${this.prefixFor(ns)}:${local}`,
+					);
 		if (text !== undefined) {
 			el.appendChild(this.doc.createTextNode(text));
 		}
@@ -150,12 +196,19 @@ export class XmlOutput {
 			this.root,
 		)}`;
 	}
+
+	private prefixFor(namespace: string): string {
+		const known = this.prefixes.get(namespace);
+		if (known !== undefined) {
+			return known;
+		}
+		const minted = mintedPrefix(this.prefixes.size);
+		this.prefixes.set(namespace, minted);
+		this.root.setAttributeNS(XMLNS_NS, `xmlns:${minted}`, namespace);
+		return minted;
+	}
 }
 
-function prefixFor(namespace: string): string {
-	const prefix = PREFIX_BY_NAMESPACE.get(namespace);
-	if (prefix === undefined) {
-		throw new Error(`mock server has no prefix for ${namespace}`);
-	}
-	return prefix;
+function mintedPrefix(position: number): string {
+	return `ns${String(position)}`;
 }

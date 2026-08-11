@@ -56,6 +56,15 @@ export interface CollectionState {
 	syncCounter: number;
 }
 
+/** A managed attachment, addressed by the identifier that minted it. */
+export interface AttachmentState {
+	readonly managedId: string;
+	readonly href: string;
+	readonly filename: string;
+	readonly contentType: string;
+	body: string;
+}
+
 export interface AccountState {
 	readonly name: string;
 	readonly displayName: string;
@@ -67,10 +76,12 @@ export interface AccountState {
 
 export const WELL_KNOWN_PATH = '/.well-known/caldav';
 export const PRINCIPAL_ROOT_PATH = '/principals/';
+export const ATTACHMENTS_PATH = '/attachments/';
 
 export type Route =
 	| { readonly kind: 'well-known' }
 	| { readonly kind: 'principal-root' }
+	| { readonly kind: 'attachment'; readonly attachment: AttachmentState }
 	| { readonly kind: 'principal'; readonly account: AccountState }
 	| { readonly kind: 'home'; readonly account: AccountState }
 	| {
@@ -92,10 +103,30 @@ export type Route =
 	  }
 	| { readonly kind: 'unknown' };
 
+/**
+ * A collection's members in name order. Map order would follow write
+ * history, so deleting and re-creating a resource would move it, and a
+ * listing would then be asserting the order the test wrote in.
+ */
+export function membersOf(
+	collection: CollectionState,
+): readonly ResourceState[] {
+	return Array.from(collection.resources.values()).sort(byName);
+}
+
+function byName(left: ResourceState, right: ResourceState): number {
+	if (left.name === right.name) {
+		return 0;
+	}
+	return left.name < right.name ? -1 : 1;
+}
+
 export class ServerState {
 	readonly accounts = new Map<string, AccountState>();
+	readonly attachments = new Map<string, AttachmentState>();
 	private defaultAccount = '';
 	private etagCounter = 0;
+	private attachmentCounter = 0;
 
 	constructor(seeds: readonly AccountSeed[]) {
 		for (const seed of seeds) {
@@ -149,6 +180,15 @@ export class ServerState {
 		if (accountName === undefined) {
 			return { kind: 'unknown' };
 		}
+		if (root === 'attachments') {
+			const attachment =
+				segments.length === 2
+					? this.attachments.get(accountName)
+					: undefined;
+			return attachment
+				? { kind: 'attachment', attachment }
+				: { kind: 'unknown' };
+		}
 		const account = this.accounts.get(accountName);
 		if (!account) {
 			return { kind: 'unknown' };
@@ -169,7 +209,9 @@ export class ServerState {
 		if (resourceName === undefined) {
 			return { kind: 'collection', account, collection };
 		}
-		if (segments.length > 4) {
+		// A resource is not a collection, so the trailing-slash spelling of
+		// its path names nothing rather than the same resource twice.
+		if (segments.length > 4 || path.endsWith('/')) {
 			return { kind: 'unknown' };
 		}
 		const resource = collection.resources.get(resourceName);
@@ -205,6 +247,29 @@ export class ServerState {
 		return etag;
 	}
 
+	/** Stores attachment bytes and hands back the resource that holds them. */
+	addAttachment(
+		filename: string,
+		contentType: string,
+		body: string,
+	): AttachmentState {
+		this.attachmentCounter += 1;
+		const managedId = `attachment-${String(this.attachmentCounter)}`;
+		const attachment: AttachmentState = {
+			managedId,
+			href: `${ATTACHMENTS_PATH}${managedId}`,
+			filename,
+			contentType,
+			body,
+		};
+		this.attachments.set(managedId, attachment);
+		return attachment;
+	}
+
+	removeAttachment(managedId: string): boolean {
+		return this.attachments.delete(managedId);
+	}
+
 	remove(collection: CollectionState, name: string): boolean {
 		if (!collection.resources.delete(name)) {
 			return false;
@@ -215,7 +280,9 @@ export class ServerState {
 
 	/**
 	 * The ETag to report now. A per-fetch server mints a fresh one on every
-	 * read, which is what makes its If-Match backstop worthless.
+	 * read, so any read invalidates the ETag every other reader is holding:
+	 * a client's own read-then-write still succeeds, and a write behind
+	 * somebody else's read does not.
 	 */
 	reportedEtag(resource: ResourceState, stability: EtagStability): string {
 		if (stability === 'per-fetch') {
@@ -241,17 +308,26 @@ export class ServerState {
 		return `${SYNC_TOKEN_PREFIX}${collection.href}${String(at)}`;
 	}
 
-	/** Null when the token was not issued by this collection. */
+	/**
+	 * Null when the token is not one this collection issued. The candidate
+	 * counter is read strictly and the token is then rebuilt and compared
+	 * whole, so a truncated token, a padded one, and anything numeric
+	 * coercion would have accepted are all refused.
+	 */
 	parseSyncToken(collection: CollectionState, token: string): number | null {
 		const prefix = `${SYNC_TOKEN_PREFIX}${collection.href}`;
 		if (!token.startsWith(prefix)) {
 			return null;
 		}
-		const counter = Number(token.slice(prefix.length));
-		if (!Number.isInteger(counter) || counter < 0) {
+		const suffix = token.slice(prefix.length);
+		if (!/^\d+$/.test(suffix)) {
 			return null;
 		}
-		return counter <= collection.syncCounter ? counter : null;
+		const counter = Number(suffix);
+		if (counter > collection.syncCounter) {
+			return null;
+		}
+		return this.syncTokenOf(collection, counter) === token ? counter : null;
 	}
 
 	private registerChange(

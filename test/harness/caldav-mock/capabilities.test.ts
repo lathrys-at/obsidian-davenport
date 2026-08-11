@@ -12,6 +12,7 @@ import {
 } from './fixtures';
 import { unfoldLines } from './ics';
 import { MockCalDavServer } from './server';
+import { CALDAV_NS, descendantsNamed, parseXml } from './xml';
 
 const EVENT = icsEvent({
 	uid: 'one',
@@ -54,6 +55,25 @@ function get(mock: MockCalDavServer) {
 	return mock.request({
 		url: mock.resourceUrl('alice', 'work', 'one.ics'),
 		method: 'GET',
+	});
+}
+
+function addAttachment(
+	mock: MockCalDavServer,
+	body: string,
+): Promise<{
+	status: number;
+	headers: Readonly<Record<string, string>>;
+	text: string;
+}> {
+	return mock.request({
+		url: `${mock.resourceUrl('alice', 'work', 'one.ics')}?action=attachment-add`,
+		method: 'POST',
+		headers: {
+			'Content-Type': 'text/plain',
+			'Content-Disposition': 'attachment; filename="agenda.txt"',
+		},
+		body,
 	});
 }
 
@@ -196,6 +216,46 @@ describe('capability: precondition enforcement', () => {
 		expect(response.status).toBe(204);
 	});
 
+	it('never matches a weak tag against If-Match', async () => {
+		const mock = server();
+		const current = mock.resourceEtag('alice', 'work', 'one.ics') ?? '';
+		const weak = await mock.request({
+			url: mock.resourceUrl('alice', 'work', 'one.ics'),
+			method: 'PUT',
+			headers: { 'If-Match': `W/${current}` },
+			body: EVENT,
+		});
+		expect(weak.status).toBe(412);
+
+		const strong = await mock.request({
+			url: mock.resourceUrl('alice', 'work', 'one.ics'),
+			method: 'PUT',
+			headers: { 'If-Match': `"etag-zzz", ${current}` },
+			body: EVENT,
+		});
+		expect(strong.status).toBe(204);
+	});
+
+	it('honors an If-None-Match carrying entity tags', async () => {
+		const mock = server();
+		const current = mock.resourceEtag('alice', 'work', 'one.ics') ?? '';
+		const refused = await mock.request({
+			url: mock.resourceUrl('alice', 'work', 'one.ics'),
+			method: 'PUT',
+			headers: { 'If-None-Match': `W/${current}` },
+			body: EVENT,
+		});
+		expect(refused.status).toBe(412);
+
+		const allowed = await mock.request({
+			url: mock.resourceUrl('alice', 'work', 'one.ics'),
+			method: 'PUT',
+			headers: { 'If-None-Match': '"etag-zzz"' },
+			body: EVENT,
+		});
+		expect(allowed.status).toBe(204);
+	});
+
 	it('refuses a DELETE whose If-Match no longer matches', async () => {
 		const mock = server();
 		const response = await mock.request({
@@ -324,6 +384,90 @@ describe('capability: calendar-query UID filter', () => {
 	});
 });
 
+describe('calendar-query: filters the mock does not implement', () => {
+	const query = async (
+		filters: readonly string[],
+	): Promise<{ status: number; condition: string | null }> => {
+		const mock = server();
+		const response = await mock.request({
+			url: mock.collectionUrl('alice', 'work'),
+			method: 'REPORT',
+			body: calendarQueryBody({ filters }),
+		});
+		return {
+			status: response.status,
+			condition: errorConditionIn(response.text),
+		};
+	};
+
+	it('refuses each of them by name rather than over-matching', async () => {
+		expect(
+			await query([
+				'<C:prop-filter name="SUMMARY"><C:text-match>nope</C:text-match></C:prop-filter>',
+			]),
+		).toStrictEqual({ status: 403, condition: 'c:supported-filter' });
+		expect(await query(['<C:is-not-defined/>'])).toStrictEqual({
+			status: 403,
+			condition: 'c:supported-filter',
+		});
+		expect(
+			await query(['<C:param-filter name="PARTSTAT"/>']),
+		).toStrictEqual({
+			status: 403,
+			condition: 'c:supported-filter',
+		});
+		expect(await query(['<C:comp-filter name="VALARM"/>'])).toStrictEqual({
+			status: 403,
+			condition: 'c:supported-filter',
+		});
+	});
+
+	it('names the element it could not apply', async () => {
+		const mock = server();
+		const response = await mock.request({
+			url: mock.collectionUrl('alice', 'work'),
+			method: 'REPORT',
+			body: calendarQueryBody({
+				filters: ['<C:prop-filter name="SUMMARY"/>'],
+			}),
+		});
+		const refused = parseXml(response.text)?.documentElement;
+		const named = refused
+			? descendantsNamed(refused, CALDAV_NS, 'prop-filter')[0]
+			: undefined;
+		expect(named?.getAttribute('name')).toBe('SUMMARY');
+	});
+
+	it('refuses a UID filter it cannot compare the way it was asked', async () => {
+		const mock = server();
+		const response = await mock.request({
+			url: mock.collectionUrl('alice', 'work'),
+			method: 'REPORT',
+			body: calendarQueryBody({
+				uid: 'one',
+				collation: 'i;unicode-casemap',
+			}),
+		});
+		expect(response.status).toBe(403);
+		expect(errorConditionIn(response.text)).toBe('c:supported-collation');
+	});
+
+	it('compares a UID without regard to case when asked to', async () => {
+		const mock = server();
+		const response = await mock.request({
+			url: mock.collectionUrl('alice', 'work'),
+			method: 'REPORT',
+			body: calendarQueryBody({
+				uid: 'ONE',
+				collation: 'i;ascii-casemap',
+			}),
+		});
+		expect(hrefsIn(response.text)).toStrictEqual([
+			'/calendars/alice/work/one.ics',
+		]);
+	});
+});
+
 describe('capability: managed attachments', () => {
 	it('advertises neither the property nor the compliance class when off', async () => {
 		const mock = server();
@@ -364,6 +508,62 @@ describe('capability: managed attachments', () => {
 		});
 		expect(options.headers.DAV).toContain('calendar-managed-attachments');
 	});
+
+	it('adds an attachment, rewrites the event, and serves the bytes', async () => {
+		const mock = server({ managedAttachments: true });
+		const added = await addAttachment(mock, 'agenda text');
+		expect(added.status).toBe(201);
+		const managedId = added.headers['Cal-Managed-ID'];
+		expect(managedId).toBe('attachment-1');
+
+		const stored = mock.resourceIcs('alice', 'work', 'one.ics') ?? '';
+		expect(stored).toContain(`ATTACH;MANAGED-ID=${managedId ?? ''};`);
+		expect(stored).toContain('FILENAME="agenda.txt"');
+		expect(stored).toContain(mock.url('/attachments/attachment-1'));
+		expect(added.headers.ETag).toBe(
+			mock.resourceEtag('alice', 'work', 'one.ics'),
+		);
+
+		const fetched = await mock.request({
+			url: mock.url('/attachments/attachment-1'),
+			method: 'GET',
+		});
+		expect(fetched.status).toBe(200);
+		expect(fetched.text).toBe('agenda text');
+		expect(fetched.headers['Content-Type']).toBe('text/plain');
+	});
+
+	it('removes an attachment it minted and refuses one it did not', async () => {
+		const mock = server({ managedAttachments: true });
+		await addAttachment(mock, 'agenda text');
+
+		const forged = await mock.request({
+			url: `${mock.resourceUrl('alice', 'work', 'one.ics')}?action=attachment-remove&managed-id=attachment-99`,
+			method: 'POST',
+		});
+		expect(forged.status).toBe(409);
+		expect(errorConditionIn(forged.text)).toBe('c:valid-managed-id');
+
+		const removed = await mock.request({
+			url: `${mock.resourceUrl('alice', 'work', 'one.ics')}?action=attachment-remove&managed-id=attachment-1`,
+			method: 'POST',
+		});
+		expect(removed.status).toBe(204);
+		expect(mock.resourceIcs('alice', 'work', 'one.ics')).not.toContain(
+			'ATTACH',
+		);
+		expect(
+			(await mock.request({ url: mock.url('/attachments/attachment-1') }))
+				.status,
+		).toBe(404);
+	});
+
+	it('serves no attachment operation at all when off', async () => {
+		const mock = server();
+		const response = await addAttachment(mock, 'agenda text');
+		expect(response.status).toBe(405);
+		expect(mock.resourceIcs('alice', 'work', 'one.ics')).toBe(EVENT);
+	});
 });
 
 describe('capability: fault injection', () => {
@@ -391,6 +591,25 @@ describe('capability: fault injection', () => {
 			faults: [{ kind: 'status', pathContains: '/chores/', status: 500 }],
 		});
 		expect((await get(mock)).text).toBe(EVENT);
+	});
+
+	it('spends its budget only on requests it would have answered', async () => {
+		const mock = server({
+			redirects: { '/.well-known/caldav': { location: '/principals/' } },
+			faults: [{ kind: 'status', status: 503, times: 1 }],
+		});
+		const redirected = await mock.request({
+			url: mock.wellKnownUrl,
+			method: 'PROPFIND',
+		});
+		expect(redirected.status).toBe(301);
+		const elsewhere = await mock.request({
+			url: 'https://elsewhere.example/calendars/alice/work/one.ics',
+			method: 'GET',
+		});
+		expect(elsewhere.status).toBe(404);
+		expect((await get(mock)).status).toBe(503);
+		expect((await get(mock)).status).toBe(200);
 	});
 
 	it('cuts a response short without changing its status', async () => {

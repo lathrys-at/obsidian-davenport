@@ -44,13 +44,11 @@ export function icsEvent(options: EventOptions): string {
 		`DTSTAMP:20260101T000000Z`,
 	];
 	if (options.start !== undefined) {
-		lines.push(`DTSTART:${options.start}`);
+		lines.push(stampProperty('DTSTART', options.start));
 	}
 	if (options.end !== undefined) {
 		lines.push(
-			component === 'VTODO'
-				? `DUE:${options.end}`
-				: `DTEND:${options.end}`,
+			stampProperty(component === 'VTODO' ? 'DUE' : 'DTEND', options.end),
 		);
 	}
 	lines.push(`SUMMARY:${options.summary ?? options.uid}`);
@@ -61,22 +59,48 @@ export function icsEvent(options: EventOptions): string {
 	return `${lines.join('\r\n')}\r\n`;
 }
 
-export function propfindBody(properties: readonly string[]): string {
+/** An eight-digit value is a DATE and carries the parameter saying so. */
+function stampProperty(name: string, value: string): string {
+	return /^\d{8}$/.test(value)
+		? `${name};VALUE=DATE:${value}`
+		: `${name}:${value}`;
+}
+
+/**
+ * A PROPFIND naming properties. Namespaces beyond the three a CalDAV
+ * client always declares are passed in, which is how a vendor property is
+ * asked for.
+ */
+export function propfindBody(
+	properties: readonly string[],
+	namespaces: Readonly<Record<string, string>> = {},
+): string {
 	const children = properties
 		.map((qualified) => `<${qualified}/>`)
 		.join('\n\t\t');
+	const declared = Object.entries(namespaces)
+		.map(([prefix, uri]) => ` xmlns:${prefix}="${uri}"`)
+		.join('');
 	return `<?xml version="1.0" encoding="utf-8" ?>
-<d:propfind xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav" xmlns:cs="http://calendarserver.org/ns/">
+<d:propfind xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav" xmlns:cs="http://calendarserver.org/ns/"${declared}>
 	<d:prop>
 		${children}
 	</d:prop>
 </d:propfind>`;
 }
 
+/** A PROPFIND asking which properties a target carries, values omitted. */
+export function propnameBody(): string {
+	return `<?xml version="1.0" encoding="utf-8" ?>
+<d:propfind xmlns:d="DAV:">
+	<d:propname/>
+</d:propfind>`;
+}
+
 export function syncCollectionBody(token: string): string {
 	return `<?xml version="1.0" encoding="utf-8" ?>
 <sync-collection xmlns="DAV:">
-	<sync-token>${token}</sync-token>
+	<sync-token>${xmlText(token)}</sync-token>
 	<sync-level>1</sync-level>
 	<prop><getetag/></prop>
 </sync-collection>`;
@@ -87,7 +111,10 @@ export interface QueryOptions {
 	readonly start?: string;
 	readonly end?: string;
 	readonly uid?: string;
+	readonly collation?: string;
 	readonly withData?: boolean;
+	/** Filter elements written out as a client would send them. */
+	readonly filters?: readonly string[];
 }
 
 export function calendarQueryBody(options: QueryOptions = {}): string {
@@ -99,10 +126,12 @@ export function calendarQueryBody(options: QueryOptions = {}): string {
 		inner.push(`<C:time-range${start}${end}/>`);
 	}
 	if (options.uid !== undefined) {
+		const collation = options.collation ?? 'i;octet';
 		inner.push(
-			`<C:prop-filter name="UID"><C:text-match collation="i;octet">${options.uid}</C:text-match></C:prop-filter>`,
+			`<C:prop-filter name="UID"><C:text-match collation="${collation}">${xmlText(options.uid)}</C:text-match></C:prop-filter>`,
 		);
 	}
+	inner.push(...(options.filters ?? []));
 	const data = options.withData === true ? '<C:calendar-data/>' : '';
 	return `<?xml version="1.0" encoding="utf-8" ?>
 <C:calendar-query xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">
@@ -118,7 +147,9 @@ export function calendarQueryBody(options: QueryOptions = {}): string {
 }
 
 export function multigetBody(hrefs: readonly string[]): string {
-	const items = hrefs.map((href) => `<D:href>${href}</D:href>`).join('\n\t');
+	const items = hrefs
+		.map((href) => `<D:href>${xmlText(href)}</D:href>`)
+		.join('\n\t');
 	return `<?xml version="1.0" encoding="utf-8" ?>
 <C:calendar-multiget xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">
 	<D:prop><D:getetag/><C:calendar-data/></D:prop>
@@ -126,9 +157,13 @@ export function multigetBody(hrefs: readonly string[]): string {
 </C:calendar-multiget>`;
 }
 
-// Reading responses. Everything below looks up by namespace and local
-// name, so a change of prefix in the response cannot make an assertion
-// pass or fail.
+/** Text carried in a request body, so a value holding markup stays a value. */
+function xmlText(value: string): string {
+	return value
+		.replace(/&/g, '&amp;')
+		.replace(/</g, '&lt;')
+		.replace(/>/g, '&gt;');
+}
 
 export interface MultistatusResponse {
 	readonly href: string;

@@ -54,10 +54,23 @@ export function handlePut(
 	context: WriteContext,
 ): MockResponse {
 	if (route.kind !== 'resource' && route.kind !== 'absent-resource') {
-		return plain(route.kind === 'unknown' ? 404 : 405);
+		// A write under a collection that is not there is a conflict, not a
+		// missing resource: the parent has to exist first.
+		return plain(route.kind === 'unknown' ? 409 : 405);
 	}
 	if (!body.includes('BEGIN:VCALENDAR')) {
 		return preconditionError(403, CALDAV_NS, 'valid-calendar-data');
+	}
+	const incoming = readIcs(body);
+	if (
+		incoming.component !== null &&
+		!route.collection.components.includes(incoming.component)
+	) {
+		return preconditionError(
+			403,
+			CALDAV_NS,
+			'supported-calendar-component',
+		);
 	}
 	const existing = route.kind === 'resource' ? route.resource : null;
 	const refusal = checkPreconditions(existing?.etag ?? null, context);
@@ -67,7 +80,7 @@ export function handlePut(
 
 	const name = route.kind === 'resource' ? route.resource.name : route.name;
 	const before = existing ? readIcs(existing.ics).attendees : [];
-	const after = readIcs(body).attendees;
+	const after = incoming.attendees;
 	const etag = context.state.write(route.collection, name, body);
 	context.recordScheduling({
 		method: 'PUT',
@@ -104,7 +117,7 @@ export function handleDelete(
 }
 
 /**
- * Null when the write may proceed. `If-None-Match: *` guards creation and
+ * Null when the write may proceed. `If-None-Match` guards creation and
  * `If-Match` guards update; each is only consulted where this run's
  * server enforces it.
  */
@@ -113,34 +126,51 @@ function checkPreconditions(
 	context: WriteContext,
 ): MockResponse | null {
 	const { caps, ifMatch, ifNoneMatch } = context;
-	if (
-		caps.enforceIfNoneMatch &&
-		ifNoneMatch !== null &&
-		ifNoneMatch.trim() === '*' &&
-		currentEtag !== null
-	) {
-		return plain(412);
+	if (caps.enforceIfNoneMatch && ifNoneMatch !== null) {
+		const wanted = ifNoneMatch.trim();
+		const blocked =
+			wanted === '*'
+				? currentEtag !== null
+				: currentEtag !== null &&
+					matchesEtag(wanted, currentEtag, 'weak');
+		if (blocked) {
+			return plain(412);
+		}
 	}
 	if (caps.enforceIfMatch && ifMatch !== null) {
 		const wanted = ifMatch.trim();
 		if (currentEtag === null) {
 			return plain(412);
 		}
-		if (wanted !== '*' && !matchesEtag(wanted, currentEtag)) {
+		if (wanted !== '*' && !matchesEtag(wanted, currentEtag, 'strong')) {
 			return plain(412);
 		}
 	}
 	return null;
 }
 
-/** `If-Match` may carry a list; any member matching is a match. */
-function matchesEtag(header: string, current: string): boolean {
+/**
+ * Whether a conditional header's tag list names this ETag; either header
+ * may carry a list, and any member matching is a match. `If-Match`
+ * compares strongly, so a weak tag never matches it however it is spelled;
+ * `If-None-Match` compares weakly, where the marker is dropped from both
+ * sides before comparison.
+ */
+function matchesEtag(
+	header: string,
+	current: string,
+	comparison: 'strong' | 'weak',
+): boolean {
 	return header
 		.split(',')
 		.map((candidate) => candidate.trim())
-		.some(
-			(candidate) =>
-				candidate === current ||
-				(candidate.startsWith('W/') && candidate.slice(2) === current),
+		.some((candidate) =>
+			comparison === 'strong'
+				? candidate === current
+				: strongTag(candidate) === strongTag(current),
 		);
+}
+
+function strongTag(tag: string): string {
+	return tag.startsWith('W/') ? tag.slice(2) : tag;
 }

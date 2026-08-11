@@ -10,6 +10,7 @@
  */
 
 const FOLD_WIDTH = 75;
+const MONTH_LENGTHS = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
 
 export interface IcsFacts {
 	/** The first component inside VCALENDAR that is not a VTIMEZONE. */
@@ -47,6 +48,7 @@ export function readIcs(ics: string): IcsFacts {
 	let uid: string | null = null;
 	let start: string | null = null;
 	let end: string | null = null;
+	let startIsDate = false;
 
 	for (const line of unfoldLines(ics)) {
 		const { name, value } = splitLine(line);
@@ -79,6 +81,7 @@ export function readIcs(ics: string): IcsFacts {
 			attendees.push(value);
 		} else if (name === 'DTSTART' && start === null) {
 			start = normalizeStamp(value);
+			startIsDate = isDateValue(value);
 		} else if (name === 'DTEND' && end === null) {
 			end = normalizeStamp(value);
 		} else if (name === 'DUE' && end === null) {
@@ -91,8 +94,52 @@ export function readIcs(ics: string): IcsFacts {
 		uid,
 		attendees,
 		start: start ?? end,
-		end: end ?? start,
+		end: end ?? impliedEnd(start, startIsDate),
 	};
+}
+
+/**
+ * What an event with no stated end covers. An all-day event — a DATE
+ * DTSTART with no DTEND — spans the whole day, so a query over any part of
+ * that day finds it; a timed event with no end is the instant it starts.
+ */
+function impliedEnd(start: string | null, startIsDate: boolean): string | null {
+	if (start === null || !startIsDate) {
+		return start;
+	}
+	return nextDayStamp(start);
+}
+
+/** A DATE value is eight digits; a DATE-TIME carries the time as well. */
+function isDateValue(value: string): boolean {
+	return /^\d{8}$/.test(value);
+}
+
+/** The same comparison key one day later, leaving the time of day alone. */
+function nextDayStamp(stamp: string): string {
+	const year = Number(stamp.slice(0, 4));
+	const month = Number(stamp.slice(4, 6));
+	const day = Number(stamp.slice(6, 8));
+	if (day < daysInMonth(year, month)) {
+		return `${stamp.slice(0, 6)}${pad(day + 1)}${stamp.slice(8)}`;
+	}
+	if (month < 12) {
+		return `${stamp.slice(0, 4)}${pad(month + 1)}01${stamp.slice(8)}`;
+	}
+	return `${String(year + 1)}0101${stamp.slice(8)}`;
+}
+
+function daysInMonth(year: number, month: number): number {
+	if (month === 2) {
+		return year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0)
+			? 29
+			: 28;
+	}
+	return MONTH_LENGTHS[month - 1] ?? 31;
+}
+
+function pad(value: number): string {
+	return String(value).padStart(2, '0');
 }
 
 /**

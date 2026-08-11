@@ -8,7 +8,7 @@
 import { matchesFilter, parseFilter } from './filter';
 import type { ReportKind } from './observation';
 import { requestedProps } from './propfind';
-import { appendResponse, type PropContext } from './props';
+import { appendResponse, type PropContext, type PropRequest } from './props';
 import {
 	multistatus,
 	plain,
@@ -16,15 +16,17 @@ import {
 	statusText,
 	type MockResponse,
 } from './response';
+import { membersOf } from './state';
 import type { CollectionState, ResourceState, Route } from './state';
 import {
 	CALDAV_NS,
 	childNamed,
 	DAV_NS,
 	descendantsNamed,
+	documentOf,
 	isNamed,
 	textOf,
-	type PropName,
+	type XmlBody,
 	type XmlDocument,
 	type XmlElement,
 	type XmlOutput,
@@ -61,14 +63,23 @@ export function presentedSyncToken(
 
 export function handleReport(
 	route: Route,
-	document: XmlDocument | null,
+	body: XmlBody,
 	context: PropContext,
 ): MockResponse {
+	const document = documentOf(body);
 	const kind = reportKindOf(document);
 	if (kind === null || document === null) {
 		return plain(400);
 	}
-	if (route.kind !== 'collection') {
+	// A multiget may also be aimed at one calendar object resource, where
+	// the hrefs it carries are read against the collection holding it.
+	const collection =
+		route.kind === 'collection'
+			? route.collection
+			: route.kind === 'resource' && kind === 'calendar-multiget'
+				? route.collection
+				: null;
+	if (collection === null) {
 		return plain(
 			route.kind === 'unknown' || route.kind === 'absent-resource'
 				? 404
@@ -78,33 +89,18 @@ export function handleReport(
 	const requested = requestedProps(document);
 	switch (kind) {
 		case 'sync-collection':
-			return syncCollection(
-				route.collection,
-				document,
-				requested,
-				context,
-			);
+			return syncCollection(collection, document, requested, context);
 		case 'calendar-query':
-			return calendarQuery(
-				route.collection,
-				document,
-				requested,
-				context,
-			);
+			return calendarQuery(collection, document, requested, context);
 		case 'calendar-multiget':
-			return calendarMultiget(
-				route.collection,
-				document,
-				requested,
-				context,
-			);
+			return calendarMultiget(collection, document, requested, context);
 	}
 }
 
 function syncCollection(
 	collection: CollectionState,
 	document: XmlDocument,
-	requested: readonly PropName[] | null,
+	requested: PropRequest,
 	context: PropContext,
 ): MockResponse {
 	const { state, caps } = context;
@@ -152,7 +148,7 @@ function changesSince(
 ): Map<string, 'changed' | 'removed'> {
 	const reported = new Map<string, 'changed' | 'removed'>();
 	if (since === 0) {
-		for (const resource of collection.resources.values()) {
+		for (const resource of membersOf(collection)) {
 			reported.set(resource.href, 'changed');
 		}
 		return reported;
@@ -168,10 +164,34 @@ function changesSince(
 function calendarQuery(
 	collection: CollectionState,
 	document: XmlDocument,
-	requested: readonly PropName[] | null,
+	requested: PropRequest,
 	context: PropContext,
 ): MockResponse {
 	const filter = parseFilter(document);
+	if (filter.unsupportedCollation !== null) {
+		return preconditionError(403, CALDAV_NS, 'supported-collation');
+	}
+	// An element the mock cannot apply is named back rather than dropped,
+	// since dropping it answers a different question than the one asked
+	// and the answer looks like a complete one.
+	const unsupported = filter.unsupported;
+	if (unsupported !== null) {
+		return preconditionError(
+			403,
+			CALDAV_NS,
+			'supported-filter',
+			(out, condition) => {
+				const element = out.child(
+					condition,
+					CALDAV_NS,
+					unsupported.local,
+				);
+				if (unsupported.name !== null) {
+					element.setAttribute('name', unsupported.name);
+				}
+			},
+		);
+	}
 	if (filter.uidMatch !== null && !context.caps.calendarQueryUidFilter) {
 		return preconditionError(
 			403,
@@ -186,7 +206,7 @@ function calendarQuery(
 		);
 	}
 	return multistatus((out, root) => {
-		for (const resource of collection.resources.values()) {
+		for (const resource of membersOf(collection)) {
 			if (matchesFilter(resource.ics, filter)) {
 				appendResource(
 					out,
@@ -205,7 +225,7 @@ function calendarQuery(
 function calendarMultiget(
 	collection: CollectionState,
 	document: XmlDocument,
-	requested: readonly PropName[] | null,
+	requested: PropRequest,
 	context: PropContext,
 ): MockResponse {
 	const root = document.documentElement;
@@ -234,7 +254,7 @@ function appendResource(
 	href: string,
 	collection: CollectionState,
 	resource: ResourceState | undefined,
-	requested: readonly PropName[] | null,
+	requested: PropRequest,
 	context: PropContext,
 ): void {
 	if (!resource) {

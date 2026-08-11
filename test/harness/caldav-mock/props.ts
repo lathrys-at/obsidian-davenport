@@ -43,6 +43,15 @@ export interface PropContext {
 	readonly caps: MockServerCapabilities;
 }
 
+/**
+ * The three shapes a request for properties takes: the ones it names, the
+ * names of everything the target carries, or everything with its value.
+ */
+export type PropRequest =
+	| { readonly kind: 'allprop' }
+	| { readonly kind: 'propname' }
+	| { readonly kind: 'named'; readonly names: readonly PropName[] };
+
 const dav = (local: string): PropName => ({ ns: DAV_NS, local });
 const caldav = (local: string): PropName => ({ ns: CALDAV_NS, local });
 
@@ -89,30 +98,32 @@ export function supportedProps(target: PropTarget): readonly PropName[] {
 	return SUPPORTED_PROPS[target.kind];
 }
 
-/**
- * Appends one `<response>` for a target. `requested` of null means the
- * client asked for everything the target has.
- */
+/** Appends one `<response>` for a target, in the shape the request asked for. */
 export function appendResponse(
 	out: XmlOutput,
 	parent: XmlElement,
 	href: string,
 	target: PropTarget,
-	requested: readonly PropName[] | null,
+	requested: PropRequest,
 	context: PropContext,
 ): void {
 	const response = out.child(parent, DAV_NS, 'response');
 	out.child(response, DAV_NS, 'href', href);
-	const wanted = requested ?? supportedProps(target);
+	const wanted =
+		requested.kind === 'named' ? requested.names : supportedProps(target);
 
 	const found: ((prop: XmlElement) => void)[] = [];
 	const missing: PropName[] = [];
 	for (const name of wanted) {
 		const emit = resolveProp(out, target, name, context);
-		if (emit) {
-			found.push(emit);
-		} else {
+		if (!emit) {
 			missing.push(name);
+		} else if (requested.kind === 'propname') {
+			found.push((prop) => {
+				out.child(prop, name.ns, name.local);
+			});
+		} else {
+			found.push(emit);
 		}
 	}
 
@@ -126,7 +137,7 @@ export function appendResponse(
 	}
 	// A request for everything returns what exists; only a request that
 	// named a property gets told the property is not there.
-	if (requested !== null && missing.length > 0) {
+	if (requested.kind === 'named' && missing.length > 0) {
 		const propstat = out.child(response, DAV_NS, 'propstat');
 		const prop = out.child(propstat, DAV_NS, 'prop');
 		for (const name of missing) {

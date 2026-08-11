@@ -44,7 +44,11 @@ interface MutableLogEntry extends RequestLogDraft {
 	status: number;
 }
 
-/** Status is unset until the response is known; handled requests never keep it. */
+/**
+ * Status is unset until the response is known. Every request the server
+ * begins is completed, including one whose handling failed, so no entry is
+ * ever read carrying this.
+ */
 const PENDING_STATUS = 0;
 
 export class RequestLog {
@@ -107,7 +111,7 @@ export class RequestLog {
 export type AttendeeTransition = 'gains' | 'loses' | 'retains';
 
 export interface SchedulingFact {
-	readonly method: 'PUT' | 'DELETE';
+	readonly method: 'PUT' | 'DELETE' | 'POST';
 	readonly href: string;
 	readonly attendeesBefore: readonly string[];
 	readonly attendeesAfter: readonly string[];

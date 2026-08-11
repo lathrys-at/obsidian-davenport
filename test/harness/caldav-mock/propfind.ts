@@ -4,27 +4,39 @@
  * refused as most servers refuse it.
  */
 
-import { appendResponse, type PropContext, type PropTarget } from './props';
+import {
+	appendResponse,
+	type PropContext,
+	type PropRequest,
+	type PropTarget,
+} from './props';
 import { multistatus, plain, preconditionError } from './response';
 import type { MockResponse } from './response';
-import { PRINCIPAL_ROOT_PATH } from './state';
+import { membersOf, PRINCIPAL_ROOT_PATH } from './state';
 import type { AccountState, Route } from './state';
 import {
 	childElements,
 	childNamed,
 	DAV_NS,
+	documentOf,
 	nameOf,
-	type PropName,
+	type XmlBody,
 	type XmlDocument,
 } from './xml';
 
 export function handlePropfind(
 	route: Route,
 	depth: string | null,
-	document: XmlDocument | null,
+	body: XmlBody,
 	context: PropContext,
 	currentAccount: AccountState | null,
 ): MockResponse {
+	// A request with no body asks for everything a target carries; one
+	// whose bytes will not parse asked for something else, and answering
+	// it as an allprop is how a corrupt request passes for a working one.
+	if (body.kind === 'malformed') {
+		return plain(400);
+	}
 	if (depth === 'infinity') {
 		return preconditionError(403, DAV_NS, 'propfind-finite-depth');
 	}
@@ -32,7 +44,7 @@ export function handlePropfind(
 	if (!target) {
 		return plain(404);
 	}
-	const requested = requestedProps(document);
+	const requested = requestedProps(documentOf(body));
 	const children = depth === '1' ? childTargets(target) : [];
 
 	return multistatus((out, root) => {
@@ -42,16 +54,22 @@ export function handlePropfind(
 	});
 }
 
-/** Null for allprop, which asks for everything the target carries. */
-export function requestedProps(
-	document: XmlDocument | null,
-): readonly PropName[] | null {
+/**
+ * What the body asked for: named properties, the names alone, or — with
+ * no body and for a body naming neither — everything the target carries.
+ */
+export function requestedProps(document: XmlDocument | null): PropRequest {
 	const root = document?.documentElement;
 	if (!root) {
-		return null;
+		return { kind: 'allprop' };
+	}
+	if (childNamed(root, DAV_NS, 'propname')) {
+		return { kind: 'propname' };
 	}
 	const prop = childNamed(root, DAV_NS, 'prop');
-	return prop ? childElements(prop).map(nameOf) : null;
+	return prop
+		? { kind: 'named', names: childElements(prop).map(nameOf) }
+		: { kind: 'allprop' };
 }
 
 export function targetOf(
@@ -110,14 +128,12 @@ function childTargets(target: PropTarget): PropTarget[] {
 		);
 	}
 	if (target.kind === 'collection') {
-		return Array.from(target.collection.resources.values()).map(
-			(resource) => ({
-				kind: 'resource' as const,
-				account: target.account,
-				collection: target.collection,
-				resource,
-			}),
-		);
+		return membersOf(target.collection).map((resource) => ({
+			kind: 'resource' as const,
+			account: target.account,
+			collection: target.collection,
+			resource,
+		}));
 	}
 	return [];
 }
