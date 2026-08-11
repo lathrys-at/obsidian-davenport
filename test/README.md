@@ -17,6 +17,10 @@ Layout:
   IDs, so titles are the traceability surface — keep them exact.
 - Colocated `src/**/*.test.ts` micro-unit tests are allowed for internal
   helpers; anything asserting a plan ID lives under `test/suites/`.
+- `test/live/` — what verification runs against real servers need: the
+  credential resolver, and the self-hosted CalDAV containers. Nothing here
+  reaches a server during `npm test`; `test/live/README.md` states the
+  naming rule that keeps it that way.
 
 The `harness/` and `suites/` directories are created by the issues that
 populate them; git carries no empty directories.
