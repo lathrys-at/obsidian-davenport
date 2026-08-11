@@ -5,7 +5,11 @@
  * frontmatter; it lives in records.
  */
 
-/** ISO 8601 date-time text; offset optional. */
+/**
+ * ISO 8601 date-time text. An explicit offset wins; otherwise the note's
+ * timezone, then the calendar's default, resolve it — times are never
+ * silently read as device-local.
+ */
 export type IsoDateTime = string;
 
 /** ISO 8601 calendar date (`YYYY-MM-DD`). */
@@ -25,9 +29,10 @@ export type TimezoneName = string;
 export type EventState = 'draft' | 'ready';
 
 /**
- * iCalendar event STATUS. Kept disjoint from {@link EventState} in key,
- * vocabulary, and code identifiers: scheduling status is display data,
- * lifecycle intent drives server writes, and the two must never blur.
+ * iCalendar event STATUS — a synced property describing the event. Kept
+ * disjoint from {@link EventState} in key, vocabulary, and code
+ * identifiers: lifecycle state is a local signal that drives creation, and
+ * blurring the two turns a description of an event into a server write.
  */
 export type EventStatus = 'tentative' | 'confirmed' | 'cancelled';
 
