@@ -83,7 +83,7 @@ describe('ICS corpus index', () => {
 });
 
 describe('ICS corpus files', () => {
-	it.each(icsCorpus())('$name ends every line with CRLF', (fixture) => {
+	it.each(icsCorpus())('$id ends every line with CRLF', (fixture) => {
 		expect(fixture.content).not.toHaveLength(0);
 		expect(fixture.content.endsWith('\r\n')).toBe(true);
 		for (const line of icsPhysicalLines(fixture.content)) {
@@ -91,13 +91,13 @@ describe('ICS corpus files', () => {
 		}
 	});
 
-	it.each(icsCorpus())('$name folds within the octet limit', (fixture) => {
+	it.each(icsCorpus())('$id folds within the octet limit', (fixture) => {
 		for (const line of icsPhysicalLines(fixture.content)) {
 			expect(octetLength(line)).toBeLessThanOrEqual(ICS_LINE_OCTET_LIMIT);
 		}
 	});
 
-	it.each(icsCorpus())('$name holds one calendar object', (fixture) => {
+	it.each(icsCorpus())('$id holds one calendar object', (fixture) => {
 		const logical = icsLogicalLines(icsPhysicalLines(fixture.content));
 		expect(logical[0]).toBe('BEGIN:VCALENDAR');
 		expect(logical[logical.length - 1]).toBe('END:VCALENDAR');
@@ -111,14 +111,14 @@ describe('ICS corpus files', () => {
 		).toHaveLength(1);
 	});
 
-	it.each(icsCorpus())('$name unfolds into properties', (fixture) => {
+	it.each(icsCorpus())('$id unfolds into properties', (fixture) => {
 		for (const line of icsLogicalLines(icsPhysicalLines(fixture.content))) {
 			expect(line).toMatch(/^[A-Za-z0-9-]+[;:]/);
 		}
 	});
 
 	it.each(icsCorpus())(
-		'$name carries the marks it is tagged with',
+		'$id carries the marks it is tagged with',
 		(fixture) => {
 			for (const category of fixture.categories) {
 				expect(fixture.content).toMatch(CATEGORY_MARKER[category]);
@@ -179,4 +179,15 @@ describe('ICS corpus sampling', () => {
 			}
 		}
 	});
+});
+
+describe('ICS corpus octet-limit fixtures', () => {
+	it.each([['fold-at-75-octets'], ['fold-splits-multibyte-run']])(
+		'%s carries a line at the limit itself',
+		(id) => {
+			const lines = icsPhysicalLines(icsFixture(id).content);
+			const widest = Math.max(...lines.map(octetLength));
+			expect(widest).toBe(ICS_LINE_OCTET_LIMIT);
+		},
+	);
 });
