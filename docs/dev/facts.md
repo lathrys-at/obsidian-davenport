@@ -12,18 +12,26 @@ changes.
 
 ## Entry format
 
-Facts append under their item heading. Superseded facts are struck through,
-never deleted — the history of a changed fact stays legible.
+Facts append under their item heading in the Recorded entries section.
+Superseded facts are struck through, never deleted — the history of a
+changed fact stays legible.
 
 ```
 ### A-N — short name
+
+Protocol: [docs/dev/facts/a-N.md](facts/a-N.md)
+
+- ~~**2026-08-10** · environment · the superseded fact · branch taken:
+  what it routed to.~~
 - **2026-08-11** · environment and versions · the fact, one or two
   sentences · branch taken: what this routes to.
 ```
 
 ## Item index
 
-Status is `unrecorded` until a dated entry exists below.
+Status is `unrecorded` until a dated entry exists in Recorded entries.
+Parenthetical annotations carry the ordering and gating notes the test
+plan attaches to an item.
 
 | Item | Subject | Consumed by | Status |
 |---|---|---|---|
@@ -32,17 +40,17 @@ Status is `unrecorded` until a dated entry exists below.
 | A-3 | RFC 8607 managed attachments per provider | stage 3 | unrecorded |
 | A-4 | X-ALT-DESC handling in major clients | stage 3 | unrecorded |
 | A-5 | iCloud sync-tokens and discovery redirects | stage 2 | unrecorded |
-| A-6 | Plugin-id collision check | stage 1 release | unrecorded |
+| A-6 | Plugin-id collision check | stage 1 | unrecorded |
 | A-7 | SecretStorage cross-device travel | stage 6 | unrecorded |
 | A-8 | Google CalDAV RFC 6578 support | stage 2 | unrecorded |
-| A-9 | Google verification requirements | v2 gate | unrecorded |
+| A-9 | Google verification requirements | stage 6 (v2 gate) | unrecorded |
 | A-10 | Google iTIP behavior on attendee writes | stage 6 | unrecorded |
-| A-11 | processFrontMatter byte determinism | stage 2 (gate) | unrecorded |
+| A-11 | processFrontMatter byte determinism | stage 2 (gate; ordered first) | unrecorded |
 | A-12 | External-modification vault events | stage 2 | unrecorded |
 | A-13 | requestUrl redirects, large bodies, tsdav under load | stage 2 | unrecorded |
 | A-14 | Obsidian Sync merge behavior on records | stage 1 | unrecorded |
 | A-15 | mtime preservation per sync tool | stage 2 | unrecorded |
-| A-16 | Byte-stable vs re-serialized GETs per provider | stage 1 | unrecorded |
+| A-16 | Byte-stable vs re-serialized GETs per provider | stages 1 and 2 | unrecorded |
 | A-17 | saveLocalStorage capacity | stage 3 | unrecorded |
 | A-18 | Excluded Files vs Bases and Dataview | stage 1 | unrecorded |
 | A-19 | Emitter stability across plugin builds | stage 1 | unrecorded |
@@ -50,7 +58,7 @@ Status is `unrecorded` until a dated entry exists below.
 | A-21 | Rename delivery per sync tool | stage 2 | unrecorded |
 | A-22 | data.json travel per tool and configuration | stage 1 | unrecorded |
 | A-23 | UID behavior across feed generators | stage 1 | unrecorded |
-| A-24 | Precondition enforcement per provider | stage 3 | unrecorded |
+| A-24 | Precondition enforcement per provider | stage 3 (ordered second) | unrecorded |
 | A-25 | calendar-query UID filter per provider | stage 2 | unrecorded |
 | A-26 | WebDAV MOVE support and attendee silence | stage 5 (non-blocking) | unrecorded |
 
@@ -81,3 +89,9 @@ Status is `unrecorded` until a dated entry exists below.
 - Provider items: on observed regression, and at least annually.
 - Sync-tool items: on tool major versions.
 - Facts entries record the trigger that prompted them when re-verified.
+
+## Recorded entries
+
+One heading per item, in the entry format above, created with the item's
+first recorded fact; the item's protocol document is linked at the top of
+its heading. None yet.
