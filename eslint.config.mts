@@ -30,6 +30,7 @@ const fetchMessage =
 export default defineConfig(
 	globalIgnores([
 		'node_modules',
+		'.claude',
 		'dist',
 		'coverage',
 		'esbuild.config.mjs',
