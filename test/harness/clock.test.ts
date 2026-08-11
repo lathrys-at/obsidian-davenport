@@ -190,3 +190,25 @@ describe('controlled clock failure', () => {
 		}).toThrow(/more than 5 timer firings/);
 	});
 });
+
+describe('re-entrancy', () => {
+	it('refuses advance from inside a callback and stays usable', () => {
+		const clock = new ControlledClock({ start: 0 });
+		let inner: unknown;
+		clock.after(10, () => {
+			try {
+				clock.advance(100);
+			} catch (error) {
+				inner = error;
+			}
+		});
+		clock.advance(30);
+		expect(inner).toBeInstanceOf(Error);
+		expect((inner as Error).message).toMatch(/inside a timer callback/);
+		expect(clock.now()).toBe(30);
+		const log: number[] = [];
+		clock.after(5, () => log.push(clock.now()));
+		clock.advance(10);
+		expect(log).toEqual([35]);
+	});
+});

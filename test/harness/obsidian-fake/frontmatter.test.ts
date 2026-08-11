@@ -308,3 +308,39 @@ describe('writer determinism over the corpus', () => {
 		}
 	});
 });
+
+describe('writer canon: integer-like keys', () => {
+	it('sorts integer-index keys to the front, double-quoted', () => {
+		const note = '---\ntitle: T\nzeta: 1\n---\nbody\n';
+		const written = writeFrontmatter(note, (frontmatter) => {
+			frontmatter['2026'] = 'year';
+			frontmatter['0'] = 'zero';
+		});
+		expect(written).toBe(
+			'---\n"0": zero\n"2026": year\ntitle: T\nzeta: 1\n---\nbody\n',
+		);
+	});
+
+	it('leaves keys that only resemble numbers in insertion order', () => {
+		const note = '---\ntitle: T\n---\nbody\n';
+		const written = writeFrontmatter(note, (frontmatter) => {
+			frontmatter['-1'] = 'a';
+			frontmatter['1.5'] = 'b';
+			frontmatter['01'] = 'c';
+		});
+		expect(written).toBe(
+			'---\ntitle: T\n"-1": a\n"1.5": b\n"01": c\n---\nbody\n',
+		);
+	});
+});
+
+describe('writer canon: unrepresentable values', () => {
+	it('reports them as frontmatter errors, not library errors', () => {
+		const note = '---\ntitle: T\n---\nbody\n';
+		expect(() =>
+			writeFrontmatter(note, (frontmatter) => {
+				frontmatter.fn = () => 0;
+			}),
+		).toThrow(FrontmatterError);
+	});
+});

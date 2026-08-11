@@ -176,12 +176,20 @@ function composeNote(
 	if (entries.length === 0 && !hadBlock) {
 		return body;
 	}
-	const yaml =
-		entries.length === 0
-			? ''
-			: endWithBreak(
-					stringify(Object.fromEntries(entries), STRINGIFY_OPTIONS),
-				);
+	let yaml = '';
+	if (entries.length > 0) {
+		try {
+			yaml = endWithBreak(
+				stringify(Object.fromEntries(entries), STRINGIFY_OPTIONS),
+			);
+		} catch (error) {
+			throw new FrontmatterError(
+				`frontmatter holds a value the writer cannot represent: ${
+					error instanceof Error ? error.message : String(error)
+				}`,
+			);
+		}
+	}
 	return `${DELIMITER}\n${yaml}${DELIMITER}\n${body}`;
 }
 

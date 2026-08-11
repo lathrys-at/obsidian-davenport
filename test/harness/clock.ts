@@ -52,6 +52,7 @@ export class ControlledClock implements Clock {
 	private time: number;
 	private nextId = 1;
 	private nextOrder = 1;
+	private advancing = false;
 
 	constructor(options: ControlledClockOptions = {}) {
 		const start = options.start ?? DEFAULT_START_TIME;
@@ -93,34 +94,46 @@ export class ControlledClock implements Clock {
 	/**
 	 * Moves time forward by `ms`, firing every timer that comes due along
 	 * the way. Cancelling a timer from a callback keeps it from firing in
-	 * this advance.
+	 * this advance. Advancing from inside a timer callback throws: a nested
+	 * advance would let the outer one snap time backwards over timers the
+	 * inner one already fired.
 	 */
 	advance(ms: number): void {
 		assertDuration(ms, 'advance');
-		const target = this.time + ms;
-		let fired = 0;
-		for (
-			let timer = this.nextDue(target);
-			timer !== null;
-			timer = this.nextDue(target)
-		) {
-			fired += 1;
-			if (fired > this.maxFiringsPerAdvance) {
-				throw new Error(
-					`controlled clock: more than ${String(this.maxFiringsPerAdvance)} timer firings in one advance`,
-				);
-			}
-			this.time = timer.due;
-			if (timer.period === null) {
-				this.timers.delete(timer.id);
-			} else {
-				timer.iteration += 1;
-				timer.due = timer.origin + timer.iteration * timer.period;
-				timer.order = this.nextOrder++;
-			}
-			timer.fn();
+		if (this.advancing) {
+			throw new Error(
+				'controlled clock: advance called from inside a timer callback',
+			);
 		}
-		this.time = target;
+		this.advancing = true;
+		try {
+			const target = this.time + ms;
+			let fired = 0;
+			for (
+				let timer = this.nextDue(target);
+				timer !== null;
+				timer = this.nextDue(target)
+			) {
+				fired += 1;
+				if (fired > this.maxFiringsPerAdvance) {
+					throw new Error(
+						`controlled clock: more than ${String(this.maxFiringsPerAdvance)} timer firings in one advance`,
+					);
+				}
+				this.time = timer.due;
+				if (timer.period === null) {
+					this.timers.delete(timer.id);
+				} else {
+					timer.iteration += 1;
+					timer.due = timer.origin + timer.iteration * timer.period;
+					timer.order = this.nextOrder++;
+				}
+				timer.fn();
+			}
+			this.time = target;
+		} finally {
+			this.advancing = false;
+		}
 	}
 
 	private schedule(

@@ -109,9 +109,13 @@ export class FakeVault implements VaultPort {
 	}
 
 	/**
-	 * Subscribes to file events. Handlers run in subscription order, and a
-	 * handler that unsubscribes during delivery does not see the event it
-	 * is being delivered. Registering one function twice registers it once.
+	 * Subscribes to file events. Handlers run in subscription order. A
+	 * handler unsubscribed by an earlier handler in the same delivery is
+	 * skipped; a handler that unsubscribes itself still receives the event
+	 * it is being delivered. A handler that throws rejects the operation's
+	 * promise even though the mutation has already landed — the vault does
+	 * not roll back — and handlers after the throwing one are skipped.
+	 * Registering one function twice registers it once.
 	 */
 	onFileEvent(handler: FileEventHandler): Unsubscribe {
 		this.handlers.add(handler);

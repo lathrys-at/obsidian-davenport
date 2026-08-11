@@ -260,3 +260,21 @@ describe('fake vault determinism', () => {
 		expect(first.snapshot).not.toContain('notes/lists.md');
 	});
 });
+
+describe('fake vault handler failures', () => {
+	it('rejects the operation after the mutation landed, skipping later handlers', async () => {
+		const vault = new FakeVault();
+		const seen: string[] = [];
+		vault.onFileEvent(() => {
+			throw new Error('handler exploded');
+		});
+		vault.onFileEvent((event) => {
+			seen.push(event.kind);
+		});
+		await expect(vault.write('a.md', 'new')).rejects.toThrow(
+			'handler exploded',
+		);
+		await expect(vault.read('a.md')).resolves.toBe('new');
+		expect(seen).toEqual([]);
+	});
+});

@@ -24,9 +24,6 @@ import scalars from './notes/scalars.md?raw';
 import unicode from './notes/unicode.md?raw';
 import unparseable from './notes/unparseable.md?raw';
 
-/** Where the corpus lives, relative to the repository root. */
-export const NOTE_FIXTURE_DIRECTORY = 'test/harness/fixtures/notes';
-
 export interface NoteFixture {
 	/** The file name without its extension. */
 	readonly id: string;

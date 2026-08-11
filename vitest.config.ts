@@ -3,6 +3,7 @@ import { coverageConfigDefaults, defineConfig } from 'vitest/config';
 export default defineConfig({
 	test: {
 		environment: 'node',
+		unstubGlobals: true,
 		include: ['test/**/*.test.ts', 'src/**/*.test.ts'],
 		coverage: {
 			provider: 'v8',
