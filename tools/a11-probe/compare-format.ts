@@ -116,9 +116,20 @@ function cautionDetail(report: ComparisonReport): string[] {
 		'cautions',
 		...affected.map(
 			(fixture) =>
-				`  ! ${fixture.id}: ${fixture.cautions.join(',')} waited out the metadata timeout, so that output may have been written from a stale view of the note; a difference here is unproven until that environment runs the fixture again`,
+				`  ! ${fixture.id}: ${fixture.cautions.join(',')} waited out the metadata timeout, so that output may have been written from a stale view of the note; ${rests(fixture)}`,
 		),
 	];
+}
+
+/**
+ * What the caution means for this fixture. A difference no unhurried pair
+ * of environments shows between them is unproven; anywhere else the
+ * caution is about the one environment's bytes, not about the fixture.
+ */
+function rests(fixture: FixtureComparison): string {
+	return fixture.unproven
+		? 'the difference here rests on that environment alone and is unproven until it runs the fixture again'
+		: 'anything resting on that environment alone needs it to run the fixture again';
 }
 
 function divergenceDetail(report: ComparisonReport): string[] {

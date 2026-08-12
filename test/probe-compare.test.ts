@@ -323,7 +323,9 @@ describe('a fixture written after the wait ran out', () => {
 		expect(printed).toContain(
 			'! comments: #2 waited out the metadata timeout',
 		);
-		expect(printed).toContain('unproven until that environment runs');
+		expect(printed).toContain(
+			'anything resting on that environment alone needs it to run the fixture again',
+		);
 	});
 
 	it('leaves agreement standing when nothing differs', () => {
@@ -345,10 +347,14 @@ describe('a fixture written after the wait ran out', () => {
 				resultsOf([stale('comments', 'b')]),
 			),
 		);
-		expect(fixtureNamed(report, 'comments').outcome).toBe('diverge');
+		const fixture = fixtureNamed(report, 'comments');
+		expect(fixture.outcome).toBe('diverge');
+		expect(fixture.unproven).toBe(true);
 		expect(report.verdict).toBe('incomparable');
-		expect(formatReport(report)).toContain(
-			'the cautions and notes above say why',
+		const printed = formatReport(report);
+		expect(printed).toContain('the cautions and notes above say why');
+		expect(printed).toContain(
+			'the difference here rests on that environment alone and is unproven until it runs the fixture again',
 		);
 	});
 
@@ -359,6 +365,90 @@ describe('a fixture written after the wait ran out', () => {
 				resultsOf([stale('comments', 'b'), emitted('minimal', 'b')]),
 			),
 		);
+		expect(report.verdict).toBe('diverge');
+	});
+});
+
+describe('a caution on an environment a difference is not between', () => {
+	// Two environments that did not time out show the difference between
+	// them; a third that did says nothing about it either way.
+	const report = compareRuns(
+		runsOf(
+			resultsOf([emitted('comments', 'a')]),
+			resultsOf([emitted('comments', 'b')]),
+			resultsOf([stale('comments', 'a')]),
+		),
+	);
+	const fixture = fixtureNamed(report, 'comments');
+
+	it('leaves the difference standing', () => {
+		expect(fixture.outcome).toBe('diverge');
+		expect(fixture.unproven).toBe(false);
+		expect(report.verdict).toBe('diverge');
+	});
+
+	it('groups the timed-out environment with the output it emitted', () => {
+		expect(fixture.groups.map((group) => group.labels)).toEqual([
+			['#1', '#3'],
+			['#2'],
+		]);
+		expect(fixture.cautions).toEqual(['#3']);
+	});
+
+	it('still prints the caution, without calling the difference unproven', () => {
+		const printed = formatReport(report);
+		expect(printed).toContain(
+			'! comments: #3 waited out the metadata timeout',
+		);
+		expect(printed).toContain(
+			'anything resting on that environment alone needs it to run the fixture again',
+		);
+		expect(printed).not.toContain('rests on that environment alone');
+		expect(printed).toContain('first differing byte at offset 0');
+		expect(printed).toContain(
+			'verdict: 1 of 1 fixtures diverge across 3 environments',
+		);
+	});
+});
+
+describe('a difference with a timed-out environment on every side', () => {
+	it('is unproven when both outputs were written after a timeout', () => {
+		const report = compareRuns(
+			runsOf(
+				resultsOf([stale('comments', 'a')]),
+				resultsOf([stale('comments', 'b')]),
+			),
+		);
+		expect(fixtureNamed(report, 'comments').unproven).toBe(true);
+		expect(report.verdict).toBe('incomparable');
+	});
+
+	it('is unproven when the only environment that emitted timed out', () => {
+		const report = compareRuns(
+			runsOf(
+				resultsOf([stale('non-mapping', 'a')]),
+				resultsOf([refused('non-mapping', 'YAMLParseError: no map')]),
+			),
+		);
+		const fixture = fixtureNamed(report, 'non-mapping');
+		expect(fixture.outcome).toBe('mixed');
+		expect(fixture.unproven).toBe(true);
+		expect(report.verdict).toBe('incomparable');
+	});
+
+	// A refusal carries no wait, so it speaks; one unhurried environment
+	// that emitted is enough to make the refusal a real disagreement.
+	it('stands when an environment that did not time out also emitted', () => {
+		const report = compareRuns(
+			runsOf(
+				resultsOf([emitted('non-mapping', 'a')]),
+				resultsOf([refused('non-mapping', 'YAMLParseError: no map')]),
+				resultsOf([stale('non-mapping', 'a')]),
+			),
+		);
+		const fixture = fixtureNamed(report, 'non-mapping');
+		expect(fixture.outcome).toBe('mixed');
+		expect(fixture.unproven).toBe(false);
 		expect(report.verdict).toBe('diverge');
 	});
 });

@@ -118,8 +118,10 @@ Any number of files, in any order. The output has five parts:
   not others. `incomplete` means a file had no record of that fixture at
   all.
 - **cautions** — fixtures where some environment waited its cache timeout
-  out, marked with `!`. A difference on a cautioned fixture is not read as
-  a divergence: run that environment again and compare the new file.
+  out, marked with `!`. Where every side of a difference rests on such an
+  environment, it is not read as a divergence: run that environment again
+  and compare the new file. A difference that two environments which did
+  not time out show between them stands, whatever a third one's wait did.
 - **divergences** — for anything that diverged, the offset of the first
   differing byte and a hexdump of the bytes around it, with the row holding
   the difference marked.
@@ -135,7 +137,8 @@ transcribes.
 The exit status is 0 when every fixture agreed, 1 when any of them
 diverged, and 2 when the files could not be compared at all — unreadable,
 not results files, missing fixtures, holding no fixtures in common, written
-from different corpora, or differing only where a caution stands.
+from different corpora, or differing only where every side of the
+difference rests on an environment whose wait timed out.
 
 Errors are reported but never compared. A version that refuses a fixture
 everywhere has behaved consistently, and the wording it refuses with is not

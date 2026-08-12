@@ -73,6 +73,13 @@ export interface FixtureComparison {
 	 * of the note rather than from the text the run put there.
 	 */
 	readonly cautions: readonly string[];
+	/**
+	 * Whether this fixture differs and every side of the difference has a
+	 * timed-out environment on it. Such a difference may be a stale read
+	 * rather than the writer, and is evidence of nothing until the
+	 * environment runs the fixture again.
+	 */
+	readonly unproven: boolean;
 }
 
 /** A results file that does not add up on its own terms. */
@@ -365,15 +372,44 @@ function compareFixture(
 	}));
 	const divergences = divergencesAmong([...grouped.values()]);
 
+	const outcome = outcomeFor(groups.length, errors.length, missing.length);
 	return {
 		id,
-		outcome: outcomeFor(groups.length, errors.length, missing.length),
+		outcome,
 		groups,
 		errors,
 		missing,
 		divergences,
 		cautions,
+		unproven:
+			(outcome === 'diverge' || outcome === 'mixed') &&
+			!attested(groups, errors, cautions),
 	};
+}
+
+/**
+ * Whether a difference is attested by environments that all settled by
+ * event. Each distinct output is a side, and refusal is one more side; a
+ * side speaks if any environment on it settled by event. Two sides that
+ * speak disagree with each other whatever a third environment's wait did,
+ * because a timeout on an environment that is not party to a difference
+ * says nothing about that difference. A refusal is always taken as
+ * speaking: it carries no wait that could have timed out.
+ */
+function attested(
+	groups: readonly OutputGroup[],
+	errors: readonly FixtureError[],
+	cautions: readonly string[],
+): boolean {
+	const timedOut = new Set(cautions);
+	const sides: readonly (readonly string[])[] = [
+		...groups.map((group) => group.labels),
+		...(errors.length > 0 ? [errors.map((error) => error.label)] : []),
+	];
+	const speaking = sides.filter((labels) =>
+		labels.some((label) => !timedOut.has(label)),
+	);
+	return speaking.length > 1;
 }
 
 function outcomeFor(
@@ -468,11 +504,13 @@ export function hexdump(bytes: Uint8Array, offset: number): string[] {
 }
 
 /**
- * A divergence is only a divergence if both sides can be trusted to have
- * been written from the text the run put there. Where the only fixtures
- * that differ are ones some environment waited the metadata timeout out
- * on, the answer is that these runs do not settle it — the fixture has to
- * be run again, not read as evidence of a writer that differs.
+ * A divergence is only a divergence if the sides of it can be trusted to
+ * have been written from the text the run put there. Where every fixture
+ * that differs rests on an environment that waited the metadata timeout
+ * out, the answer is that these runs do not settle it — the fixture has to
+ * be run again, not read as evidence of a writer that differs. One that
+ * two unhurried environments show between them stands, whatever a third
+ * environment's wait did.
  */
 function verdictFor(
 	fixtures: readonly FixtureComparison[],
@@ -496,7 +534,7 @@ function verdictFor(
 	if (diverged.length === 0) {
 		return 'agree';
 	}
-	return diverged.some((fixture) => fixture.cautions.length === 0)
+	return diverged.some((fixture) => !fixture.unproven)
 		? 'diverge'
 		: 'incomparable';
 }

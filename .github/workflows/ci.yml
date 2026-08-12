@@ -55,6 +55,7 @@ jobs:
             - run: npm run build
             - run: node scripts/scan-bundle.mjs
             - run: npm run probe:build
+            - run: node scripts/scan-bundle.mjs tools/a11-probe/dist/main.js
 
     # The single required check gating merges to main. Fails unless every
     # job in needs succeeded; evaluating the whole needs context means a
