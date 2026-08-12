@@ -42,12 +42,13 @@ comments, PR bodies and comments — is produced in this order:
    what wastes their time. This determines how the outline becomes text.
 5. **Draft.** Write the draft.
 6. **Simplify.** Apply the asd-ste100 skill (Simplified Technical English,
-   ASD-STE100) to the draft. This step is mandatory for all technical
-   documentation. Keep each fact, each condition, and each scope qualifier.
-   If a rule of the standard removes necessary precision, keep the precision
-   and record the conflict.
-7. **Post.** Post the text. Tell the user about the decisions embedded in it,
-   and revise the posted text on their feedback.
+   ASD-STE100) to the draft. This step is mandatory for all text this
+   process covers. Keep each fact, each condition, and each scope qualifier.
+   If a rule of the standard removes necessary precision, keep the
+   precision. Record the conflict in the text that presents the change: the
+   pull request body, or the session digest.
+7. **Post.** The lead posts the text. The lead tells the user about the
+   decisions embedded in it, and revises the posted text on their feedback.
 
 ### Language
 
@@ -60,8 +61,8 @@ comments, PR bodies and comments — is produced in this order:
   when the why matters.
 - No LLM-isms, no needless emphasis, no over-description, no inflating the
   importance of what was done.
-- Technical documentation follows Simplified Technical English (ASD-STE100).
-  The asd-ste100 skill states the rules and the procedure.
+- Durable text follows Simplified Technical English (ASD-STE100). The
+  asd-ste100 skill states the rules and the procedure.
 
 ## Comment discipline
 
@@ -77,16 +78,15 @@ necessary. Inline comments are limited to exactly two forms:
   without the comment (the arXiv adapter's 429/503 swap is the canonical
   example).
 
-Comments, error messages, dialogue text, and instruction text follow
-Simplified Technical English (ASD-STE100). The asd-ste100 skill states the
-rules. Where a rule of the standard removes necessary precision, precision
-wins, and the comment records nothing about the conflict — the text simply
-keeps the longer form.
-
 Everything else — narration of what the next line does, `(#NNN)` citations,
 "as of" framing, session context — is a review finding, not a nit.
 Architecture and rationale live in-tree but out-of-line (this directory, crate
 `ARCHITECTURE.md` files) or in issues.
+
+Comments, error messages, dialogue text, and instruction text follow
+Simplified Technical English (ASD-STE100). The asd-ste100 skill states the
+rules. If a rule of the standard removes necessary precision, keep the
+precise longer form. Do not add a comment about the conflict.
 
 ## Decision records
 
@@ -174,10 +174,10 @@ exhaustive, not sampled:
 - cover every hunk of the diff (for a sweep, every file in scope);
 - verify claims empirically where cheap — run the code, grep for the
   counter-case — rather than taking the diff's word for it;
-- end with an explicit coverage statement naming what was and was NOT checked;
 - verify that new or changed comments, error messages, dialogue text, and
-  instruction text follow Simplified Technical English (ASD-STE100), and that
-  the author applied the asd-ste100 skill.
+  instruction text follow Simplified Technical English (ASD-STE100), and
+  that the text keeps precision where the standard and precision conflict;
+- end with an explicit coverage statement naming what was and was NOT checked.
 
 Conformance to this document is a required check; a breach is a finding.
 Findings relay through the session folder's `reviews/pr-{n}.md`; the durable
