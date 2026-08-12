@@ -364,7 +364,7 @@ Part 6.4 holds the full branch matrix. The items in this section are the cells o
 ### 5.21 RSVP [RS] — §12
 
 - **RS-1 [E]** Pending detection uses the own `ATTENDEE` with `PARTSTAT=NEEDS-ACTION`, and it matches by address. Davenport shows a banner and a Needs Response listing. (§12, §14.3)
-- **RS-2 [E]** If the user sets `rsvp:` and no own-`ATTENDEE` match exists, validation fails. The failure states the alias hint. Davenport writes nothing. (row 21, §6.2)
+- **RS-2 [E]** If the user sets `rsvp:` and no own-`ATTENDEE` match exists, validation fails. The failure states the alias hint. Davenport then writes nothing. (row 21, §6.2)
 - **RS-3 [E]** A response is a confirm-gated server action. The buttons and the hand-edited `rsvp:` key are equivalent signals. Davenport validates the enum. (§12)
 - **RS-4 [E]** The scheduling record shows that the reply reaches the organizer only after confirmation. (IV-2) (§12)
 
