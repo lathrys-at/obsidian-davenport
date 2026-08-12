@@ -3,18 +3,18 @@ name: Bug report
 about: Something behaves wrongly
 labels: bug
 ---
-<!-- Instructions — delete every comment before posting. Audience: the future maintainer and the cold-start agent who will fix this with no other context (docs/dev/audience/). Write simply and clearly, do not use LLM-isms, do not needlessly emphasize text, and do not over-describe. This text is to be utilitarian. Title: the observed wrong behavior, not the suspected cause. -->
+<!-- Instructions — delete every comment before you post. Audience: the future maintainer and the cold-start agent who will fix this with no other context (docs/dev/audience/). Write simply and clearly. Do not use LLM-isms. Do not emphasize text unnecessarily. Do not over-describe. Keep this text utilitarian. In the title, write the observed wrong behavior, not the suspected cause. -->
 
-<!-- Single sentence summary of the bug, in simple, declarative voice. -->
+<!-- Write one sentence that summarizes the bug. Use simple, declarative voice. -->
 
 # What happens
 
-<!-- Observed behavior. Paste exact output or error text rather than paraphrasing. -->
+<!-- Write the observed behavior. Paste the exact output or error text. Do not paraphrase the output or the error text. -->
 
 # Expected
 
-<!-- What should happen instead, and the basis for expecting it: a doc, a contract, an issue. -->
+<!-- Write what should happen instead. Give the basis for this expectation: a doc, a contract, an issue. -->
 
 # Reproduce
 
-<!-- Minimal steps or a single command. Commit/version and platform where relevant. -->
+<!-- Give the minimal steps or a single command. Give the commit or version and the platform if they are relevant. -->

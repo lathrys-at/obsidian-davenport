@@ -2,14 +2,14 @@
 name: Feature
 about: Something Davenport should do
 ---
-<!-- Instructions — delete every comment before posting. Audience: the future maintainer deciding scope, and the agent implementing it (docs/dev/audience/). Write simply and clearly, do not use LLM-isms, do not needlessly emphasize text, and do not over-inflate the importance of the proposal. This text is to be utilitarian. State the problem, not a design: designs are produced with the project owner in plan mode and reproduced as a comment on this issue before implementation (docs/dev/process.md, "Feature design"). Check the design spec's out-of-scope section (docs/davenport-spec.md) before proposing. -->
+<!-- Instructions: delete every comment before you post. Audience: the future maintainer who decides the scope, and the agent that implements the feature (docs/dev/audience/). Write simply and clearly. Do not use LLM-isms. Do not emphasize text without a need. Do not overstate the importance of the proposal. Keep this text utilitarian. State the problem. Do not state a design, because each design is produced with the project owner in plan mode. Before implementation, the design is reproduced as a comment on this issue (docs/dev/process.md, "Feature design"). Check the out-of-scope section of the design spec (docs/davenport-spec.md) before you make the proposal. -->
 
-<!-- Single sentence summary of the problem, in simple, declarative voice. -->
+<!-- Write a one-sentence summary of the problem. Use simple, declarative voice. -->
 
 # Problem
 
-<!-- What cannot be done today; who hits it and when. -->
+<!-- State what is not possible today. State who encounters the problem, and when they encounter it. -->
 
 # Out of scope
 
-<!-- What this deliberately does not cover. -->
+<!-- State what this proposal deliberately does not cover. -->
