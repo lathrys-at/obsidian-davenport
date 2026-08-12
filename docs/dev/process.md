@@ -17,11 +17,10 @@ who refines and posts it. Subagents never post.
 
 **Posting does not wait for approval.** Durable text — issue bodies, PR
 bodies, design rulings, review distillations — posts without prior user
-approval. The lead surfaces the decisions embedded in what it posted to the
-user in session, as a digest, and revises posted text on their feedback.
-Design still reaches the user before it hardens: plans and spec-touching
-decisions go through the user per [Feature design](#feature-design), and that
-is unchanged by this rule. Mechanical text — status notes, hold comments, CI
+approval. The lead surfaces the embedded decisions to the user in session as
+a digest, and revises posted text on their feedback. Design reaches the user
+before it hardens: plans and spec-touching decisions go through the user per
+[Feature design](#feature-design). Mechanical text — status notes, hold comments, CI
 chatter — posts under the template rules. Drafts may stage in
 `~/.cache/davenport-dev/drafts/` while being composed.
 
@@ -108,7 +107,7 @@ answer).
 
 ```
 ~/.cache/davenport-dev/
-  drafts/                # lead → user approval queue — survives sessions
+  drafts/                # lead staging for text being composed — survives sessions
   session-{id}/          # lead-owned shared state for one lead session
     manifest.md          # written by the lead: purpose, layout, active agents
     drafts/              # subagent → lead draft handoff — reaped with the session
@@ -130,9 +129,9 @@ Ownership:
 
 Lifecycle: the lead creates the session dir at session start and each agent
 dir at dispatch; reaps `agent-{id}/` when that agent exits; reaps
-`session-{id}/` at wave end once everything durable has been posted to GitHub
-or moved to `drafts/`. Nothing under this root is load-bearing beyond a
-session except `drafts/`.
+`session-{id}/` at wave end once everything durable has been posted to
+GitHub, with any unfinished text moved to `drafts/`. Nothing under this root
+is load-bearing beyond a session except `drafts/`.
 
 [`scripts/dev-dirs.sh`](../../scripts/dev-dirs.sh) creates the layout
 idempotently and prints resolved absolute paths. It resolves the project name
