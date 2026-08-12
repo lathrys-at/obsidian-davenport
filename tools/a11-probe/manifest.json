@@ -1,0 +1,9 @@
+{
+	"id": "davenport-a11-probe",
+	"name": "Davenport frontmatter probe",
+	"version": "0.0.1",
+	"minAppVersion": "1.4.4",
+	"description": "Writes a corpus of notes through the frontmatter writer and records the emitted bytes, so runs on different devices can be compared.",
+	"author": "ren",
+	"isDesktopOnly": false
+}
