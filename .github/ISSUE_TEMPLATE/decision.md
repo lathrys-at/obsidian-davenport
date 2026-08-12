@@ -2,18 +2,18 @@
 name: Decision record
 about: A design decision and its rationale
 ---
-<!-- Instructions — delete every comment before posting. Audience: the future maintainer asking "why is it this way" (docs/dev/audience/future-maintainer.md). Write simply and clearly, do not use LLM-isms, do not needlessly emphasize text, and do not over-describe. This text is to be utilitarian. Record at decision time, not after; repo docs describe what exists, this issue carries the why. -->
+<!-- Instructions. Delete every comment before you post. Audience: the future maintainer who asks "why is it this way" (docs/dev/audience/future-maintainer.md). Write simply and clearly. Do not use LLM-isms. Do not emphasize text if the emphasis is not necessary. Do not describe more than necessary. This text must be utilitarian. Record the decision when you make it, not later. The repo docs describe what exists. This issue records the reason for the decision. -->
 
-<!-- Single sentence summary of the decision, in simple, declarative voice. -->
+<!-- Write one sentence that summarizes the decision. Use a simple, declarative voice. -->
 
 # Context
 
-<!-- The forces: what raised the question, what constrains the answer. -->
+<!-- Give the forces. Write what raised the question. Write what constrains the answer. -->
 
 # Ruling
 
-<!-- The decision or decisions, numbered if several, each with its rationale inline. -->
+<!-- Write the decision or the decisions. Number them if there is more than one. Write the rationale for each decision inline. -->
 
 # Consequences
 
-<!-- What changes where; what lands in which PR; what is deferred and why. -->
+<!-- Write what changes, and where it changes. Write what lands in which PR. Write what is deferred, and why it is deferred. -->
