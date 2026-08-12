@@ -1,16 +1,22 @@
 # Approver
 
-- **Who they are:** the project owner, reading a proposed design in plan mode
-  or the in-session digest of what the lead posted.
-- **What they already know:** the whole project's intent and roadmap — more
-  context than any single session has.
-- **What they don't know:** this session's discoveries, or what drove each
-  sentence in front of them.
-- **Why they're reading:** to check the design or the posted text against
-  intent, to catch decisions made implicitly, and to direct revisions where
-  it misses.
-- **What they must leave with:** what each item does or will do, every
-  embedded decision flagged explicitly, and anything deviating from standing
-  intent surfaced rather than smoothed over.
-- **What wastes their time:** the one decision that matters buried in
-  boilerplate; anything that needs the session transcript to evaluate.
+- **Who they are:** The approver is the project owner. The approver reads a
+  proposed design in plan mode, or the approver reads the in-session digest
+  of what the lead posted.
+- **What they already know:** The approver knows the whole project's intent
+  and roadmap. The approver has more context than any single session has.
+- **What they don't know:** The approver does not know this session's
+  discoveries. The approver does not know the reason for each sentence in
+  front of them.
+- **Why they're reading:** The approver reads to check the design or the
+  posted text against intent. The approver reads to find the implicit
+  decisions. The approver reads to direct revisions where the design or the
+  posted text misses the intent.
+- **What they must leave with:** The approver must learn what each item does
+  or will do. The approver must see an explicit flag on every embedded
+  decision. The approver must see anything that deviates from standing
+  intent. The approver must not see a smoothed-over version of that
+  deviation.
+- **What wastes their time:** Boilerplate that buries the one decision that
+  matters wastes the approver's time. Anything that the approver can evaluate
+  only with the session transcript also wastes the approver's time.

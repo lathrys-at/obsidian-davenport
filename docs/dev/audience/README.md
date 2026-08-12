@@ -1,13 +1,15 @@
 # Audience cards
 
-One card per intended reader, consulted at step 4 of the
-[writing process](../process.md#the-writing-process). Each card answers the
-same six questions: who they are, what they already know, what they don't
-know, why they're reading, what they must leave with, and what wastes their
-time.
+There is one audience card for each intended reader. Use the card at step 4 of
+the [writing process](../process.md#the-writing-process). Each card answers the
+same six questions about the reader. Three of the questions are: who the reader
+is, what the reader already knows, and what the reader does not know. The other
+three questions are: why the reader reads, what the reader must leave with, and
+what wastes the reader's time.
 
-Pick the card before drafting. When two audiences genuinely share one text,
-write for the stricter card and let the other skim.
+Select the card before you write the draft. When two audiences genuinely share
+one text, write for the stricter card. When two audiences genuinely share one
+text, let the other audience skim the text.
 
 | Card | Typical texts |
 |---|---|
