@@ -40,9 +40,16 @@ comments, PR bodies and comments — is produced in this order:
    ([`docs/dev/audience/`](audience/)). Reason about their state of mind:
    why they are reading, what they already know, what they must leave with,
    what wastes their time. This determines how the outline becomes text.
-5. **Draft and post.** Write the draft and post it. The decisions embedded in
-   durable text are surfaced to the user in session, and posted text is
-   revised on their feedback.
+5. **Draft.** Write the draft.
+6. **Simplify.** Apply the asd-ste100 skill (Simplified Technical English,
+   ASD-STE100) to the draft. This step is mandatory for all text this
+   process covers. Keep each fact, each condition, and each scope qualifier.
+   If a rule of the standard removes necessary precision, keep the
+   precision. Record the conflict in the text that presents the change: the
+   pull request body, or the session digest.
+7. **Post.** The lead posts the text. The lead tells the user about the
+   decisions that the text carries. The lead revises the posted text when
+   the user gives feedback.
 
 ### Language
 
@@ -55,6 +62,8 @@ comments, PR bodies and comments — is produced in this order:
   when the why matters.
 - No LLM-isms, no needless emphasis, no over-description, no inflating the
   importance of what was done.
+- All text this process covers follows Simplified Technical English
+  (ASD-STE100). The asd-ste100 skill states the rules and the procedure.
 
 ## Comment discipline
 
@@ -74,6 +83,11 @@ Everything else — narration of what the next line does, `(#NNN)` citations,
 "as of" framing, session context — is a review finding, not a nit.
 Architecture and rationale live in-tree but out-of-line (this directory, crate
 `ARCHITECTURE.md` files) or in issues.
+
+Comments, error messages, dialogue text, and instruction text follow
+Simplified Technical English (ASD-STE100). The asd-ste100 skill states the
+rules. If a rule of the standard removes necessary precision, keep the
+precise longer form. Do not add a comment about the conflict.
 
 ## Decision records
 
@@ -161,6 +175,10 @@ exhaustive, not sampled:
 - cover every hunk of the diff (for a sweep, every file in scope);
 - verify claims empirically where cheap — run the code, grep for the
   counter-case — rather than taking the diff's word for it;
+- verify that new or changed comments, error messages, dialogue text, and
+  instruction text follow Simplified Technical English (ASD-STE100);
+- verify that the text keeps the precise longer form where the standard
+  removes necessary precision;
 - end with an explicit coverage statement naming what was and was NOT checked.
 
 Conformance to this document is a required check; a breach is a finding.
