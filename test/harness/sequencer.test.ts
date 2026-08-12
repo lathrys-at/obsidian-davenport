@@ -78,6 +78,26 @@ describe('the canonical order', () => {
 			'second:/repo/b.test.ts',
 		]);
 	});
+
+	// A collating comparator puts these four in a different order: it sorts
+	// capitals among the lowercase letters rather than ahead of them, and
+	// looks past the hyphen instead of ranking it below every letter. The
+	// order below is the code-unit one, which is the same under every locale
+	// a run might pick up.
+	it('orders by code unit, out of reach of the ambient locale', () => {
+		const collated = [
+			spec('/repo/test/feedback.test.ts'),
+			spec('/repo/test/Feed.test.ts'),
+			spec('/repo/test/feed-fixture/x.test.ts'),
+			spec('/repo/test/feed.test.ts'),
+		];
+		expect(ids(sortByModuleId(collated))).toEqual([
+			'/repo/test/Feed.test.ts',
+			'/repo/test/feed-fixture/x.test.ts',
+			'/repo/test/feed.test.ts',
+			'/repo/test/feedback.test.ts',
+		]);
+	});
 });
 
 describe('the file sequencer', () => {
