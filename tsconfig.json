@@ -12,8 +12,6 @@
 		"exactOptionalPropertyTypes": true,
 		"moduleResolution": "bundler",
 		"isolatedModules": true,
-		"noEmit": true,
-		"allowImportingTsExtensions": true,
 		"skipLibCheck": true,
 		"forceConsistentCasingInFileNames": true,
 		"allowSyntheticDefaultImports": true,

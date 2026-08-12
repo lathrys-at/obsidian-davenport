@@ -1,5 +1,5 @@
 import { coverageConfigDefaults, defineConfig } from 'vitest/config';
-import { SeededSequencer } from './test/harness/sequencer.ts';
+import { SeededSequencer } from './test/harness/sequencer';
 
 export default defineConfig({
 	test: {

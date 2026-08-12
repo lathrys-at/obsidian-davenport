@@ -72,13 +72,17 @@ the day some unrelated change reorders the suite. Every run draws a seed and
 prints it in the banner under the version line, `Running tests with seed
 "1786557325096"`, so a CI log carries the order its run used. Hand that seed
 back to replay the order exactly:
-`npm test -- --sequence.seed=1786557325096`.
+`npm test -- --sequence.seed=1786557325096`. To step out of shuffling
+altogether, `npm test -- --sequence.shuffle=false` runs the files in sorted
+order and the tests in the order they are written, which is the fixed order
+to bisect an ordering failure against.
 
 `test/harness/sequencer.ts` is what makes the seed a replay rather than a
 suggestion. Vitest hands the sequencer its files in the order the directory
 crawl returned them, which is not the same twice, so shuffling that directly
 would give the same seed a different order each run; the sequencer sorts the
-files first and shuffles the sorted list. Test order within a file is
+files first and shuffles the sorted list, and hands back the sorted list
+unshuffled when shuffling is off. Test order within a file is
 Vitest's own shuffle over declaration order and takes the same seed.
 Property-test inputs are not covered by it: fast-check draws and reports a
 seed of its own.
