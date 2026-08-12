@@ -9,7 +9,8 @@
  */
 
 import { Notice, Plugin } from 'obsidian';
-import { describeError, runProbe } from './run';
+import { describeError } from './results';
+import { runProbe } from './run';
 
 /** Long enough to read a path off a phone screen. */
 const NOTICE_MS = 20000;
@@ -28,13 +29,18 @@ export default class FrontmatterProbePlugin extends Plugin {
 	private async probe(): Promise<void> {
 		new Notice('Frontmatter probe: running…');
 		try {
-			const run = await runProbe(this.app, new Date());
-			const refused =
-				run.failed === 0
-					? ''
-					: `, ${String(run.failed)} refused by the writer`;
+			const run = await runProbe(this, new Date());
+			const said = [`${String(run.emitted)} samples`];
+			if (run.failed > 0) {
+				said.push(`${String(run.failed)} refused by the writer`);
+			}
+			if (run.timedOut > 0) {
+				said.push(
+					`${String(run.timedOut)} waited out the cache timeout and may be stale`,
+				);
+			}
 			new Notice(
-				`Frontmatter probe: ${String(run.emitted)} samples${refused}. Results in ${run.path}`,
+				`Frontmatter probe: ${said.join(', ')}. Results in ${run.path}`,
 				NOTICE_MS,
 			);
 		} catch (error) {

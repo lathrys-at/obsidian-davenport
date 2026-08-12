@@ -27,11 +27,12 @@ import {
 	pluginApiVersion,
 	probePlatform,
 } from './environment';
-import { isEmission } from './results';
+import { describeError, isEmission, resultsPath } from './results';
 import { sha256Hex, sha256HexOfText } from './sha256';
 import type {
 	FixtureEmission,
 	FixtureResult,
+	MetadataSettling,
 	ProbeMarker,
 	ProbeResults,
 } from './results';
@@ -45,8 +46,16 @@ export const MARKER: ProbeMarker = { key: 'probe-marker', value: 'fixed' };
 /** How long to wait for the app to notice a note before writing to it. */
 const METADATA_WAIT_MS = 3000;
 
-/** How many names to try before giving up on an unused results file. */
-const NAME_ATTEMPTS = 50;
+/**
+ * What the run needs from the plugin: the vault it works in, and the
+ * cleanup registers, so that unloading mid-run takes the listener and the
+ * timer with it.
+ */
+export interface ProbeHost {
+	readonly app: App;
+	registerEvent(ref: EventRef): void;
+	registerInterval(id: number): number;
+}
 
 /** What a finished run leaves behind. */
 export interface ProbeRun {
@@ -55,23 +64,25 @@ export interface ProbeRun {
 	readonly results: ProbeResults;
 	readonly emitted: number;
 	readonly failed: number;
+	/** Emissions whose wait ran out before the app read the note back. */
+	readonly timedOut: number;
 }
 
 /** Runs the whole corpus and writes the results file. */
-export async function runProbe(app: App, now: Date): Promise<ProbeRun> {
+export async function runProbe(host: ProbeHost, now: Date): Promise<ProbeRun> {
 	if (PROBE_CORPUS.length === 0) {
 		throw new Error(
 			'the corpus is empty; this build embedded no fixtures at all',
 		);
 	}
-	await ensureFolder(app, PROBE_FOLDER);
+	await ensureFolder(host.app, PROBE_FOLDER);
 
 	const perFixture: FixtureResult[] = [];
 	for (const fixture of PROBE_CORPUS) {
 		const inputHash = sha256HexOfText(fixture.content);
 		const path = `${PROBE_FOLDER}/${fixture.fileName}`;
 		try {
-			perFixture.push(await sample(app, path, fixture, inputHash));
+			perFixture.push(await sample(host, path, fixture, inputHash));
 		} catch (error) {
 			perFixture.push({
 				id: fixture.id,
@@ -84,67 +95,48 @@ export async function runProbe(app: App, now: Date): Promise<ProbeRun> {
 	const results: ProbeResults = {
 		kind: 'frontmatter-emission-samples',
 		timestamp: now.toISOString(),
-		obsidianVersion: obsidianVersion(app),
+		obsidianVersion: obsidianVersion(host.app),
 		apiVersion: pluginApiVersion(),
 		platform: probePlatform(),
 		marker: MARKER,
 		perFixture,
 	};
-	const path = await writeResults(app, results, now);
-	const emitted = perFixture.filter(isEmission).length;
+	const path = await writeResults(host.app, results, now);
+	const emissions = perFixture.filter(isEmission);
 	return {
 		path,
 		results,
-		emitted,
-		failed: perFixture.length - emitted,
+		emitted: emissions.length,
+		failed: perFixture.length - emissions.length,
+		timedOut: emissions.filter(
+			(emission) => emission.settledBy === 'timeout',
+		).length,
 	};
-}
-
-/** The name a results file written at this instant takes, less its suffix. */
-function resultsBaseName(now: Date): string {
-	const stamp = now
-		.toISOString()
-		.slice(0, 19)
-		.replace(/[-:]/g, '')
-		.replace('T', '-');
-	return `emission-samples-${stamp}Z`;
-}
-
-/** A thrown value, said in a way a notice can carry. */
-export function describeError(error: unknown): string {
-	if (error instanceof Error) {
-		return error.message === ''
-			? error.name
-			: `${error.name}: ${error.message}`;
-	}
-	if (typeof error === 'string') {
-		return error;
-	}
-	return `a thrown ${typeof error}`;
 }
 
 /** One fixture: written fresh, mutated, read back as bytes. */
 async function sample(
-	app: App,
+	host: ProbeHost,
 	path: string,
 	fixture: { readonly id: string; readonly content: string },
 	inputHash: string,
 ): Promise<FixtureEmission> {
-	const settled = metadataSettles(app, path);
-	const file = await writePristine(app, path, fixture.content);
-	await settled;
+	const settling = metadataSettles(host, path);
+	const file = await writePristine(host.app, path, fixture.content);
+	const settledBy = await settling;
 
-	await app.fileManager.processFrontMatter(
+	await host.app.fileManager.processFrontMatter(
 		file,
 		(frontmatter: Record<string, unknown>) => {
 			frontmatter[MARKER.key] = MARKER.value;
 		},
 	);
 
-	const emitted = await app.vault.adapter.readBinary(file.path);
+	const emitted = await host.app.vault.adapter.readBinary(file.path);
 	return {
 		id: fixture.id,
 		inputHash,
+		settledBy,
 		outputBase64: arrayBufferToBase64(emitted),
 		outputHash: sha256Hex(new Uint8Array(emitted)),
 	};
@@ -183,27 +175,43 @@ async function writePristine(
  * Resolves once the app has read this path back, so the writer works from
  * the note as it now stands rather than as it stood before. The listener
  * goes on before the write, because the app can be quicker than the await
- * that follows it. A wait that times out resolves anyway: a stale cache is
- * worth recording, a hung command is not.
+ * that follows it. A wait that runs out resolves anyway and says so: a
+ * stale cache is worth recording, a hung command is not.
+ *
+ * Both the listener and the fallback timer are handed to the plugin's
+ * registers, which take them down if it unloads mid-run — a timer and an
+ * interval share one set of ids, so the interval register cancels this
+ * one. Whichever arrives first also clears the other here, so a run that
+ * finishes normally leaves nothing behind either way.
  */
-async function metadataSettles(app: App, path: string): Promise<void> {
-	await new Promise<void>((resolve) => {
+function metadataSettles(
+	host: ProbeHost,
+	path: string,
+): Promise<MetadataSettling> {
+	return new Promise<MetadataSettling>((resolve) => {
 		let settled = false;
-		const finish = (): void => {
+		const finish = (how: MetadataSettling): void => {
 			if (settled) {
 				return;
 			}
 			settled = true;
-			app.metadataCache.offref(ref);
+			host.app.metadataCache.offref(ref);
 			window.clearTimeout(timer);
-			resolve();
+			resolve(how);
 		};
-		const ref: EventRef = app.metadataCache.on('changed', (changed) => {
-			if (changed.path === path) {
-				finish();
-			}
-		});
-		const timer = window.setTimeout(finish, METADATA_WAIT_MS);
+		const ref: EventRef = host.app.metadataCache.on(
+			'changed',
+			(changed) => {
+				if (changed.path === path) {
+					finish('event');
+				}
+			},
+		);
+		host.registerEvent(ref);
+		const timer = window.setTimeout(() => {
+			finish('timeout');
+		}, METADATA_WAIT_MS);
+		host.registerInterval(timer);
 	});
 }
 
@@ -213,15 +221,11 @@ async function writeResults(
 	results: ProbeResults,
 	now: Date,
 ): Promise<string> {
-	const base = resultsBaseName(now);
-	const body = JSON.stringify(results, null, '\t');
-	for (let attempt = 1; attempt <= NAME_ATTEMPTS; attempt += 1) {
-		const suffix = attempt === 1 ? '' : `-${String(attempt)}`;
-		const path = `${PROBE_FOLDER}/${base}${suffix}.json`;
-		if (app.vault.getAbstractFileByPath(path) === null) {
-			await app.vault.create(path, body);
-			return path;
-		}
-	}
-	throw new Error(`${PROBE_FOLDER} already holds every name this run tried`);
+	const path = resultsPath(
+		PROBE_FOLDER,
+		now,
+		(candidate) => app.vault.getAbstractFileByPath(candidate) !== null,
+	);
+	await app.vault.create(path, JSON.stringify(results, null, '\t'));
+	return path;
 }

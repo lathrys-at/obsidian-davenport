@@ -21,11 +21,13 @@ Layout:
   ban: the lint selectors, read out of the lint configuration itself, and
   `scripts/scan-bundle.mjs`, run as a process over a bundle it is handed.
   The runtime half is the fetch poison, tested with the sweeps.
-- `test/probe-compare.test.ts` and `test/probe-hash.test.ts` — the pure
-  halves of the frontmatter probe under `tools/a11-probe/`: the comparison
-  over results files, and the digest the probe carries so that it hashes
-  the same way on every device. The plugin half of the probe runs in a real
-  vault and is exercised by hand; `tools/a11-probe/README.md` says how.
+- `test/probe-compare.test.ts`, `test/probe-hash.test.ts` and
+  `test/probe-results.test.ts` — the pure halves of the frontmatter probe
+  under `tools/a11-probe/`: the comparison over results files, the digest
+  the probe carries so that it hashes the same way on every device, and the
+  naming and wording its results module decides. The rest of the probe runs
+  in a real vault and is exercised by hand; `tools/a11-probe/README.md`
+  says how.
 - `test/live/` — what verification runs against real servers need: the
   credential resolver, and the self-hosted CalDAV containers. Nothing here
   reaches a server during `npm test`; `test/live/README.md` states the

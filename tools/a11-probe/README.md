@@ -63,10 +63,20 @@ the number of samples and the path of the results file. It stays up for
 twenty seconds, which is long enough to read a path off a phone. If the
 run fails, the notice says why, and desktop consoles also carry the error.
 
-The run takes a few seconds. It is safe to run again: each run rewrites
-the fixture notes from the embedded corpus before touching them, so a
-second run starts from the same text as the first, and each run writes a
-new results file.
+Before writing each note the probe waits for Obsidian to read it back, so
+that the writer works from the note as it now stands. That wait usually
+returns at once and the run takes a few seconds. Where Obsidian reports no
+change — a re-run can rewrite a note with the bytes already on disk — the
+wait runs out after three seconds instead, and a run in which that happens
+for every fixture takes about forty-five seconds, with only the opening
+notice on screen. The completion notice says how many samples waited that
+long, each such sample is marked in the results file, and the comparison
+prints a caution for it, because bytes written while the app's view of the
+note was possibly stale are not evidence about the writer.
+
+It is safe to run again: each run rewrites the fixture notes from the
+embedded corpus before touching them, so a second run starts from the same
+text as the first, and each run writes a new results file.
 
 ## Where the results are
 
@@ -97,7 +107,7 @@ The script loads its comparison from a TypeScript module, which node reads
 directly from version 24 on. An older node reports an unknown file
 extension rather than doing anything strange.
 
-Any number of files, in any order. The output has four parts:
+Any number of files, in any order. The output has five parts:
 
 - **environments** — which file is `#1`, `#2` and so on, and what each ran
   on.
@@ -107,20 +117,25 @@ Any number of files, in any order. The output has four parts:
   the fixture everywhere; `mixed` means it refused in some environments and
   not others. `incomplete` means a file had no record of that fixture at
   all.
+- **cautions** — fixtures where some environment waited its cache timeout
+  out, marked with `!`. A difference on a cautioned fixture is not read as
+  a divergence: run that environment again and compare the new file.
 - **divergences** — for anything that diverged, the offset of the first
   differing byte and a hexdump of the bytes around it, with the row holding
   the difference marked.
 - **notes** — anything that makes the comparison untrustworthy, such as
-  runs that started from different fixture text or a results file whose
-  recorded hash does not match its recorded bytes, followed by the errors
-  each environment reported.
+  runs that started from different fixture text, a file recording no
+  fixtures or the same fixture twice, a recorded hash that does not match
+  its recorded bytes, or two files that look like one run counted twice;
+  then the errors each environment reported.
 
 The last line is the verdict, which is what the verification record
 transcribes.
 
 The exit status is 0 when every fixture agreed, 1 when any of them
 diverged, and 2 when the files could not be compared at all — unreadable,
-not results files, missing fixtures, or written from different corpora.
+not results files, missing fixtures, holding no fixtures in common, written
+from different corpora, or differing only where a caution stands.
 
 Errors are reported but never compared. A version that refuses a fixture
 everywhere has behaved consistently, and the wording it refuses with is not
@@ -130,6 +145,9 @@ evidence about emitted bytes.
 
 - `main.ts`, `run.ts`, `environment.ts`, `sha256.ts`, `results.ts` — the
   plugin. It uses the Obsidian API and nothing else, so it runs on phones.
+  `results.ts` holds the shape of a results file, the name one takes, and
+  the wording of a failure, none of which touch a platform; its tests are
+  `test/probe-results.test.ts`.
 - `manifest.json` — the plugin manifest. Its minimum app version is the
   release that introduced the frontmatter writer the probe exercises.
 - `build.mjs` — the build, which reads the note fixtures from

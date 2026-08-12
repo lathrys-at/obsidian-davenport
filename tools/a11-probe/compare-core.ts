@@ -14,7 +14,7 @@
 
 import { Buffer } from 'node:buffer';
 import { createHash } from 'node:crypto';
-import type { ProbeResults } from './results';
+import type { MetadataSettling, ProbeResults } from './results';
 
 const KIND: ProbeResults['kind'] = 'frontmatter-emission-samples';
 const BASE64 = /^[A-Za-z0-9+/]*={0,2}$/;
@@ -67,6 +67,12 @@ export interface FixtureComparison {
 	/** Environments whose results file has no record of this fixture. */
 	readonly missing: readonly string[];
 	readonly divergences: readonly Divergence[];
+	/**
+	 * Environments that waited the metadata timeout out before this
+	 * fixture was written, so their bytes may have come from a stale view
+	 * of the note rather than from the text the run put there.
+	 */
+	readonly cautions: readonly string[];
 }
 
 /** A results file that does not add up on its own terms. */
@@ -90,6 +96,10 @@ export interface ComparisonReport {
 	/** Fixtures whose input text was not the same in every run. */
 	readonly corpusMismatches: readonly string[];
 	readonly integrityFailures: readonly IntegrityFailure[];
+	/** What stops these files being compared at all. */
+	readonly problems: readonly string[];
+	/** What is worth knowing before reading the verdict. */
+	readonly warnings: readonly string[];
 	readonly verdict: Verdict;
 	readonly agreed: number;
 	readonly compared: number;
@@ -141,9 +151,13 @@ export function parseResults(text: string, source: string): ProbeResults {
 	};
 }
 
-/** How this environment should read in the legend. */
+/**
+ * How this environment should read in the legend. The engine string comes
+ * with it: two runs of one Obsidian version on different OS builds, or on
+ * a phone and a tablet, are alike in every other field.
+ */
 export function describeEnvironment(results: ProbeResults): string {
-	return `${deviceOf(results)}, app ${results.obsidianVersion}, api ${results.apiVersion}`;
+	return `${deviceOf(results)}, app ${results.obsidianVersion}, api ${results.apiVersion}, ${results.platform.userAgent}`;
 }
 
 /** The device this run happened on, in one word. */
@@ -176,16 +190,29 @@ export function compareRuns(runs: readonly LoadedRun[]): ComparisonReport {
 	const outputs = new Map<string, Map<string, Uint8Array>>();
 	const errors = new Map<string, FixtureError[]>();
 	const inputHashes = new Map<string, Set<string>>();
+	const stale = new Map<string, string[]>();
+	const presence = new Map<string, Set<string>>();
 	const ids: string[] = [];
 
 	for (const run of runs) {
+		const seen = new Set<string>();
 		for (const record of run.results.perFixture) {
 			if (!ids.includes(record.id)) {
 				ids.push(record.id);
 			}
-			hashesFor(inputHashes, record.id).add(record.inputHash);
+			if (seen.has(record.id)) {
+				integrityFailures.push({
+					label: run.label,
+					id: record.id,
+					note: 'this file records the fixture more than once',
+				});
+				continue;
+			}
+			seen.add(record.id);
+			entryOf(presence, record.id, newSet).add(run.label);
+			entryOf(inputHashes, record.id, newSet).add(record.inputHash);
 			if ('error' in record) {
-				listFor(errors, record.id).push({
+				entryOf(errors, record.id, newList).push({
 					label: run.label,
 					message: record.error,
 				});
@@ -208,7 +235,10 @@ export function compareRuns(runs: readonly LoadedRun[]): ComparisonReport {
 					note: `the recorded hash ${record.outputHash} is not the hash of the recorded bytes (${hash})`,
 				});
 			}
-			bytesFor(outputs, record.id).set(run.label, bytes);
+			if (record.settledBy === 'timeout') {
+				entryOf(stale, record.id, newList).push(run.label);
+			}
+			entryOf(outputs, record.id, newMap).set(run.label, bytes);
 		}
 	}
 
@@ -219,6 +249,7 @@ export function compareRuns(runs: readonly LoadedRun[]): ComparisonReport {
 			labels,
 			outputs.get(id) ?? new Map<string, Uint8Array>(),
 			errors.get(id) ?? [],
+			stale.get(id) ?? [],
 		),
 	);
 	const corpusMismatches = ids.filter(
@@ -227,6 +258,7 @@ export function compareRuns(runs: readonly LoadedRun[]): ComparisonReport {
 	const agreed = fixtures.filter(
 		(fixture) => fixture.outcome === 'agree' || fixture.outcome === 'error',
 	).length;
+	const problems = problemsWith(runs, ids, presence);
 
 	return {
 		environments: runs.map((run) => ({
@@ -239,10 +271,64 @@ export function compareRuns(runs: readonly LoadedRun[]): ComparisonReport {
 		fixtures,
 		corpusMismatches,
 		integrityFailures,
-		verdict: verdictFor(fixtures, corpusMismatches, integrityFailures),
+		problems,
+		warnings: warningsAbout(runs),
+		verdict: verdictFor(
+			fixtures,
+			corpusMismatches,
+			integrityFailures,
+			problems,
+		),
 		agreed,
 		compared: fixtures.length,
 	};
+}
+
+/**
+ * What stops these files being compared at all, as against what they
+ * disagree about. A file holding no records agrees with everything, and so
+ * does a set of files with no fixture in common: both would otherwise read
+ * as total agreement on the one line that gets transcribed.
+ */
+function problemsWith(
+	runs: readonly LoadedRun[],
+	ids: readonly string[],
+	presence: ReadonlyMap<string, ReadonlySet<string>>,
+): string[] {
+	const problems: string[] = [];
+	for (const run of runs) {
+		if (run.results.perFixture.length === 0) {
+			problems.push(`${run.label} records no fixtures at all`);
+		}
+	}
+	const shared = ids.filter((id) => (presence.get(id)?.size ?? 0) > 1);
+	if (runs.length > 1 && shared.length === 0) {
+		problems.push(
+			'no fixture appears in more than one of these files, so there is nothing to compare',
+		);
+	}
+	return problems;
+}
+
+/** What is worth saying about the files before reading the verdict. */
+function warningsAbout(runs: readonly LoadedRun[]): string[] {
+	const byFingerprint = new Map<string, string[]>();
+	for (const run of runs) {
+		const { results } = run;
+		const fingerprint = [
+			results.timestamp,
+			results.obsidianVersion,
+			results.apiVersion,
+			results.platform.userAgent,
+		].join('|');
+		entryOf(byFingerprint, fingerprint, newList).push(run.label);
+	}
+	return [...byFingerprint.values()]
+		.filter((labels) => labels.length > 1)
+		.map(
+			(labels) =>
+				`${labels.join(' and ')} carry the same environment and the same timestamp, so they may be one run counted twice`,
+		);
 }
 
 function compareFixture(
@@ -250,6 +336,7 @@ function compareFixture(
 	labels: readonly string[],
 	bytesByLabel: ReadonlyMap<string, Uint8Array>,
 	errors: readonly FixtureError[],
+	cautions: readonly string[],
 ): FixtureComparison {
 	const failed = new Set(errors.map((entry) => entry.label));
 	const missing = labels.filter(
@@ -285,6 +372,7 @@ function compareFixture(
 		errors,
 		missing,
 		divergences,
+		cautions,
 	};
 }
 
@@ -379,23 +467,38 @@ export function hexdump(bytes: Uint8Array, offset: number): string[] {
 	return lines;
 }
 
+/**
+ * A divergence is only a divergence if both sides can be trusted to have
+ * been written from the text the run put there. Where the only fixtures
+ * that differ are ones some environment waited the metadata timeout out
+ * on, the answer is that these runs do not settle it — the fixture has to
+ * be run again, not read as evidence of a writer that differs.
+ */
 function verdictFor(
 	fixtures: readonly FixtureComparison[],
 	corpusMismatches: readonly string[],
 	integrityFailures: readonly IntegrityFailure[],
+	problems: readonly string[],
 ): Verdict {
 	const incomparable =
 		corpusMismatches.length > 0 ||
 		integrityFailures.length > 0 ||
+		problems.length > 0 ||
+		fixtures.length === 0 ||
 		fixtures.some((fixture) => fixture.outcome === 'incomplete');
 	if (incomparable) {
 		return 'incomparable';
 	}
-	const diverged = fixtures.some(
+	const diverged = fixtures.filter(
 		(fixture) =>
 			fixture.outcome === 'diverge' || fixture.outcome === 'mixed',
 	);
-	return diverged ? 'diverge' : 'agree';
+	if (diverged.length === 0) {
+		return 'agree';
+	}
+	return diverged.some((fixture) => fixture.cautions.length === 0)
+		? 'diverge'
+		: 'incomparable';
 }
 
 function decode(text: string): Uint8Array | null {
@@ -409,41 +512,20 @@ function sha256Hex(bytes: Uint8Array): string {
 	return createHash('sha256').update(bytes).digest('hex');
 }
 
-function bytesFor(
-	outputs: Map<string, Map<string, Uint8Array>>,
-	id: string,
-): Map<string, Uint8Array> {
-	const existing = outputs.get(id);
+/** The entry under this key, put there by the maker if it is not. */
+function entryOf<K, V>(store: Map<K, V>, key: K, make: () => V): V {
+	const existing = store.get(key);
 	if (existing !== undefined) {
 		return existing;
 	}
-	const created = new Map<string, Uint8Array>();
-	outputs.set(id, created);
+	const created = make();
+	store.set(key, created);
 	return created;
 }
 
-function listFor(
-	errors: Map<string, FixtureError[]>,
-	id: string,
-): FixtureError[] {
-	const existing = errors.get(id);
-	if (existing !== undefined) {
-		return existing;
-	}
-	const created: FixtureError[] = [];
-	errors.set(id, created);
-	return created;
-}
-
-function hashesFor(hashes: Map<string, Set<string>>, id: string): Set<string> {
-	const existing = hashes.get(id);
-	if (existing !== undefined) {
-		return existing;
-	}
-	const created = new Set<string>();
-	hashes.set(id, created);
-	return created;
-}
+const newList = <T>(): T[] => [];
+const newSet = <T>(): Set<T> => new Set<T>();
+const newMap = <K, V>(): Map<K, V> => new Map<K, V>();
 
 function readFixture(
 	entry: unknown,
@@ -460,9 +542,25 @@ function readFixture(
 	return {
 		id,
 		inputHash,
+		settledBy: settlingAt(record, source, where),
 		outputBase64: stringAt(record, 'outputBase64', source, where),
 		outputHash: stringAt(record, 'outputHash', source, where),
 	};
+}
+
+/** How the record says the wait before the writer ran ended. */
+function settlingAt(
+	record: Record<string, unknown>,
+	source: string,
+	where: string,
+): MetadataSettling {
+	const value = record.settledBy;
+	if (value !== 'event' && value !== 'timeout') {
+		throw new Error(
+			`${source}: ${where} does not say whether its wait settled by event or by timeout`,
+		);
+	}
+	return value;
 }
 
 function objectAt(

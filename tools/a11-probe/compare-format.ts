@@ -16,6 +16,10 @@ export function formatReport(report: ComparisonReport): string {
 	lines.push(...environments(report), '');
 	lines.push(...fixtures(report), '');
 
+	const cautions = cautionDetail(report);
+	if (cautions.length > 0) {
+		lines.push(...cautions, '');
+	}
 	const divergences = divergenceDetail(report);
 	if (divergences.length > 0) {
 		lines.push(...divergences, '');
@@ -90,7 +94,31 @@ function summary(fixture: FixtureComparison, environments: number): string {
 	if (fixture.missing.length > 0) {
 		parts.push(`no record from ${fixture.missing.join(',')}`);
 	}
+	if (fixture.cautions.length > 0) {
+		parts.push(`wait timed out in ${fixture.cautions.join(',')}`);
+	}
 	return parts.join('; ');
+}
+
+/**
+ * The fixtures an environment may have written from a stale view of the
+ * note. Set apart from the notes below and marked, because a difference
+ * here reads as a divergence and is not one until it is seen again.
+ */
+function cautionDetail(report: ComparisonReport): string[] {
+	const affected = report.fixtures.filter(
+		(fixture) => fixture.cautions.length > 0,
+	);
+	if (affected.length === 0) {
+		return [];
+	}
+	return [
+		'cautions',
+		...affected.map(
+			(fixture) =>
+				`  ! ${fixture.id}: ${fixture.cautions.join(',')} waited out the metadata timeout, so that output may have been written from a stale view of the note; a difference here is unproven until that environment runs the fixture again`,
+		),
+	];
 }
 
 function divergenceDetail(report: ComparisonReport): string[] {
@@ -124,6 +152,9 @@ function divergenceDetail(report: ComparisonReport): string[] {
 
 function warnings(report: ComparisonReport): string[] {
 	const lines: string[] = [];
+	for (const problem of report.problems) {
+		lines.push(`  ${problem}`);
+	}
 	for (const id of report.corpusMismatches) {
 		lines.push(
 			`  ${id}: the runs did not start from the same fixture text, so their outputs prove nothing`,
@@ -131,6 +162,9 @@ function warnings(report: ComparisonReport): string[] {
 	}
 	for (const failure of report.integrityFailures) {
 		lines.push(`  ${failure.label} ${failure.id}: ${failure.note}`);
+	}
+	for (const warning of report.warnings) {
+		lines.push(`  ${warning}`);
 	}
 	for (const fixture of report.fixtures) {
 		for (const error of fixture.errors) {
@@ -143,7 +177,7 @@ function warnings(report: ComparisonReport): string[] {
 function verdict(report: ComparisonReport): string {
 	const across = `across ${String(report.environments.length)} environments`;
 	if (report.verdict === 'incomparable') {
-		return 'verdict: these runs cannot be compared as they stand; the notes above say why';
+		return 'verdict: these runs cannot be compared as they stand; the cautions and notes above say why';
 	}
 	if (report.verdict === 'diverge') {
 		const diverged = report.compared - report.agreed;

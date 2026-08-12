@@ -19,7 +19,11 @@ import {
 	type LoadedRun,
 } from '../tools/a11-probe/compare-core';
 import { formatReport } from '../tools/a11-probe/compare-format';
-import type { FixtureResult, ProbeResults } from '../tools/a11-probe/results';
+import type {
+	FixtureResult,
+	MetadataSettling,
+	ProbeResults,
+} from '../tools/a11-probe/results';
 
 const encoder = new TextEncoder();
 
@@ -28,14 +32,27 @@ function digest(bytes: Uint8Array): string {
 }
 
 /** A fixture that came through, carrying this text as its output. */
-function emitted(id: string, text: string, input = id): FixtureResult {
+function emitted(
+	id: string,
+	text: string,
+	{
+		input = id,
+		settledBy = 'event',
+	}: { input?: string; settledBy?: MetadataSettling } = {},
+): FixtureResult {
 	const bytes = encoder.encode(text);
 	return {
 		id,
 		inputHash: digest(encoder.encode(input)),
+		settledBy,
 		outputBase64: Buffer.from(bytes).toString('base64'),
 		outputHash: digest(bytes),
 	};
+}
+
+/** The same, from an environment whose wait for the app ran out. */
+function stale(id: string, text: string): FixtureResult {
+	return emitted(id, text, { settledBy: 'timeout' });
 }
 
 /** A fixture the writer refused. */
@@ -230,8 +247,12 @@ describe('results that cannot be compared as they stand', () => {
 	it('refuses runs that started from different fixture text', () => {
 		const report = compareRuns(
 			runsOf(
-				resultsOf([emitted('minimal', 'same', 'one corpus')]),
-				resultsOf([emitted('minimal', 'same', 'another corpus')]),
+				resultsOf([
+					emitted('minimal', 'same', { input: 'one corpus' }),
+				]),
+				resultsOf([
+					emitted('minimal', 'same', { input: 'another corpus' }),
+				]),
 			),
 		);
 		expect(report.corpusMismatches).toEqual(['minimal']);
@@ -276,6 +297,7 @@ describe('results that cannot be compared as they stand', () => {
 					{
 						id: 'minimal',
 						inputHash: digest(encoder.encode('minimal')),
+						settledBy: 'event',
 						outputBase64: 'not base64!',
 						outputHash: 'f'.repeat(64),
 					},
@@ -283,6 +305,125 @@ describe('results that cannot be compared as they stand', () => {
 			),
 		);
 		expect(only(report.integrityFailures).note).toContain('not base64');
+		expect(report.verdict).toBe('incomparable');
+	});
+});
+
+describe('a fixture written after the wait ran out', () => {
+	it('carries a caution into the row and a block of its own', () => {
+		const report = compareRuns(
+			runsOf(
+				resultsOf([emitted('comments', 'a')]),
+				resultsOf([stale('comments', 'a')]),
+			),
+		);
+		expect(fixtureNamed(report, 'comments').cautions).toEqual(['#2']);
+		const printed = formatReport(report);
+		expect(printed).toContain('wait timed out in #2');
+		expect(printed).toContain(
+			'! comments: #2 waited out the metadata timeout',
+		);
+		expect(printed).toContain('unproven until that environment runs');
+	});
+
+	it('leaves agreement standing when nothing differs', () => {
+		const report = compareRuns(
+			runsOf(
+				resultsOf([emitted('comments', 'a')]),
+				resultsOf([stale('comments', 'a')]),
+			),
+		);
+		expect(report.verdict).toBe('agree');
+	});
+
+	// The expensive wrong answer is a divergence that is really a stale
+	// read, so one that only a cautioned fixture shows is not a verdict.
+	it('withholds a divergence that only a cautioned fixture shows', () => {
+		const report = compareRuns(
+			runsOf(
+				resultsOf([emitted('comments', 'a')]),
+				resultsOf([stale('comments', 'b')]),
+			),
+		);
+		expect(fixtureNamed(report, 'comments').outcome).toBe('diverge');
+		expect(report.verdict).toBe('incomparable');
+		expect(formatReport(report)).toContain(
+			'the cautions and notes above say why',
+		);
+	});
+
+	it('still reports a divergence that stands on its own', () => {
+		const report = compareRuns(
+			runsOf(
+				resultsOf([emitted('comments', 'a'), emitted('minimal', 'a')]),
+				resultsOf([stale('comments', 'b'), emitted('minimal', 'b')]),
+			),
+		);
+		expect(report.verdict).toBe('diverge');
+	});
+});
+
+describe('files with nothing in common', () => {
+	it('refuses two files that record no fixtures at all', () => {
+		const report = compareRuns(runsOf(resultsOf([]), resultsOf([])));
+		expect(report.verdict).toBe('incomparable');
+		expect(report.problems).toContain('#1 records no fixtures at all');
+		const printed = formatReport(report);
+		expect(printed).not.toContain('byte-identical');
+		expect(printed).toContain('cannot be compared');
+	});
+
+	it('refuses files whose fixtures do not overlap', () => {
+		const report = compareRuns(
+			runsOf(
+				resultsOf([emitted('minimal', 'a')]),
+				resultsOf([emitted('nested', 'a')]),
+			),
+		);
+		expect(report.verdict).toBe('incomparable');
+		expect(formatReport(report)).toContain(
+			'no fixture appears in more than one of these files',
+		);
+	});
+});
+
+describe('one run submitted twice', () => {
+	it('says so without failing the comparison', () => {
+		const twice = resultsOf([emitted('minimal', 'a')]);
+		const report = compareRuns(runsOf(twice, twice));
+		expect(report.warnings).toEqual([
+			'#1 and #2 carry the same environment and the same timestamp, so they may be one run counted twice',
+		]);
+		expect(report.verdict).toBe('agree');
+		expect(formatReport(report)).toContain('may be one run counted twice');
+	});
+
+	it('says nothing about two runs from different environments', () => {
+		const report = compareRuns(
+			runsOf(
+				resultsOf([emitted('minimal', 'a')]),
+				resultsOf([emitted('minimal', 'a')], {
+					userAgent: 'another device',
+				}),
+			),
+		);
+		expect(report.warnings).toEqual([]);
+	});
+});
+
+describe('a file that records one fixture twice', () => {
+	it('reads as an integrity failure rather than the last record', () => {
+		const report = compareRuns(
+			runsOf(
+				resultsOf([emitted('minimal', 'a')]),
+				resultsOf([emitted('minimal', 'a'), emitted('minimal', 'b')]),
+			),
+		);
+		expect(only(report.integrityFailures)).toEqual({
+			label: '#2',
+			id: 'minimal',
+			note: 'this file records the fixture more than once',
+		});
 		expect(report.verdict).toBe('incomparable');
 	});
 });
@@ -317,6 +458,18 @@ describe('reading a results file', () => {
 		['a list', '[]', 'the file is missing or not an object'],
 	])('refuses %s', (_name, text, complaint) => {
 		expect(() => parseResults(text, 'a.json')).toThrow(complaint);
+	});
+
+	it('refuses an emission that does not say how its wait settled', () => {
+		const record = { ...emitted('minimal', 'a') } as Record<
+			string,
+			unknown
+		>;
+		delete record.settledBy;
+		const missing = JSON.stringify({ ...results, perFixture: [record] });
+		expect(() => parseResults(missing, 'a.json')).toThrow(
+			'does not say whether its wait settled by event or by timeout',
+		);
 	});
 
 	it('names the field a truncated file is missing', () => {
