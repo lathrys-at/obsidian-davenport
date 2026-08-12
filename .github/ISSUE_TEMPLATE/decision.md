@@ -2,7 +2,7 @@
 name: Decision record
 about: A design decision and its rationale
 ---
-<!-- Instructions. Delete every comment before you post. Audience: the future maintainer who asks "why is it this way" (docs/dev/audience/future-maintainer.md). Write simply and clearly. Do not use LLM-isms. Do not emphasize text if the emphasis is not necessary. Do not describe more than necessary. This text must be utilitarian. Record the decision when you make it, not later. The repo docs describe what exists. This issue records the reason for it. -->
+<!-- Instructions. Delete every comment before you post. Audience: the future maintainer who asks "why is it this way" (docs/dev/audience/future-maintainer.md). Write simply and clearly. Do not use LLM-isms. Do not emphasize text if the emphasis is not necessary. Do not describe more than necessary. This text must be utilitarian. Record the decision when you make it, not later. The repo docs describe what exists. This issue records the reason for the decision. -->
 
 <!-- Write one sentence that summarizes the decision. Use a simple, declarative voice. -->
 

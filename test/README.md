@@ -22,7 +22,8 @@ Layout:
   ban. One static half is the lint selectors, and they are read out of the
   lint configuration itself. The other static half is
   `scripts/scan-bundle.mjs`. It runs as a process over a bundle that it is
-  handed. The runtime half is the fetch poison, and the sweeps test it.
+  handed. The runtime half is the fetch poison. Its tests run with the
+sweeps.
 - `test/probe-compare.test.ts`, `test/probe-hash.test.ts` and
   `test/probe-results.test.ts` — the pure halves of the frontmatter probe
   under `tools/a11-probe/`. One pure half is the comparison over results

@@ -141,6 +141,6 @@ and no network. Anything that talks to a server must not carry that name.
 If it carries that name, the ordinary test run will try to reach a server.
 
 Recorded facts name environments and versions: the image tag, the server
-release, and the provider. Recorded facts never name credential material. A
+release, the provider. Recorded facts never name credential material. A
 run that puts a credential into a fact, an artifact, or a workflow log is a
 defect in the run.

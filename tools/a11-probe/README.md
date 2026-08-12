@@ -135,7 +135,7 @@ node tools/a11-probe/compare.mjs macos-1.9.14.json ios-1.9.14.json
 
 The script loads its comparison from a TypeScript module. Node reads such
 a module directly from version 24 on. An older node reports an unknown
-file extension. An older node does not do anything strange.
+file extension, and it does nothing else.
 
 You can give the script any number of files, in any order. The output has
 five parts:
