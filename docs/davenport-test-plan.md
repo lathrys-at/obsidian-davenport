@@ -4,6 +4,8 @@ Companion to the Davenport design specification. Every `§`, row, principle, and
 
 Maintenance rule, mirroring the design spec's own (B.3): any future spec change owes this plan its tests before it ships.
 
+The rule runs downward and inward as well. An issue whose milestone disagrees with the stage Part 8 assigns one of its tests owes Part 8 the reassignment before that issue is worked — issue authoring is where fine-grained staging is decided, and the milestone gates are copied from these stage lists, so a stale list is a stale definition of done. A capability Part 2 names in a shape's definition owes Part 3 a requirement stating it before that shape's tests are gated — Part 3 is the checklist a harness gate certifies against, so a capability absent from it is a shape nothing can report as unrunnable.
+
 ## Part 1 — Conventions
 
 - Every test carries a stable ID, a shape tag (Part 2), and the design-spec references its assertions trace to. The coverage map (Part 7) references these IDs.
@@ -40,6 +42,9 @@ Serves ICS with: per-fetch `DTSTAMP` churn; UID omission, in-feed duplication, a
 
 ### 3.5 Clock and corpus
 A controllable clock driving debounce, grace periods, horizon edges, delta granularity, and retention. An adversarial ICS corpus: fuzzed unmodeled `X-` properties, foreign `VALARM`s, structured locations, legal-but-exotic folding and escaping, `VTIMEZONE` variety including historical zones, `RECURRENCE-ID` overrides and `EXDATE`s. Used by IV-4, normalization tests, and round-trip suites.
+
+### 3.6 Vault-write interruption and restart
+The kill points inside a vault write and the process lifecycle around it, the other two capabilities Part 2 defines [C] by. A write and its change event are separable: drop the write, drop the event, or deliver the two out of order. The engine restarts against the vault and device-local state as an interrupted run left them, rehydrating and re-deriving rather than resuming — nothing carries across the restart that was not on disk. Where a crash can land between two writes, which write goes first is a design decision, not an implementation accident (§5.4), so the mandated orders need a facility that can land a crash between them. Load-bearing for CD-10, IN-12, IN-14, PU-8, TK-7, and TK-16, and for every [C] run's standing obligation that the post-restart state is one the design spec defines (Part 2).
 
 ## Part 4 — Invariant sweeps
 
@@ -440,16 +445,16 @@ Every row of the design spec's state table maps to covering tests. Rows B.3 mark
 
 ## Part 8 — Ordering and stage gates
 
-Verification order: A-11 before all implementation-facing work — its failure branch is the appendix's only design change and it gates stage 2. A-24 second — a non-enforcing server silently removes a named backstop, and the plan must know where that backstop is real before push ships. Remaining items land before the stage that consumes them, per the mapping in Part 6.1.
+Verification order: A-11 before the other appendix items, and before the implementation work that writes note frontmatter through the API it verifies — frontmatter emission, materialization, and the engine that drives them, which is where stage 1 first writes user notes through `processFrontMatter`; the rest of stage 1 proceeds without waiting on it. Its failure branch is the appendix's only design change and it gates stage 2. A-24 second — a non-enforcing server silently removes a named backstop, and the plan must know where that backstop is real before push ships. Remaining items land before the stage that consumes them, per the mapping in Part 6.1.
 
 Stage gates, aligned with the roadmap (§18). A stage ships when its listed suites pass and its consumed verification items are recorded:
 
-- **Stage 1 (feeds, read path):** FM, LG, DL-3, ID-1..ID-6, FD complete, VN, TP-1..TP-6, UI-1/2/8/9/10/13/15/17 (read-side), CF-1/CF-2, SI-2 (the whole build issues no non-GET request), applicable IV sweeps including IV-13. Consumes: A-6, A-14, A-16, A-18, A-19, A-20, A-22, A-23.
-- **Stage 2 (CalDAV pull):** LP, HZ (incl. HZ-8), AD-1..AD-4, RG-1..RG-3/RG-5/RG-7..RG-10, TP-7, CD-1/CD-3 (dirty set ships here), SI-1, DL-1. Consumes: **A-11 (gate)**, A-5, A-8, A-12, A-13, A-15, A-16, A-21, A-25.
-- **Stage 3 (push, trust surface):** PU (with PU-7's stage-3 variant and PU-8), TS (incl. TS-15), LC, AD-5, CD complete, DA, PM, TP-8..TP-10, IN-8/IN-13/IN-14 (remote-deletion handling ships with tombstones), UI complete, CF complete, IG, the Part 6.3 gate matrix, IV-1/2/4/6/8 at full strength. Consumes: A-1, A-2, A-3, A-4, A-17, **A-24**.
+- **Stage 1 (feeds, read path):** FM complete except FM-5 (push-creation), LG, DL-3, ID-1..ID-6, FD complete, VN complete except VN-9 (scoped quick-add), TP-1..TP-6, RC-1/RC-4/RC-6 (display), TS-6/TS-7 (read halves — acknowledgment, claimant-gated retention, revival), CD-8 (the exemption over the orphaned and suspended conditions stage 1 produces), AD-3 (the materialization-map half), IN-13 (the materialization content hash written at creation, which stage 3's remove discriminator reads), UI-1/2/8/9/10/13/15/17 (read-side), UI-16 (read subset), CF-1/CF-2, CF-3 (the check itself — its per-tool procedure lands with stage 3), SC-5, SI-2 (the whole build issues no non-GET request), applicable IV sweeps including IV-13. Consumes: A-6, A-14, A-16, A-18, A-19, A-20, A-22, A-23.
+- **Stage 2 (CalDAV pull):** LP, HZ (incl. HZ-8), AD-1..AD-4, RG-1..RG-3/RG-5/RG-7..RG-10, TP-7, CD-1/CD-3 (dirty set ships here), SI-1, DL-1, ID-8, SC-1/SC-2. Consumes: **A-11 (gate)**, A-5, A-8, A-12, A-13, A-15, A-16, A-21, A-25.
+- **Stage 3 (push, trust surface):** PU (with PU-7's stage-3 variant and PU-8), ID-7 (the creation race), FM-5, TS (incl. TS-15), LC, AD-5, CD complete, DA, PM, TP-8..TP-10, VN-9, RG-4 (vault-owned behavior: auto-push-on-valid ships with push), IN-8/IN-13/IN-14 (remote-deletion handling ships with tombstones), UI complete, CF complete, IG, the Part 6.3 gate matrix, IV-1/2/4/6/8 at full strength. Consumes: A-1, A-2, A-3, A-4, A-17, **A-24**.
 - **Stage 4 (conflicts):** IN complete and Part 6.4 fully exercised; SI-1 retired; preservation items (IN-3, RG-6, DL-2) and the conflict UI (UI-11's table); IV-10/IV-12 at full strength.
 - **Stage 5 (tasks, transmutation, moves):** TK complete (incl. TK-15/TK-16), including the [C] crash suite. Consumes: A-26 (optimization gate only; non-blocking).
 - **Stage 6 (Google):** SC-3/SC-4 and the Google column of every provider matrix. Consumes: A-7, A-9, A-10.
-- **Stage 7 (recurrence exceptions, RSVP, pipeline):** RC complete (RC-3/RC-4 preservation is already live from stage 3 — what lands here is exception *editing*), RS complete, any deferred DA items.
+- **Stage 7 (recurrence exceptions, RSVP, pipeline):** RC complete (RC-1/RC-4/RC-6 display is already live from stage 1 and RC-3's preservation from stage 3 — what lands here is exception *editing*), RS complete, any deferred DA items.
 
 Re-verification triggers, recorded in the facts document: platform items (A-1, A-7, A-11, A-12, A-17, A-18) on each Obsidian minor release; provider items on observed regression and at least annually; sync-tool items on tool major versions. A changed fact re-routes to its pre-stated branch; a fact with no branch is a design gap and goes back to the design spec before code changes.
