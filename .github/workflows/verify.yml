@@ -19,10 +19,10 @@ permissions:
     contents: read
 
 jobs:
-    # Brings up the self-hosted pair and confirms both speak DAV, which is
-    # what the Radicale and Baikal columns need before a protocol runner
-    # can use them. Takes no secret: it runs third-party images, and it
-    # consumes nothing a secret would supply.
+    # Brings up the self-hosted servers and confirms all three speak DAV,
+    # which is what the Radicale, Baikal and Nextcloud columns need before
+    # a protocol runner can use them. Takes no secret: it runs third-party
+    # images, and it consumes nothing a secret would supply.
     containers:
         if: inputs.target == 'containers'
         runs-on: ubuntu-latest
@@ -40,6 +40,7 @@ jobs:
                   probe() {
                       name=$1
                       url=$2
+                      limit=$3
                       attempt=1
                       while true; do
                           headers=$(curl --silent --max-time 10 --user davenport:davenport \
@@ -49,8 +50,8 @@ jobs:
                               printf '%s\n' "$headers" | grep -i '^dav:'
                               return 0
                           fi
-                          if [ "$attempt" -ge 60 ]; then
-                              echo "$name: $url sent no DAV response in 60 attempts" >&2
+                          if [ "$attempt" -ge "$limit" ]; then
+                              echo "$name: $url sent no DAV response in $limit attempts" >&2
                               printf '%s\n' "$headers" >&2
                               return 1
                           fi
@@ -59,9 +60,14 @@ jobs:
                       done
                   }
 
+                  # Attempts are two seconds apart. Nextcloud gets the long
+                  # window because its first boot runs the installer, which
+                  # takes minutes and refuses connections until it is done;
+                  # the other two answer in seconds or are broken.
                   failed=0
-                  probe radicale http://127.0.0.1:5232/ || failed=1
-                  probe baikal http://127.0.0.1:8801/dav.php/ || failed=1
+                  probe radicale http://127.0.0.1:5232/ 60 || failed=1
+                  probe baikal http://127.0.0.1:8801/dav.php/ 60 || failed=1
+                  probe nextcloud http://127.0.0.1:8802/remote.php/dav/ 150 || failed=1
                   exit "$failed"
 
             - name: Server logs

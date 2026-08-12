@@ -2,7 +2,7 @@
 
 Verification protocols run against real CalDAV servers rather than the
 harness fakes. This directory holds what those runs need: how credentials
-reach them, and the two self-hosted servers that need no account.
+reach them, and the three self-hosted servers that need no account.
 
 ## Credential scheme
 
@@ -51,22 +51,24 @@ dependency, and sourcing it is the developer's step.
 
 ## Self-hosted servers
 
-[`docker-compose.yml`](docker-compose.yml) brings up Radicale and Baikal
-with throwaway credentials baked in, so those two provider columns need no
-account anywhere:
+[`docker-compose.yml`](docker-compose.yml) brings up Radicale, Baikal and
+Nextcloud with throwaway credentials baked in, so those three provider
+columns need no account anywhere:
 
 ```bash
 docker compose -f test/live/docker-compose.yml up -d
 docker compose -f test/live/docker-compose.yml down -v
 ```
 
-Radicale answers on `http://localhost:5232/` and Baikal on
-`http://localhost:8801/dav.php/`, both as `davenport`/`davenport`. Those
-credentials are public on purpose: the stack binds to loopback, holds
+Radicale answers on `http://localhost:5232/`, Baikal on
+`http://localhost:8801/dav.php/` and Nextcloud on
+`http://localhost:8802/remote.php/dav/`, all as `davenport`/`davenport`.
+Those credentials are public on purpose: the stack binds to loopback, holds
 nothing but test data, and is torn down with its volumes. The values in
 `.env.example` already match it. Radicale keeps its upstream default port;
 Baikal's upstream default is 80, so it takes one clear of the range dev
-servers and proxies compete for. Both image tags are pinned.
+servers and proxies compete for, and Nextcloud takes the next one along.
+All three image tags are pinned.
 
 Radicale takes its configuration and its password file from
 [`radicale/`](radicale). Baikal has no such hook, so
@@ -76,6 +78,16 @@ account its web installer would otherwise produce. The version pinned in
 that script must match the image tag: Baikal sends a browser to its
 installer when the configuration it finds was written by an older release
 than the one running.
+
+Nextcloud needs no such seed, because its image installs the server itself
+on first boot — but only when the environment supplies both the admin
+account and a database, which is why the compose file sets a SQLite
+database name alongside the credentials. SQLite also keeps the server to a
+single container: the stack is sized for boot and teardown, not for
+throughput. That install takes minutes where the other two images take
+seconds, and Apache does not accept a connection until it finishes, so the
+CI probe allows Nextcloud roughly five minutes and leaves the other two on
+their shorter window.
 
 ## Continuous integration
 
@@ -94,8 +106,8 @@ one — carries none at all. Widening a job's mapping to variables it does
 not read is the thing this rule exists to prevent.
 
 The `target` input picks the job. `containers` brings up the compose stack,
-waits for both servers, confirms each answers `OPTIONS` on its CalDAV root
-with a `DAV` header, and tears the stack down; it takes no secret and
+waits for all three servers, confirms each answers `OPTIONS` on its CalDAV
+root with a `DAV` header, and tears the stack down; it takes no secret and
 passes without one. `credentials` prints which providers a dispatch can
 reach, by variable name — it is where the secret mapping lives today, and
 it treats a whitespace-only variable as unset so that it and the resolver

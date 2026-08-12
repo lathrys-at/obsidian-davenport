@@ -1,11 +1,12 @@
-# Self-hosted CalDAV servers for live verification runs, so the Radicale
-# and Baikal columns need no account anywhere.
+# Self-hosted CalDAV servers for live verification runs, so the Radicale,
+# Baikal and Nextcloud columns need no account anywhere.
 #
 #     docker compose -f test/live/docker-compose.yml up -d
 #     docker compose -f test/live/docker-compose.yml down -v
 #
-# Radicale answers on http://localhost:5232/ and Baikal on
-# http://localhost:8801/dav.php/, both as davenport/davenport. Those
+# Radicale answers on http://localhost:5232/, Baikal on
+# http://localhost:8801/dav.php/ and Nextcloud on
+# http://localhost:8802/remote.php/dav/, all as davenport/davenport. Those
 # credentials are throwaway and public by design. The port choice, the
 # rest of the rationale, and what depends on this file are in
 # test/live/README.md.
@@ -32,7 +33,24 @@ services:
             - baikal-config:/var/www/baikal/config
             - baikal-specific:/var/www/baikal/Specific
 
+    nextcloud:
+        image: nextcloud:34.0.2-apache
+        ports:
+            - '127.0.0.1:8802:80'
+        # The image installs itself on first boot, but only when the admin
+        # pair and a database setting are both present; SQLite is what
+        # keeps that database from needing a second container. The trusted
+        # domains are the hosts a probe or a browser reaches it by.
+        environment:
+            SQLITE_DATABASE: nextcloud
+            NEXTCLOUD_ADMIN_USER: davenport
+            NEXTCLOUD_ADMIN_PASSWORD: davenport
+            NEXTCLOUD_TRUSTED_DOMAINS: localhost 127.0.0.1
+        volumes:
+            - nextcloud-html:/var/www/html
+
 volumes:
     radicale-data:
     baikal-config:
     baikal-specific:
+    nextcloud-html:
