@@ -13,6 +13,6 @@ write for the stricter card and let the other skim.
 |---|---|
 | [future-maintainer](future-maintainer.md) | issue bodies, in-tree docs |
 | [pr-reviewer](pr-reviewer.md) | PR bodies, review relay files |
-| [approver](approver.md) | anything in the drafts queue |
+| [approver](approver.md) | decision digests, plan-mode designs |
 | [cold-start-agent](cold-start-agent.md) | CLAUDE.md, process docs, handoff comments |
 | [outside-user](outside-user.md) | README, user-facing docs |
