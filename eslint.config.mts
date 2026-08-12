@@ -47,6 +47,7 @@ export default defineConfig(
 	globalIgnores([
 		'node_modules',
 		'.claude',
+		'.vaults',
 		'dist',
 		'tools/a11-probe/dist',
 		'coverage',
@@ -84,6 +85,7 @@ export default defineConfig(
 			'src/**/*.ts',
 			'test/**/*.ts',
 			'tools/**/*.ts',
+			'scripts/**/*.ts',
 			'vitest.config.ts',
 		],
 		extends: [
@@ -95,7 +97,12 @@ export default defineConfig(
 	// obsidianmd rules police plugin code, not tooling.
 	{
 		name: 'davenport/tooling',
-		files: ['scripts/**/*.mjs', 'tools/**/*.mjs', 'eslint.config.mts'],
+		files: [
+			'scripts/**/*.mjs',
+			'scripts/**/*.ts',
+			'tools/**/*.mjs',
+			'eslint.config.mts',
+		],
 		languageOptions: {
 			globals: {
 				...globals.node,
@@ -103,11 +110,16 @@ export default defineConfig(
 		},
 		rules: {
 			'obsidianmd/no-nodejs-modules': 'off',
+			// The vault script lays out a vault from the outside, before any
+			// app has opened it, so there is no Vault to ask for the name of
+			// its configuration folder. What it creates is the name Obsidian
+			// defaults to, which is the only answer available here.
+			'obsidianmd/hardcoded-config-path': 'off',
 		},
 	},
 	{
 		name: 'davenport/tooling-console',
-		files: ['scripts/**/*.mjs', 'tools/**/*.mjs'],
+		files: ['scripts/**/*.mjs', 'scripts/**/*.ts', 'tools/**/*.mjs'],
 		rules: {
 			'obsidianmd/rule-custom-message': 'off',
 		},
@@ -132,6 +144,10 @@ export default defineConfig(
 		files: ['test/**/*.ts'],
 		rules: {
 			'obsidianmd/no-nodejs-modules': 'off',
+			// A fixture describing a vault on disk names the folder that
+			// vault actually has. The rule steers plugin code toward asking
+			// the app for that name, which is not a thing a fixture can do.
+			'obsidianmd/hardcoded-config-path': 'off',
 		},
 	},
 	// The probe kit under tools/ is two halves. The plugin half is carried
@@ -206,7 +222,12 @@ export default defineConfig(
 	// adapter backs it with requestUrl. A direct fetch breaks on mobile.
 	{
 		name: 'davenport/no-global-fetch',
-		files: ['src/**/*.ts', 'test/**/*.ts', 'tools/**/*.ts'],
+		files: [
+			'src/**/*.ts',
+			'test/**/*.ts',
+			'tools/**/*.ts',
+			'scripts/**/*.ts',
+		],
 		rules: {
 			'no-restricted-globals': [
 				'error',

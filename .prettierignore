@@ -3,5 +3,6 @@ main.js
 coverage
 package-lock.json
 tools/a11-probe/dist
+.vaults
 *.md
 .github/

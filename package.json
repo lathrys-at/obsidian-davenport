@@ -8,6 +8,7 @@
 		"dev": "node esbuild.config.mjs",
 		"build": "tsc -noEmit -skipLibCheck && node esbuild.config.mjs production",
 		"probe:build": "tsc -noEmit -skipLibCheck && node tools/a11-probe/build.mjs",
+		"vault": "node scripts/vault.mjs",
 		"typecheck": "tsc --noEmit",
 		"test": "vitest run",
 		"test:watch": "vitest",

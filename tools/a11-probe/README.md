@@ -30,6 +30,13 @@ refuses to compare runs whose fixtures differed.
 
 ## Install it in a vault
 
+On a desktop with the repository checked out, `npm run vault` does all of
+this for you: it makes a scratch vault under `.vaults/`, builds the probe,
+installs it, lists it as one to enable, and prints how to open the vault
+and what to run in it. Re-run it on the same vault to refresh the probe to
+the current build. The rest of this section is the same thing by hand,
+which is what a phone needs.
+
 Use a scratch vault, not one holding anything you care about.
 
 Copy the two files in `dist/` into the vault, at:

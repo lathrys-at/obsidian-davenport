@@ -28,6 +28,13 @@ Layout:
   naming and wording its results module decides. The rest of the probe runs
   in a real vault and is exercised by hand; `tools/a11-probe/README.md`
   says how.
+- `test/vault-provisioning.test.ts` — the decisions behind
+  `scripts/vault.mjs`, the script that makes a scratch vault with the probe
+  installed: the names it accepts and the ones it draws, the verdict it
+  reaches on a probe already in a vault, what it makes of a vault it has
+  walked, and the wording it prints. The walking and copying are thin by
+  design and are left to a real run; the help text and a refused name are
+  run as a process, since the exit status is part of the interface.
 - `test/live/` — what verification runs against real servers need: the
   credential resolver, and the self-hosted CalDAV containers. Nothing here
   reaches a server during `npm test`; `test/live/README.md` states the
