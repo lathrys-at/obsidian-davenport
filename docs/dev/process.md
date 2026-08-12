@@ -20,8 +20,8 @@ bodies, design rulings, review distillations — posts without prior user
 approval. The lead surfaces the embedded decisions to the user in session as
 a digest, and revises posted text on their feedback. Design reaches the user
 before it hardens: plans and spec-touching decisions go through the user per
-[Feature design](#feature-design). Mechanical text — status notes, hold comments, CI
-chatter — posts under the template rules. Drafts may stage in
+[Feature design](#feature-design). Mechanical text — status notes, hold
+comments, CI chatter — posts under the template rules. Drafts may stage in
 `~/.cache/davenport-dev/drafts/` while being composed.
 
 ## The writing process
