@@ -17,8 +17,8 @@ resolution: fixed in <commit>, or recorded as #N, or accepted, with the
 reason. "None" is a valid entry. You must not omit the section. -->
 
 **Verified empirically:** <!-- Write what you ran or probed, and not what
-you read. Examples: the tests that you wrote, the counter-cases that you
-grepped, the probes that you ran. -->
+you read. Examples are the tests that you wrote, the counter-cases that
+you grepped, and the probes that you ran. -->
 
 **Coverage:** <!-- Write explicitly what you checked. Write explicitly what
 you did NOT check. -->

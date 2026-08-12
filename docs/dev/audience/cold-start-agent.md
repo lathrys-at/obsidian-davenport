@@ -3,9 +3,9 @@
 - **Who they are:** The cold-start agent is an agent session that starts
   with no conversational context. The session is the next lead, or a newly
   dispatched subagent.
-- **What they already know:** The cold-start agent knows its tools and
+- **What they already know:** The cold-start agent knows their tools and
   general engineering. The cold-start agent also knows what the text that
-  it reads links to.
+  they read links to.
 - **What they don't know:** The cold-start agent does not know anything
   that is not written down. No prior session survives.
 - **Why they're reading:** The cold-start agent reads to act immediately

@@ -7,7 +7,8 @@ those facts, and the project versions this document together with the
 plugin. The protocols that produce each fact live beside this document in
 `docs/dev/facts/`. Each protocol appears there when its author writes it.
 
-A changed fact re-routes to its pre-stated branch. A
+The rule is this: a changed fact re-routes to its pre-stated
+branch. A
 fact that has no branch is a design gap. That fact goes back to the design
 spec before code changes.
 
@@ -98,6 +99,7 @@ item.
 
 ## Recorded entries
 
-Write one heading for each item, in the entry format above. Create that heading
+Write one heading for each item, in the entry format above. Create
+that heading
 with the item's first recorded fact. Link the item's protocol document at
 the top of that heading. No headings exist yet.
