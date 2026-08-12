@@ -36,11 +36,12 @@ jobs:
             # The credentials are the throwaway pair baked into the
             # compose file, not a secret.
             - name: Probe the CalDAV roots
+              timeout-minutes: 20
               run: |
                   probe() {
                       name=$1
                       url=$2
-                      limit=$3
+                      limit=${3:?probe needs an attempt limit}
                       attempt=1
                       while true; do
                           headers=$(curl --silent --max-time 10 --user davenport:davenport \
@@ -60,10 +61,10 @@ jobs:
                       done
                   }
 
-                  # Attempts are two seconds apart. Nextcloud gets the long
-                  # window because its first boot runs the installer, which
-                  # takes minutes and refuses connections until it is done;
-                  # the other two answer in seconds or are broken.
+                  # Attempts are two seconds apart. Nextcloud's first boot
+                  # runs an installer and the container does not listen
+                  # until that finishes, so its window is the longer one:
+                  # headroom for a slow runner, not a measured need.
                   failed=0
                   probe radicale http://127.0.0.1:5232/ 60 || failed=1
                   probe baikal http://127.0.0.1:8801/dav.php/ 60 || failed=1

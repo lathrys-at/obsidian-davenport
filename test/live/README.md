@@ -84,10 +84,12 @@ on first boot — but only when the environment supplies both the admin
 account and a database, which is why the compose file sets a SQLite
 database name alongside the credentials. SQLite also keeps the server to a
 single container: the stack is sized for boot and teardown, not for
-throughput. That install takes minutes where the other two images take
-seconds, and Apache does not accept a connection until it finishes, so the
-CI probe allows Nextcloud roughly five minutes and leaves the other two on
-their shorter window.
+throughput. Apache does not accept a connection until that install
+finishes, so the CI probe allows Nextcloud a window of roughly five
+minutes and leaves the other two on their shorter one. The window is
+headroom rather than a measurement: on a CI runner the install has been
+seen to finish in about ten seconds, but it does more work than the other
+two images do, and a slower machine is the case worth surviving.
 
 ## Continuous integration
 
