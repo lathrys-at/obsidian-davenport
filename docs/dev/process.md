@@ -13,14 +13,17 @@ the context: a subagent about to push a branch drafts its PR body; a reviewer
 drafts the finding it knows best. A subagent draft follows the writing process
 below, lands in the session folder's `drafts/` (see
 [Filesystem state](#filesystem-state)), and its path is reported to the lead,
-who refines it and takes it through the approval gate. Subagents never post.
+who refines and posts it. Subagents never post.
 
-**Approval is tiered.** Durable text — issue bodies, PR bodies, design rulings,
-review distillations — blocks on the user's approval before posting. When the
-user is unavailable, drafts queue in `~/.cache/davenport-dev/drafts/` until they
-return; work that needs only branches and code keeps moving. Mechanical text —
-status notes, hold comments, CI chatter — posts without approval, under the
-template rules.
+**Posting does not wait for approval.** Durable text — issue bodies, PR
+bodies, design rulings, review distillations — posts without prior user
+approval. The lead surfaces the decisions embedded in what it posted to the
+user in session, as a digest, and revises posted text on their feedback.
+Design still reaches the user before it hardens: plans and spec-touching
+decisions go through the user per [Feature design](#feature-design), and that
+is unchanged by this rule. Mechanical text — status notes, hold comments, CI
+chatter — posts under the template rules. Drafts may stage in
+`~/.cache/davenport-dev/drafts/` while being composed.
 
 ## The writing process
 
@@ -38,9 +41,9 @@ comments, PR bodies and comments — is produced in this order:
    ([`docs/dev/audience/`](audience/)). Reason about their state of mind:
    why they are reading, what they already know, what they must leave with,
    what wastes their time. This determines how the outline becomes text.
-5. **Draft and approve.** Write the draft. Durable text then goes to the user
-   for approval (the gate above) and is revised on their feedback before it
-   goes out.
+5. **Draft and post.** Write the draft and post it. The decisions embedded in
+   durable text are surfaced to the user in session, and posted text is
+   revised on their feedback.
 
 ### Language
 
