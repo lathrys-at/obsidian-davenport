@@ -110,10 +110,22 @@ export default defineConfig(
 		},
 		rules: {
 			'obsidianmd/no-nodejs-modules': 'off',
-			// The vault script lays out a vault from the outside, before any
-			// app has opened it, so there is no Vault to ask for the name of
-			// its configuration folder. What it creates is the name Obsidian
-			// defaults to, which is the only answer available here.
+		},
+	},
+	// The vault script lays out a vault from the outside, before any app has
+	// opened it, so there is no Vault to ask for the name of its
+	// configuration folder. What it creates is the name Obsidian defaults
+	// to, which is the only answer available here, and its tests describe
+	// vaults on disk in the same terms. The exemption names those files and
+	// nothing else.
+	{
+		name: 'davenport/vault-script',
+		files: [
+			'scripts/vault-core.ts',
+			'scripts/vault.mjs',
+			'test/vault-provisioning.test.ts',
+		],
+		rules: {
 			'obsidianmd/hardcoded-config-path': 'off',
 		},
 	},
@@ -144,10 +156,6 @@ export default defineConfig(
 		files: ['test/**/*.ts'],
 		rules: {
 			'obsidianmd/no-nodejs-modules': 'off',
-			// A fixture describing a vault on disk names the folder that
-			// vault actually has. The rule steers plugin code toward asking
-			// the app for that name, which is not a thing a fixture can do.
-			'obsidianmd/hardcoded-config-path': 'off',
 		},
 	},
 	// The probe kit under tools/ is two halves. The plugin half is carried

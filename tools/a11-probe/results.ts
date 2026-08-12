@@ -8,6 +8,18 @@
  * which is what lets the naming and the wording be tested directly.
  */
 
+/** The one folder in a vault the probe writes into. */
+export const PROBE_FOLDER = 'frontmatter-probe';
+
+/**
+ * A results file's name read back: the date, the time, and the counter a
+ * second run in the same second takes. This is the reading half of what
+ * `resultsPath` below writes, and the two are pinned to each other by a
+ * test that runs a written name back through this pattern.
+ */
+export const RESULTS_NAME =
+	/^emission-samples-(\d{8})-(\d{6})Z(?:-\d+)?\.json$/;
+
 /** What one environment emitted, for every fixture in the corpus. */
 export interface ProbeResults {
 	readonly kind: 'frontmatter-emission-samples';
@@ -87,7 +99,7 @@ export function isEmission(result: FixtureResult): result is FixtureEmission {
 /**
  * The path a run started at this instant writes its results to, skipping
  * names another run has taken so that a second run in the same second
- * cannot overwrite the first.
+ * cannot overwrite the first. `RESULTS_NAME` above reads these back.
  */
 export function resultsPath(
 	folder: string,

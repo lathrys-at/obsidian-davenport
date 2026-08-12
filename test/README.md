@@ -32,9 +32,12 @@ Layout:
   `scripts/vault.mjs`, the script that makes a scratch vault with the probe
   installed: the names it accepts and the ones it draws, the verdict it
   reaches on a probe already in a vault, what it makes of a vault it has
-  walked, and the wording it prints. The walking and copying are thin by
-  design and are left to a real run; the help text and a refused name are
-  run as a process, since the exit status is part of the interface.
+  walked, and the wording it prints. The help text and a refused name are
+  run as a process, since the exit status is part of the interface. The
+  copying is thin but it is the whole of what the script could destroy, so
+  a few cases run the real script against real vaults under `.vaults/` and
+  assert that nothing the owner put there was rewritten; they take their
+  vaults down afterwards.
 - `test/live/` — what verification runs against real servers need: the
   credential resolver, and the self-hosted CalDAV containers. Nothing here
   reaches a server during `npm test`; `test/live/README.md` states the

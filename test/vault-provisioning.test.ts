@@ -12,10 +12,24 @@
  */
 
 import { spawnSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import {
+	existsSync,
+	mkdirSync,
+	readdirSync,
+	readFileSync,
+	rmSync,
+	writeFileSync,
+} from 'node:fs';
+import { basename, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import fc from 'fast-check';
-import { describe, expect, it } from 'vitest';
+import { afterAll, describe, expect, it } from 'vitest';
+import {
+	PROBE_FOLDER,
+	RESULTS_NAME,
+	resultsPath,
+} from '../tools/a11-probe/results';
 import type { NameCheck } from '../scripts/vault-core';
 import {
 	NAME_LIMIT,
@@ -26,6 +40,7 @@ import {
 } from '../scripts/vault-core';
 import {
 	HELP,
+	PROBE_ID,
 	formatOutcome,
 	vaultReadme,
 	vaultUri,
@@ -217,12 +232,28 @@ describe('what a walked vault amounts to', () => {
 		],
 		installedPlugins: ['davenport-a11-probe'],
 		enabledPlugins: ['davenport-a11-probe'],
+		unreadable: [],
 	};
 
-	it('counts every file and the markdown among them', () => {
+	// The note count is what "what shape is this vault in" is asking. The
+	// configuration is machinery nobody wrote by hand, and folding the two
+	// counts together answers neither question.
+	it('counts the vault apart from its configuration', () => {
 		const report = summarizeVault(scan);
-		expect(report.totalFiles).toBe(7);
 		expect(report.markdownFiles).toBe(2);
+		expect(report.otherFiles).toBe(2);
+		expect(report.configFiles).toBe(3);
+	});
+
+	it('carries the directories it could not read', () => {
+		const report = summarizeVault({
+			...scan,
+			unreadable: ['.obsidian/plugins/other', '.obsidian/themes'],
+		});
+		expect(report.unreadable).toEqual([
+			'.obsidian/plugins/other',
+			'.obsidian/themes',
+		]);
 	});
 
 	it('says which installed plugins the vault enables', () => {
@@ -300,6 +331,55 @@ describe('what a walked vault amounts to', () => {
 	});
 });
 
+/**
+ * The script reads results files the probe wrote. Both halves take the
+ * folder and the naming from the probe's own results module, and this is
+ * what keeps them honest: a name the writer produces is put back through
+ * the pattern the reader matches on, so a rename on either side fails here
+ * rather than turning into a permanent `Probe results  none yet`.
+ */
+describe('the naming the script and the probe share', () => {
+	it('matches a name the probe would actually write', () => {
+		const written = resultsPath(
+			PROBE_FOLDER,
+			new Date('2026-08-12T13:45:01.000Z'),
+			() => false,
+		);
+		expect(written.startsWith(`${PROBE_FOLDER}/`)).toBe(true);
+		expect(RESULTS_NAME.test(basename(written))).toBe(true);
+	});
+
+	it('matches the name a second run in the same second takes', () => {
+		const taken = new Set<string>();
+		const now = new Date('2026-08-12T13:45:01.000Z');
+		const first = resultsPath(PROBE_FOLDER, now, (path) => taken.has(path));
+		taken.add(first);
+		const second = resultsPath(PROBE_FOLDER, now, (path) =>
+			taken.has(path),
+		);
+		expect(second).not.toBe(first);
+		expect(RESULTS_NAME.test(basename(second))).toBe(true);
+	});
+
+	// And the reader reaches the same file through the report it builds.
+	it('finds a written name when the report walks over it', () => {
+		const written = resultsPath(
+			PROBE_FOLDER,
+			new Date('2026-08-12T13:45:01.000Z'),
+			() => false,
+		);
+		const report = summarizeVault({
+			files: [written],
+			installedPlugins: [],
+			enabledPlugins: [],
+			unreadable: [],
+		});
+		expect(report.results).toEqual([
+			{ name: basename(written), timestamp: '2026-08-12 13:45:01Z' },
+		]);
+	});
+});
+
 describe('the link that reopens a vault', () => {
 	// Obsidian asks for every value in the link to be encoded, separators
 	// and all, and resolves the most specific vault holding the path.
@@ -315,6 +395,7 @@ describe('what the script prints', () => {
 		name: 'quiet-copper-harbor',
 		path: '/repo/.vaults/quiet-copper-harbor',
 		created: true,
+		laidOut: [],
 		install: {
 			state: 'absent' as const,
 			toWrite: ['main.js', 'manifest.json'],
@@ -323,6 +404,7 @@ describe('what the script prints', () => {
 			files: ['README.md'],
 			installedPlugins: ['davenport-a11-probe'],
 			enabledPlugins: ['davenport-a11-probe'],
+			unreadable: [],
 		}),
 		cliFound: false,
 	};
@@ -331,7 +413,7 @@ describe('what the script prints', () => {
 		const printed = formatOutcome(base);
 		expect(printed).toContain('Created the vault quiet-copper-harbor');
 		expect(printed).toContain('/repo/.vaults/quiet-copper-harbor');
-		expect(printed).toContain('the first open is by hand');
+		expect(printed).toContain('first open is by hand');
 		expect(printed).toContain('restricted mode');
 		expect(printed).toContain(vaultUri(base.path));
 	});
@@ -344,7 +426,7 @@ describe('what the script prints', () => {
 		});
 		expect(printed).toContain('is already there');
 		expect(printed).toContain('Probe          already current');
-		expect(printed).not.toContain('the first open is by hand');
+		expect(printed).not.toContain('first open is by hand');
 		expect(printed).toContain(vaultUri(base.path));
 	});
 
@@ -378,7 +460,7 @@ describe('what the script prints', () => {
 			const opening = printed.slice(
 				printed.indexOf('Open it in Obsidian'),
 			);
-			expect(opening).toContain(`open "${vaultUri(base.path)}"`);
+			expect(opening).toContain(`open '${vaultUri(base.path)}'`);
 			expect(opening).not.toContain(
 				'obsidian vault=quiet-copper-harbor\n',
 			);
@@ -396,6 +478,7 @@ describe('what the script prints', () => {
 				],
 				installedPlugins: [],
 				enabledPlugins: [],
+				unreadable: [],
 			}),
 		});
 		expect(withResults).toContain(
@@ -403,6 +486,51 @@ describe('what the script prints', () => {
 		);
 		expect(withResults).toContain(
 			'emission-samples-20260811-091233Z.json (2026-08-11 09:12:33Z)',
+		);
+	});
+
+	// The results files hang under their own label, so a row added after
+	// them cannot land in the middle of the list.
+	it('keeps the results together when a directory could not be read', () => {
+		const printed = formatOutcome({
+			...base,
+			report: summarizeVault({
+				files: [
+					'frontmatter-probe/emission-samples-20260812-134501Z.json',
+					'frontmatter-probe/emission-samples-20260811-091233Z.json',
+				],
+				installedPlugins: [],
+				enabledPlugins: [],
+				unreadable: ['.obsidian/plugins/other'],
+			}),
+		});
+		const lines = printed.split('\n');
+		const at = lines.findIndex((line) => line.includes('Probe results'));
+		expect(lines[at]).toContain('emission-samples-20260812-134501Z.json');
+		expect(lines[at + 1]).toContain(
+			'emission-samples-20260811-091233Z.json',
+		);
+		expect(lines[at + 2]).toContain('Could not read');
+		expect(lines[at + 2]).toContain('.obsidian/plugins/other');
+	});
+
+	it('says what a repair added to a vault that was already there', () => {
+		const printed = formatOutcome({
+			...base,
+			created: false,
+			laidOut: ['.obsidian/app.json', '.obsidian/community-plugins.json'],
+		});
+		expect(printed).toContain(
+			'Added          .obsidian/app.json and .obsidian/community-plugins.json',
+		);
+		// A vault only now given its plugin list has never been opened with
+		// the probe in it, so it gets the steps a new vault gets.
+		expect(printed).toContain('first open is by hand');
+	});
+
+	it('says nothing about a repair when there was nothing to repair', () => {
+		expect(formatOutcome({ ...base, created: false })).not.toContain(
+			'Added',
 		);
 	});
 
@@ -420,7 +548,7 @@ describe('the script as a process', () => {
 		new URL('../scripts/vault.mjs', import.meta.url),
 	);
 
-	function run(...argv: string[]): {
+	function run(argv: readonly string[]): {
 		status: number | null;
 		out: string;
 		err: string;
@@ -436,29 +564,205 @@ describe('the script as a process', () => {
 	}
 
 	it('prints how to use it and stops', () => {
-		const result = run('--help');
+		const result = run(['--help']);
 		expect(result.status).toBe(0);
 		expect(result.out).toContain('npm run vault');
 		expect(result.err).toBe('');
 	});
 
 	it('says the same thing the help constant does', () => {
-		expect(run('-h').out.trim()).toBe(HELP.trim());
+		expect(run(['-h']).out.trim()).toBe(HELP.trim());
 	});
 
-	// A name the script will not take is answered with the reason and
-	// nothing else: no stack, and no vault built on the way to finding out.
+	// Each row is passed as it stands. Splitting a row on its spaces would
+	// turn the one that carries a space into two arguments, and the arity
+	// check would answer it before the name was ever looked at.
 	it.each([
-		['a name with a space', 'My Vault'],
-		['a name that is not a name', '--nonsense'],
-		['two names at once', 'one two'],
-	])('refuses %s in one line', (_what, argument) => {
-		const result = run(...argument.split(' '));
+		['a name with a space', ['My Vault']],
+		['a name that is not a name', ['--nonsense']],
+		['two names at once', ['one', 'two']],
+		['a name with a separator in it', ['../escape']],
+	])('refuses %s in one line', (_what, argv) => {
+		const result = run(argv);
 		expect(result.status).toBe(1);
 		expect(result.err.trimEnd().split('\n')).toHaveLength(1);
 		expect(result.err).toMatch(/^vault: /);
 		expect(result.err).not.toContain('    at ');
 		expect(result.out).toBe('');
+	});
+
+	// The property test pins what `checkName` accepts; this pins that the
+	// script asks it. Without this the check could be lifted out of the one
+	// place it is called and every other test would still pass, while a name
+	// carrying separators built a directory outside the checkout.
+	it('puts the name it was given through the name check', () => {
+		expect(run(['My Vault']).err).toContain(
+			'a vault name uses lowercase letters, digits and hyphens only',
+		);
+		expect(run(['../escape']).err).toContain(
+			'a vault name uses lowercase letters, digits and hyphens only',
+		);
+	});
+
+	it('builds nothing on the way to refusing a name', () => {
+		expect(run(['My Vault']).out).toBe('');
+	});
+});
+
+/**
+ * The copying is thin, but it is also the whole of what the script can
+ * destroy, and a pure test cannot see it. These run the real script against
+ * real vaults under `.vaults/`, which git ignores, and take them down after.
+ */
+describe('running against a vault that already holds work', () => {
+	const script = fileURLToPath(
+		new URL('../scripts/vault.mjs', import.meta.url),
+	);
+	const root = fileURLToPath(new URL('../', import.meta.url));
+	const made: string[] = [];
+
+	afterAll(() => {
+		for (const path of made) {
+			rmSync(path, { recursive: true, force: true });
+		}
+	});
+
+	/** A vault path nothing else in the suite will collide with. */
+	function reserve(what: string): string {
+		const name = `test-${what}-${String(process.pid)}`;
+		const path = join(root, '.vaults', name);
+		made.push(path);
+		rmSync(path, { recursive: true, force: true });
+		return path;
+	}
+
+	function vault(path: string, ...argv: string[]): string {
+		const result = spawnSync(
+			process.execPath,
+			[script, basename(path), ...argv],
+			{ encoding: 'utf8' },
+		);
+		if (result.status !== 0) {
+			expect.fail(`the script failed: ${result.stderr}`);
+		}
+		return result.stdout;
+	}
+
+	/** Every file in the vault against the digest of its contents. */
+	function digests(path: string): Map<string, string> {
+		const found = new Map<string, string>();
+		const walk = (directory: string, prefix: string): void => {
+			for (const entry of readdirSync(directory, {
+				withFileTypes: true,
+			})) {
+				const here =
+					prefix === '' ? entry.name : `${prefix}/${entry.name}`;
+				if (entry.isDirectory()) {
+					walk(join(directory, entry.name), here);
+				} else if (entry.isFile()) {
+					const bytes = readFileSync(join(directory, entry.name));
+					found.set(
+						here,
+						createHash('sha256').update(bytes).digest('hex'),
+					);
+				}
+			}
+		};
+		walk(path, '');
+		return found;
+	}
+
+	// A re-run may rewrite the probe's own two files and nothing else. Both
+	// halves of that matter: overwriting the settings would throw away the
+	// owner's edits, and clearing the plugin folder before copying would
+	// take the probe's data.json with it.
+	it('rewrites nothing the owner put there', () => {
+		const path = reserve('holds-work');
+		vault(path);
+
+		const probeFolder = join(path, '.obsidian', 'plugins', PROBE_ID);
+		mkdirSync(join(path, 'notes'), { recursive: true });
+		mkdirSync(join(path, '.obsidian', 'plugins', 'other-plugin'), {
+			recursive: true,
+		});
+		writeFileSync(join(path, 'notes', 'kept.md'), '# kept\n');
+		writeFileSync(join(path, 'README.md'), 'my own words\n');
+		writeFileSync(
+			join(path, '.obsidian', 'app.json'),
+			'{"theme":"mine"}\n',
+		);
+		writeFileSync(
+			join(path, '.obsidian', 'community-plugins.json'),
+			'["davenport-a11-probe","other-plugin"]\n',
+		);
+		writeFileSync(join(probeFolder, 'data.json'), '{"runs":3}\n');
+		writeFileSync(
+			join(path, '.obsidian', 'plugins', 'other-plugin', 'main.js'),
+			'someone else\n',
+		);
+
+		const before = digests(path);
+		vault(path);
+		expect(digests(path)).toEqual(before);
+	});
+
+	// The probe's own files are the exception, and only when they differ.
+	it('rewrites the probe alone when the installed copy is stale', () => {
+		const path = reserve('stale-probe');
+		vault(path);
+
+		const probeFolder = join(path, '.obsidian', 'plugins', PROBE_ID);
+		writeFileSync(join(probeFolder, 'data.json'), '{"runs":1}\n');
+		writeFileSync(join(probeFolder, 'main.js'), 'stale\n');
+		const before = digests(path);
+
+		const printed = vault(path);
+		expect(printed).toContain('refreshed, main.js rewritten');
+
+		const after = digests(path);
+		const changed = [...after]
+			.filter(([file, digest]) => before.get(file) !== digest)
+			.map(([file]) => file);
+		expect(changed).toEqual([
+			'.obsidian/plugins/davenport-a11-probe/main.js',
+		]);
+		expect(
+			after.has('.obsidian/plugins/davenport-a11-probe/data.json'),
+		).toBe(true);
+	});
+
+	// A directory that is not a laid-out vault is the shape a vault carried
+	// in from another device arrives in, and the shape a folder made by hand
+	// starts in. It is provisioned rather than left half-made.
+	it('lays out a directory that was never a vault', () => {
+		const path = reserve('bare-directory');
+		mkdirSync(join(path, 'notes'), { recursive: true });
+		writeFileSync(join(path, 'notes', 'carried.md'), '# carried\n');
+
+		const printed = vault(path);
+		expect(existsSync(join(path, '.obsidian', 'app.json'))).toBe(true);
+		expect(existsSync(join(path, 'README.md'))).toBe(true);
+		expect(
+			readFileSync(
+				join(path, '.obsidian', 'community-plugins.json'),
+				'utf8',
+			),
+		).toContain(PROBE_ID);
+		expect(printed).toContain('davenport-a11-probe (enabled)');
+		expect(readFileSync(join(path, 'notes', 'carried.md'), 'utf8')).toBe(
+			'# carried\n',
+		);
+	});
+
+	// A vault that has only just been given its plugin list has never been
+	// opened with the probe in it, so it needs the steps a new vault needs.
+	it('gives a newly laid-out vault the first-open steps', () => {
+		const path = reserve('needs-first-open');
+		mkdirSync(path, { recursive: true });
+
+		expect(vault(path)).toContain('first open is by hand');
+		// And drops them once the vault has everything.
+		expect(vault(path)).not.toContain('first open is by hand');
 	});
 });
 

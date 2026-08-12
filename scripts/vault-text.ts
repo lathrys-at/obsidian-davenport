@@ -8,7 +8,7 @@
  */
 
 import type { InstallVerdict, VaultReport } from './vault-core.ts';
-import { RESULTS_FOLDER, listPhrase } from './vault-core.ts';
+import { CONFIG_FOLDER, PROBE_FOLDER, listPhrase } from './vault-core.ts';
 
 /** The plugin folder the probe is installed as, which is not negotiable. */
 export const PROBE_ID = 'davenport-a11-probe';
@@ -36,11 +36,32 @@ export interface Outcome {
 	readonly path: string;
 	/** False when the vault was already there and was reported instead. */
 	readonly created: boolean;
+	/**
+	 * The configuration files this run put there, which is everything on a
+	 * new vault and whatever was missing from one that already existed.
+	 */
+	readonly laidOut: readonly string[];
 	readonly install: InstallVerdict;
 	readonly report: VaultReport;
 	/** Whether an `obsidian` command was found on the path. */
 	readonly cliFound: boolean;
 }
+
+/**
+ * Whether this run is the one that made the vault openable. A vault whose
+ * plugin list was written just now has never been opened with the probe
+ * listed in it, whatever else was already in the folder, so it needs the
+ * first-open steps as much as a vault made from nothing does.
+ */
+function firstOpen(outcome: Outcome): boolean {
+	return (
+		outcome.created ||
+		outcome.laidOut.some((file) => file.endsWith(`/${PLUGIN_LIST}`))
+	);
+}
+
+/** The file in a vault's configuration that says which plugins to load. */
+export const PLUGIN_LIST = 'community-plugins.json';
 
 /** The whole of what a successful run prints. */
 export function formatOutcome(outcome: Outcome): string {
@@ -75,7 +96,7 @@ is precious. Delete the whole folder when you are done with it.
 
 Open the command palette with **Cmd+P** and run **Run frontmatter probe**.
 
-Each run writes one file into \`${RESULTS_FOLDER}/\`, named
+Each run writes one file into \`${PROBE_FOLDER}/\`, named
 \`emission-samples-<timestamp>Z.json\`, alongside the notes it wrote through
 the frontmatter writer. Carry those files back to the repository and compare
 the runs from two devices:
@@ -102,25 +123,50 @@ function heading(outcome: Outcome): string {
 /** The state of the vault, as a block of labelled lines. */
 function summaryLines(outcome: Outcome): string[] {
 	const { report } = outcome;
-	const rows: [string, string][] = [
-		['Probe', describeInstall(outcome.install)],
-		[
-			'Files',
-			`${String(report.totalFiles)} in all, ${String(report.markdownFiles)} markdown`,
-		],
-		['Plugins', describePlugins(report)],
+	// A row may carry more than one line. The lines after the first hang
+	// under it with the label column left blank, so a row that runs long
+	// stays one row to the eye and the next label still starts a new one.
+	const rows: [string, string[]][] = [
+		['Probe', [describeInstall(outcome.install)]],
 	];
+	// On a new vault the configuration is the whole of what was written and
+	// saying so adds nothing. On one that was already there it is a repair,
+	// and the owner should be told which files were missing.
+	if (!outcome.created && outcome.laidOut.length > 0) {
+		rows.push(['Added', [listPhrase(outcome.laidOut)]]);
+	}
+	rows.push(
+		['Contents', [describeContents(report)]],
+		['Plugins', [describePlugins(report)]],
+	);
 	const results = report.results.map(
 		(file) =>
 			`${file.name}${file.timestamp === null ? '' : ` (${file.timestamp})`}`,
 	);
-	rows.push(['Probe results', results[0] ?? 'none yet']);
-	const lines = rows.map(([label, value]) => `  ${label.padEnd(15)}${value}`);
-	// Further results files hang under the first, so the column holds.
-	return [
-		...lines,
-		...results.slice(1).map((file) => `  ${''.padEnd(15)}${file}`),
-	];
+	rows.push(['Probe results', results.length > 0 ? results : ['none yet']]);
+	if (report.unreadable.length > 0) {
+		rows.push(['Could not read', [...report.unreadable]]);
+	}
+	return rows.flatMap(([label, values]) =>
+		values.map(
+			(value, index) =>
+				`  ${(index === 0 ? label : '').padEnd(15)}${value}`,
+		),
+	);
+}
+
+/**
+ * What is in the vault, counted apart from what runs it. The note count is
+ * the answer to what shape a vault is in; the configuration is machinery,
+ * and folding the two together answers neither question.
+ */
+function describeContents(report: VaultReport): string {
+	const notes = `${String(report.markdownFiles)} ${
+		report.markdownFiles === 1 ? 'note' : 'notes'
+	}`;
+	const other =
+		report.otherFiles > 0 ? `, ${String(report.otherFiles)} other` : '';
+	return `${notes}${other}, and ${String(report.configFiles)} files under ${CONFIG_FOLDER}`;
 }
 
 function describeInstall(install: InstallVerdict): string {
@@ -159,9 +205,14 @@ function describePlugins(report: VaultReport): string {
  * vault by name rather than by path and answers `Vault not found` for one
  * it has no record of, so it cannot do this first open either, and it is
  * offered below only for the checking it is good at.
+ *
+ * The link is printed inside single quotes. Encoding leaves `!` alone, and
+ * inside the double quotes an interactive shell would read it as history
+ * expansion and refuse the line, so a checkout with one in its path would
+ * hand the owner a command that cannot be pasted.
  */
 function openingLines(outcome: Outcome): string[] {
-	const reopen = [`    open "${vaultUri(outcome.path)}"`];
+	const reopen = [`    open '${vaultUri(outcome.path)}'`];
 	const checking = outcome.cliFound
 		? [
 				'',
@@ -170,7 +221,7 @@ function openingLines(outcome: Outcome): string[] {
 				`    obsidian vault=${outcome.name} plugins`,
 			]
 		: [];
-	if (!outcome.created) {
+	if (!firstOpen(outcome)) {
 		return [
 			'Open it in Obsidian',
 			'',
@@ -185,9 +236,9 @@ function openingLines(outcome: Outcome): string[] {
 	return [
 		'Open it in Obsidian',
 		'',
-		'  Obsidian opens the vaults it already knows, and it does not know this one',
-		'  yet, so the first open is by hand. In Obsidian, select the vault switcher',
-		'  at the bottom left, then Open folder as vault, and choose:',
+		'  Obsidian opens the vaults it already knows. If this one is new to it, the',
+		'  first open is by hand: in Obsidian, select the vault switcher at the bottom',
+		'  left, then Open folder as vault, and choose:',
 		'',
 		`    ${outcome.path}`,
 		'',
@@ -208,7 +259,7 @@ function runningLines(): string[] {
 		'Run the probe',
 		'',
 		'  Open the command palette with Cmd+P and run Run frontmatter probe.',
-		`  Every run leaves a file in ${RESULTS_FOLDER}/ inside the vault. Compare`,
+		`  Every run leaves a file in ${PROBE_FOLDER}/ inside the vault. Compare`,
 		'  the files from two devices with tools/a11-probe/compare.mjs.',
 	];
 }

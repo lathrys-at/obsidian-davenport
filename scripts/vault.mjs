@@ -17,24 +17,32 @@
 
 import { spawnSync } from 'node:child_process';
 import {
+	accessSync,
+	constants,
 	existsSync,
 	mkdirSync,
 	readdirSync,
 	readFileSync,
+	statSync,
 	writeFileSync,
 } from 'node:fs';
-import { delimiter, join } from 'node:path';
+import { delimiter, join, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
+	CONFIG_FOLDER,
 	checkName,
 	classifyInstall,
 	generateName,
 	summarizeVault,
 } from './vault-core.ts';
-import { HELP, PROBE_ID, formatOutcome, vaultReadme } from './vault-text.ts';
+import {
+	HELP,
+	PLUGIN_LIST,
+	PROBE_ID,
+	formatOutcome,
+	vaultReadme,
+} from './vault-text.ts';
 
-/** The vault's configuration folder, under the name Obsidian defaults to. */
-const CONFIG_FOLDER = '.obsidian';
 const VAULTS_FOLDER = '.vaults';
 /** The pair a vault's plugin folder wants, as the probe build names them. */
 const PROBE_FILES = ['main.js', 'manifest.json'];
@@ -45,6 +53,9 @@ try {
 	console.error(`vault: ${said(error)}`);
 	if (process.env['DEBUG'] !== undefined && error instanceof Error) {
 		console.error(error.stack);
+		if (error.cause !== undefined) {
+			console.error(`caused by: ${said(error.cause)}`);
+		}
 	}
 	process.exit(1);
 }
@@ -59,14 +70,18 @@ function main() {
 	const root = repositoryRoot();
 	const name = chooseName(argv);
 	const path = join(root, VAULTS_FOLDER, name);
-	const created = !existsSync(path);
 
+	// Everything that can be known to be impossible is settled before the
+	// build runs, so a run that cannot work says so at once instead of
+	// spending a build first and failing on a mkdir afterwards.
+	requireDependencies();
+	requireUsableTarget(join(root, VAULTS_FOLDER), path);
+
+	const created = !existsSync(path);
 	console.log('Building the probe...');
 	const fresh = buildProbe(root);
 
-	if (created) {
-		layOutVault(path, name);
-	}
+	const laidOut = layOutVault(path, name);
 	const install = installProbe(path, fresh);
 
 	console.log('');
@@ -75,11 +90,71 @@ function main() {
 			name,
 			path,
 			created,
+			laidOut,
 			install,
 			report: summarizeVault(scanVault(path)),
 			cliFound: onPath('obsidian'),
 		}),
 	);
+}
+
+/**
+ * That the repository's dependencies are installed. The probe build imports
+ * esbuild, so a fresh checkout that has not been installed fails inside
+ * node's module loader with a stack about a package the owner never named.
+ * Asking first turns that into the one instruction that fixes it.
+ */
+function requireDependencies() {
+	const missing = new Error(
+		'dependencies are not installed here; run npm ci first',
+	);
+	let resolved;
+	try {
+		resolved = import.meta.resolve('esbuild');
+	} catch (error) {
+		throw new Error(missing.message, { cause: error });
+	}
+	// Resolution alone proves nothing: node answers with the path a package
+	// would occupy whether or not anything is there. The file has to exist.
+	if (!existsSync(fileURLToPath(resolved))) {
+		throw missing;
+	}
+}
+
+/**
+ * That a vault can be put at this path: that nothing else is already there
+ * under that name, and that the directory it goes in can be written to. The
+ * errno these would otherwise surface as names a path the owner did not
+ * type and a call they did not make.
+ */
+function requireUsableTarget(vaults, path) {
+	if (existsSync(vaults) && !isDirectory(vaults)) {
+		throw new Error(`${vaults} is a file, and vaults are made inside it`);
+	}
+	if (existsSync(path) && !isDirectory(path)) {
+		throw new Error(`${path} is a file, not a vault`);
+	}
+	const writable = existsSync(path)
+		? path
+		: existsSync(vaults)
+			? vaults
+			: null;
+	if (writable === null) {
+		return;
+	}
+	try {
+		accessSync(writable, constants.W_OK);
+	} catch (error) {
+		throw new Error(`${writable} cannot be written to`, { cause: error });
+	}
+}
+
+function isDirectory(path) {
+	try {
+		return statSync(path).isDirectory();
+	} catch {
+		return false;
+	}
 }
 
 /**
@@ -162,19 +237,29 @@ function buildProbe(root) {
 /**
  * A vault Obsidian will open: a configuration folder with the settings it
  * expects to find, the probe listed as one to enable, and a note at the top
- * saying what the vault is for.
+ * saying what the vault is for. Returns the files it had to write.
  *
- * Every write here is made only where there is no file already, so running
- * against a vault that exists leaves its settings and notes as they are.
+ * Every write here is made only where there is no file already, so this runs
+ * against a vault that already exists as readily as against a new one: a
+ * directory that was never laid out, or one carried in from another device
+ * with its dotfiles left behind, gains what it is missing and nothing else.
+ * A file that is there is a file the owner is entitled to have edited.
  */
 function layOutVault(path, name) {
 	mkdirSync(join(path, CONFIG_FOLDER), { recursive: true });
-	writeIfAbsent(join(path, CONFIG_FOLDER, 'app.json'), '{}\n');
-	writeIfAbsent(
-		join(path, CONFIG_FOLDER, 'community-plugins.json'),
+	const written = [];
+	const wrote = (file, contents) => {
+		if (writeIfAbsent(file, contents)) {
+			written.push(file.slice(path.length + 1));
+		}
+	};
+	wrote(join(path, CONFIG_FOLDER, 'app.json'), '{}\n');
+	wrote(
+		join(path, CONFIG_FOLDER, PLUGIN_LIST),
 		`${JSON.stringify([PROBE_ID], null, '\t')}\n`,
 	);
-	writeIfAbsent(join(path, 'README.md'), vaultReadme(name));
+	wrote(join(path, 'README.md'), vaultReadme(name));
+	return written.map((file) => file.split(sep).join('/'));
 }
 
 /** Puts the build into the vault, or leaves a copy that matches it alone. */
@@ -199,34 +284,50 @@ function installProbe(path, fresh) {
 
 /** The vault as the report wants it: every file, and what the plugins are. */
 function scanVault(path) {
+	const walked = { files: [], unreadable: [] };
+	walk(path, '', walked);
 	return {
-		files: walk(path, ''),
+		files: walked.files,
+		unreadable: walked.unreadable,
 		installedPlugins: folderNames(join(path, CONFIG_FOLDER, 'plugins')),
 		enabledPlugins: enabledPlugins(path),
 	};
 }
 
-/** Every file under this directory, as slash-separated relative paths. */
-function walk(directory, prefix) {
-	const found = [];
-	for (const entry of readdirSync(directory, { withFileTypes: true })) {
+/**
+ * Every file under this directory, as slash-separated relative paths.
+ *
+ * A directory that cannot be read is noted and stepped over. The report is
+ * the last thing the run does and the least of what it is for; letting one
+ * unreadable folder throw it away would lose the path, the link and the
+ * probe's state over a directory the owner may not even have meant to keep.
+ */
+function walk(directory, prefix, walked) {
+	let entries;
+	try {
+		entries = readdirSync(directory, { withFileTypes: true });
+	} catch {
+		walked.unreadable.push(prefix === '' ? '.' : prefix);
+		return;
+	}
+	for (const entry of entries) {
 		const relative = prefix === '' ? entry.name : `${prefix}/${entry.name}`;
 		if (entry.isDirectory()) {
-			found.push(...walk(join(directory, entry.name), relative));
+			walk(join(directory, entry.name), relative, walked);
 		} else if (entry.isFile()) {
-			found.push(relative);
+			walked.files.push(relative);
 		}
 	}
-	return found;
 }
 
 function folderNames(directory) {
-	if (!existsSync(directory)) {
+	try {
+		return readdirSync(directory, { withFileTypes: true })
+			.filter((entry) => entry.isDirectory())
+			.map((entry) => entry.name);
+	} catch {
 		return [];
 	}
-	return readdirSync(directory, { withFileTypes: true })
-		.filter((entry) => entry.isDirectory())
-		.map((entry) => entry.name);
 }
 
 /**
@@ -235,7 +336,7 @@ function folderNames(directory) {
  * reads differently from a list enabling nothing.
  */
 function enabledPlugins(path) {
-	const file = join(path, CONFIG_FOLDER, 'community-plugins.json');
+	const file = join(path, CONFIG_FOLDER, PLUGIN_LIST);
 	if (!existsSync(file)) {
 		return null;
 	}
@@ -250,18 +351,39 @@ function enabledPlugins(path) {
 	}
 }
 
-/** Whether a command of this name is on the path, without running it. */
+/**
+ * Whether a command of this name is on the path, without running it. It has
+ * to be a file and it has to be executable: a directory of that name, or a
+ * file nobody may run, is not a command, and offering one would hand the
+ * owner a line that fails when they paste it.
+ */
 function onPath(command) {
 	const paths = (process.env['PATH'] ?? '').split(delimiter);
-	return paths.some(
-		(entry) => entry !== '' && existsSync(join(entry, command)),
-	);
+	return paths.some((entry) => {
+		if (entry === '') {
+			return false;
+		}
+		const candidate = join(entry, command);
+		try {
+			// statSync follows symlinks, so a dangling one is not a command.
+			if (!statSync(candidate).isFile()) {
+				return false;
+			}
+			accessSync(candidate, constants.X_OK);
+			return true;
+		} catch {
+			return false;
+		}
+	});
 }
 
+/** Writes the file if it is not there, and says whether it did. */
 function writeIfAbsent(file, contents) {
-	if (!existsSync(file)) {
-		writeFileSync(file, contents);
+	if (existsSync(file)) {
+		return false;
 	}
+	writeFileSync(file, contents);
+	return true;
 }
 
 function said(error) {

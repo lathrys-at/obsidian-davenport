@@ -7,7 +7,15 @@
  * every decision can be put under test directly. Walking the tree, running
  * the build and copying files belong to `vault.mjs`; the wording printed
  * around these answers is in `vault-text.ts`.
+ *
+ * Where the probe writes and what it calls its files are the probe's own
+ * business, so they are taken from its results module rather than written
+ * down again here, and cannot drift from it.
  */
+
+import { PROBE_FOLDER, RESULTS_NAME } from '../tools/a11-probe/results.ts';
+
+export { PROBE_FOLDER };
 
 /** The longest name worth typing, with room to spare for three words. */
 export const NAME_LIMIT = 64;
@@ -116,6 +124,12 @@ export interface VaultScan {
 	 * nothing, and is reported differently.
 	 */
 	readonly enabledPlugins: readonly string[] | null;
+	/**
+	 * Directories the walk was refused. A vault the report cannot read all
+	 * of is still a vault worth reporting, so these are carried through and
+	 * named rather than thrown.
+	 */
+	readonly unreadable: readonly string[];
 }
 
 export interface PluginEntry {
@@ -131,31 +145,47 @@ export interface ResultsFile {
 }
 
 export interface VaultReport {
-	readonly totalFiles: number;
+	/** Notes: the markdown a person put in the vault. */
 	readonly markdownFiles: number;
+	/** Anything else in the vault that is not configuration. */
+	readonly otherFiles: number;
+	/** Files under the configuration folder, which nobody writes by hand. */
+	readonly configFiles: number;
 	readonly plugins: readonly PluginEntry[];
 	/** Ids the list enables that no installed folder answers for. */
 	readonly enabledWithoutFolder: readonly string[];
 	readonly results: readonly ResultsFile[];
+	readonly unreadable: readonly string[];
 }
 
-/** The folder the probe writes its notes and results into. */
-export const RESULTS_FOLDER = 'frontmatter-probe';
+/** The vault's configuration folder, under the name Obsidian defaults to. */
+export const CONFIG_FOLDER = '.obsidian';
 
-/** What the walked vault amounts to, in the terms the report states. */
+/**
+ * What the walked vault amounts to, in the terms the report states.
+ *
+ * The vault's own contents are counted apart from its configuration. Asked
+ * what shape a vault is in, what is wanted is how many notes are in it, and
+ * a count that folds in the plugin's own files answers a different question.
+ */
 export function summarizeVault(scan: VaultScan): VaultReport {
 	const enabled = new Set(scan.enabledPlugins ?? []);
 	const installed = [...scan.installedPlugins].sort();
+	const configPrefix = `${CONFIG_FOLDER}/`;
+	const content = scan.files.filter((path) => !path.startsWith(configPrefix));
+	const markdown = content.filter((path) =>
+		path.toLowerCase().endsWith('.md'),
+	);
 	return {
-		totalFiles: scan.files.length,
-		markdownFiles: scan.files.filter((path) =>
-			path.toLowerCase().endsWith('.md'),
-		).length,
+		markdownFiles: markdown.length,
+		otherFiles: content.length - markdown.length,
+		configFiles: scan.files.length - content.length,
 		plugins: installed.map((id) => ({ id, enabled: enabled.has(id) })),
 		enabledWithoutFolder: [...enabled]
 			.filter((id) => !installed.includes(id))
 			.sort(),
 		results: readResultsFiles(scan.files),
+		unreadable: [...scan.unreadable].sort(),
 	};
 }
 
@@ -165,7 +195,7 @@ export function summarizeVault(scan: VaultScan): VaultReport {
  * reads what the probe wrote there.
  */
 export function readResultsFiles(files: readonly string[]): ResultsFile[] {
-	const prefix = `${RESULTS_FOLDER}/`;
+	const prefix = `${PROBE_FOLDER}/`;
 	return files
 		.filter(
 			(path) =>
@@ -177,12 +207,6 @@ export function readResultsFiles(files: readonly string[]): ResultsFile[] {
 		.sort((left, right) => right.localeCompare(left))
 		.map((name) => ({ name, timestamp: readStamp(name) }));
 }
-
-/**
- * The name the probe gives a results file: the date and time it finished,
- * and a counter when a second run landed in the same second.
- */
-const RESULTS_NAME = /^emission-samples-(\d{8})-(\d{6})Z(?:-\d+)?\.json$/;
 
 /** The instant in a results file's name, read back as a plain one. */
 function readStamp(name: string): string | null {
