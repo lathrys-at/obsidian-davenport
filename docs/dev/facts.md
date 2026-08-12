@@ -1,20 +1,22 @@
 # Recorded facts
 
 The verification items in the design spec's Appendix A are protocols, not
-tests: each produces a recorded fact, and every fact lands on the branch
-the spec pre-states for it. This document is the ledger of those facts. It
-is versioned with the plugin; the protocols that produce each fact live
-beside it in `docs/dev/facts/` as they are authored.
+tests. Each item produces a recorded fact. Every fact lands on the branch
+that the spec pre-states for that fact. This document is the ledger of
+those facts, and the project versions this document together with the
+plugin. The protocols that produce each fact live beside this document in
+`docs/dev/facts/`. Each protocol appears there when its author writes it.
 
-The rule: a changed fact re-routes to its pre-stated branch; a fact with no
-branch is a design gap and goes back to the design spec before code
-changes.
+The rule is this: a changed fact re-routes to its pre-stated
+branch. A
+fact that has no branch is a design gap. That fact goes back to the design
+spec before code changes.
 
 ## Entry format
 
-Facts append under their item heading in the Recorded entries section.
-Superseded facts are struck through, never deleted — the history of a
-changed fact stays legible.
+Add each fact under its item heading in the Recorded entries section.
+Strike through a superseded fact. Do not delete a superseded fact. This
+rule keeps the history of a changed fact legible.
 
 ```
 ### A-N — short name
@@ -29,9 +31,10 @@ Protocol: [docs/dev/facts/a-N.md](facts/a-N.md)
 
 ## Item index
 
-Status is `unrecorded` until a dated entry exists in Recorded entries.
-Parenthetical annotations carry the ordering and gating notes the test
-plan attaches to an item.
+The status of an item is `unrecorded` until a dated entry for that item
+exists in the Recorded entries section. A parenthetical annotation carries
+the ordering notes and the gating notes that the test plan attaches to an
+item.
 
 | Item | Subject | Consumed by | Status |
 |---|---|---|---|
@@ -84,14 +87,19 @@ plan attaches to an item.
 
 ## Re-verification triggers
 
-- Platform items (A-1, A-7, A-11, A-12, A-17, A-18): each Obsidian minor
-  release.
-- Provider items: on observed regression, and at least annually.
-- Sync-tool items: on tool major versions.
-- Facts entries record the trigger that prompted them when re-verified.
+- Platform items (A-1, A-7, A-11, A-12, A-17, A-18): re-verify each of
+  these items at each Obsidian minor release.
+- Provider items: re-verify each of these items when you observe a
+  regression. Also re-verify each of these items one time each year or
+  more often.
+- Sync-tool items: re-verify each of these items at each major version of
+  the tool.
+- Facts entries for a re-verified item record the trigger that caused the
+  re-verification.
 
 ## Recorded entries
 
-One heading per item, in the entry format above, created with the item's
-first recorded fact; the item's protocol document is linked at the top of
-its heading. None yet.
+Write one heading for each item, in the entry format above. Create
+that heading
+with the item's first recorded fact. Link the item's protocol document at
+the top of that heading. No headings exist yet.
