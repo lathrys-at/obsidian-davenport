@@ -12,11 +12,10 @@
   posted text against intent. The approver reads to find the implicit
   decisions. The approver reads to direct revisions where the design or the
   posted text misses the intent.
-- **What they must leave with:** The approver must learn what each item does
-  or will do. The approver must see an explicit flag on every embedded
-  decision. The approver must see anything that deviates from standing
-  intent. The approver must not see a smoothed-over version of that
-  deviation.
+- **What they must leave with:** The approver must leave with what each
+  item does or will do. The approver must leave with an explicit flag on
+  every embedded decision. The approver must leave with each deviation from
+  standing intent, and not with a smoothed-over version of that deviation.
 - **What wastes their time:** Boilerplate that buries the one decision that
   matters wastes the approver's time. Anything that the approver can evaluate
   only with the session transcript also wastes the approver's time.

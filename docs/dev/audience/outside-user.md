@@ -11,10 +11,10 @@
 - **Why they're reading:** The outside user or contributor reads to decide
   whether the project solves their problem. This person also reads to make the
   project run.
-- **What they must leave with:** The outside user or contributor must learn
-  what the project does. This person must learn what the project deliberately
-  does not do. This person must learn how to install the project. This person
-  must learn how to run the project. This person must learn where to find more
+- **What they must leave with:** The outside user or contributor must leave
+  with what the project does. This person must leave with what the project
+  deliberately does not do. This person must leave with the way to install
+  the project, the way to run the project, and the place to find more
   detail.
 - **What wastes their time:** Internal jargon wastes the time of the outside
   user or contributor. Architecture that comes before purpose also wastes this
