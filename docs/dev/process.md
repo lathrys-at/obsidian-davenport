@@ -40,9 +40,14 @@ comments, PR bodies and comments — is produced in this order:
    ([`docs/dev/audience/`](audience/)). Reason about their state of mind:
    why they are reading, what they already know, what they must leave with,
    what wastes their time. This determines how the outline becomes text.
-5. **Draft and post.** Write the draft and post it. The decisions embedded in
-   durable text are surfaced to the user in session, and posted text is
-   revised on their feedback.
+5. **Draft.** Write the draft.
+6. **Simplify.** Apply the asd-ste100 skill (Simplified Technical English,
+   ASD-STE100) to the draft. This step is mandatory for all technical
+   documentation. Keep each fact, each condition, and each scope qualifier.
+   If a rule of the standard removes necessary precision, keep the precision
+   and record the conflict.
+7. **Post.** Post the text. Tell the user about the decisions embedded in it,
+   and revise the posted text on their feedback.
 
 ### Language
 
@@ -55,6 +60,8 @@ comments, PR bodies and comments — is produced in this order:
   when the why matters.
 - No LLM-isms, no needless emphasis, no over-description, no inflating the
   importance of what was done.
+- Technical documentation follows Simplified Technical English (ASD-STE100).
+  The asd-ste100 skill states the rules and the procedure.
 
 ## Comment discipline
 
@@ -69,6 +76,12 @@ necessary. Inline comments are limited to exactly two forms:
 - looks-wrong-but-correct-because-X guards, where the code reads as a bug
   without the comment (the arXiv adapter's 429/503 swap is the canonical
   example).
+
+Comments, error messages, dialogue text, and instruction text follow
+Simplified Technical English (ASD-STE100). The asd-ste100 skill states the
+rules. Where a rule of the standard removes necessary precision, precision
+wins, and the comment records nothing about the conflict — the text simply
+keeps the longer form.
 
 Everything else — narration of what the next line does, `(#NNN)` citations,
 "as of" framing, session context — is a review finding, not a nit.
@@ -161,7 +174,10 @@ exhaustive, not sampled:
 - cover every hunk of the diff (for a sweep, every file in scope);
 - verify claims empirically where cheap — run the code, grep for the
   counter-case — rather than taking the diff's word for it;
-- end with an explicit coverage statement naming what was and was NOT checked.
+- end with an explicit coverage statement naming what was and was NOT checked;
+- verify that new or changed comments, error messages, dialogue text, and
+  instruction text follow Simplified Technical English (ASD-STE100), and that
+  the author applied the asd-ste100 skill.
 
 Conformance to this document is a required check; a breach is a finding.
 Findings relay through the session folder's `reviews/pr-{n}.md`; the durable
