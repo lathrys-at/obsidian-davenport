@@ -113,7 +113,7 @@ Follow Obsidian's **Developer Policies** and **Plugin Guidelines**. In particula
 - Use **bold** to indicate literal UI labels. Prefer "select" for interactions.
 - Use arrow notation for navigation: **Settings → Community plugins**.
 - Keep in-app strings short, consistent, and free of jargon.
-- In-app strings follow Simplified Technical English (ASD-STE100). Apply the asd-ste100 skill when you write them.
+- In-app strings and dialogue text follow Simplified Technical English (ASD-STE100). Apply the asd-ste100 skill when you write them; docs/dev/process.md states the procedure and the precision rule.
 
 ## Performance
 
