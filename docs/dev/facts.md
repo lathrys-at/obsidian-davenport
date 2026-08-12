@@ -45,7 +45,7 @@ plan attaches to an item.
 | A-8 | Google CalDAV RFC 6578 support | stage 2 | unrecorded |
 | A-9 | Google verification requirements | stage 6 (v2 gate) | unrecorded |
 | A-10 | Google iTIP behavior on attendee writes | stage 6 | unrecorded |
-| A-11 | processFrontMatter byte determinism | stage 2 (gate; ordered first) | unrecorded |
+| A-11 | processFrontMatter byte determinism | stage 2 (gate); first, before stage 1's frontmatter-writing work | unrecorded |
 | A-12 | External-modification vault events | stage 2 | unrecorded |
 | A-13 | requestUrl redirects, large bodies, tsdav under load | stage 2 | unrecorded |
 | A-14 | Obsidian Sync merge behavior on records | stage 1 | unrecorded |
