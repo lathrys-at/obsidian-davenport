@@ -48,7 +48,8 @@ comments, PR bodies and comments — is produced in this order:
    precision. Record the conflict in the text that presents the change: the
    pull request body, or the session digest.
 7. **Post.** The lead posts the text. The lead tells the user about the
-   decisions embedded in it, and revises the posted text on their feedback.
+   decisions that the text carries. The lead revises the posted text when
+   the user gives feedback.
 
 ### Language
 
@@ -61,8 +62,8 @@ comments, PR bodies and comments — is produced in this order:
   when the why matters.
 - No LLM-isms, no needless emphasis, no over-description, no inflating the
   importance of what was done.
-- Durable text follows Simplified Technical English (ASD-STE100). The
-  asd-ste100 skill states the rules and the procedure.
+- All text this process covers follows Simplified Technical English
+  (ASD-STE100). The asd-ste100 skill states the rules and the procedure.
 
 ## Comment discipline
 
@@ -175,8 +176,9 @@ exhaustive, not sampled:
 - verify claims empirically where cheap — run the code, grep for the
   counter-case — rather than taking the diff's word for it;
 - verify that new or changed comments, error messages, dialogue text, and
-  instruction text follow Simplified Technical English (ASD-STE100), and
-  that the text keeps precision where the standard and precision conflict;
+  instruction text follow Simplified Technical English (ASD-STE100);
+- verify that the text keeps the precise longer form where the standard
+  removes necessary precision;
 - end with an explicit coverage statement naming what was and was NOT checked.
 
 Conformance to this document is a required check; a breach is a finding.
