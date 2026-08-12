@@ -18,6 +18,9 @@ main.js
 # Exclude sourcemaps
 *.map
 
+# The probe kit's build output, assembled for copying into a vault.
+tools/a11-probe/dist/
+
 # obsidian
 data.json
 

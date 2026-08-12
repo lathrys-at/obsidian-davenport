@@ -48,6 +48,7 @@ export default defineConfig(
 		'node_modules',
 		'.claude',
 		'dist',
+		'tools/a11-probe/dist',
 		'coverage',
 		'esbuild.config.mjs',
 		'version-bump.mjs',
@@ -68,6 +69,8 @@ export default defineConfig(
 						'eslint.config.mts',
 						'manifest.json',
 						'scripts/*.mjs',
+						'tools/a11-probe/manifest.json',
+						'tools/a11-probe/*.mjs',
 					],
 				},
 				tsconfigRootDir: import.meta.dirname,
@@ -77,7 +80,12 @@ export default defineConfig(
 	},
 	...obsidianmd.configs.recommended,
 	{
-		files: ['src/**/*.ts', 'test/**/*.ts', 'vitest.config.ts'],
+		files: [
+			'src/**/*.ts',
+			'test/**/*.ts',
+			'tools/**/*.ts',
+			'vitest.config.ts',
+		],
 		extends: [
 			tseslint.configs.strictTypeChecked,
 			tseslint.configs.stylisticTypeChecked,
@@ -87,7 +95,7 @@ export default defineConfig(
 	// obsidianmd rules police plugin code, not tooling.
 	{
 		name: 'davenport/tooling',
-		files: ['scripts/**/*.mjs', 'eslint.config.mts'],
+		files: ['scripts/**/*.mjs', 'tools/**/*.mjs', 'eslint.config.mts'],
 		languageOptions: {
 			globals: {
 				...globals.node,
@@ -99,7 +107,7 @@ export default defineConfig(
 	},
 	{
 		name: 'davenport/tooling-console',
-		files: ['scripts/**/*.mjs'],
+		files: ['scripts/**/*.mjs', 'tools/**/*.mjs'],
 		rules: {
 			'obsidianmd/rule-custom-message': 'off',
 		},
@@ -126,6 +134,59 @@ export default defineConfig(
 			'obsidianmd/no-nodejs-modules': 'off',
 		},
 	},
+	// The probe kit under tools/ is two halves. The plugin half is carried
+	// to phones like any other plugin, so node APIs are out of it. The
+	// comparison half runs under node on a desktop, where reading files and
+	// hashing bytes is the whole of its job.
+	{
+		name: 'davenport/probe-plugin',
+		files: ['tools/a11-probe/**/*.ts'],
+		ignores: [
+			'tools/a11-probe/compare-core.ts',
+			'tools/a11-probe/compare-format.ts',
+		],
+		rules: {
+			'no-restricted-imports': [
+				'error',
+				{
+					patterns: [
+						{
+							group: nodeBuiltinPatterns,
+							message:
+								'The probe runs on phones too; it takes what it needs from the Obsidian API.',
+						},
+					],
+				},
+			],
+			// The API-availability check reads the repository's own
+			// manifest unless it is told otherwise. The probe ships its
+			// own, declaring the version that introduced the frontmatter
+			// writer it exists to exercise.
+			'obsidianmd/no-unsupported-api': [
+				'error',
+				{ minAppVersion: '1.4.4' },
+			],
+		},
+	},
+	{
+		name: 'davenport/probe-tooling',
+		files: [
+			'tools/a11-probe/compare-core.ts',
+			'tools/a11-probe/compare-format.ts',
+		],
+		rules: {
+			'obsidianmd/no-nodejs-modules': 'off',
+		},
+	},
+	// The probe writes down the environment it ran in rather than branching
+	// on it: the engine string is evidence about a result, not a switch.
+	{
+		name: 'davenport/probe-environment',
+		files: ['tools/a11-probe/environment.ts'],
+		rules: {
+			'obsidianmd/platform': 'off',
+		},
+	},
 	// The fetch poison is the runtime half of the ban below: it replaces
 	// fetch on every global spelling a caller could reach it through, and
 	// its tests reach back through the same names to prove it did. The rule
@@ -145,7 +206,7 @@ export default defineConfig(
 	// adapter backs it with requestUrl. A direct fetch breaks on mobile.
 	{
 		name: 'davenport/no-global-fetch',
-		files: ['src/**/*.ts', 'test/**/*.ts'],
+		files: ['src/**/*.ts', 'test/**/*.ts', 'tools/**/*.ts'],
 		rules: {
 			'no-restricted-globals': [
 				'error',
