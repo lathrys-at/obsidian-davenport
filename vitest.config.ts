@@ -1,4 +1,5 @@
 import { coverageConfigDefaults, defineConfig } from 'vitest/config';
+import { SeededSequencer } from './test/harness/sequencer';
 
 export default defineConfig({
 	test: {
@@ -6,6 +7,17 @@ export default defineConfig({
 		unstubGlobals: true,
 		include: ['test/**/*.test.ts', 'src/**/*.test.ts'],
 		setupFiles: ['./test/harness/sweeps/setup.ts'],
+		// Files and the tests inside them run in a random order, so a test
+		// that passes only on state a neighbour left behind fails here rather
+		// than the day an unrelated change reorders the suite. Vitest picks a
+		// seed per run and prints it in the banner; passing that seed back
+		// replays the order exactly, which is what the sequencer is for.
+		// Property-test inputs are not covered by this seed: fast-check seeds
+		// and reports those itself.
+		sequence: {
+			sequencer: SeededSequencer,
+			shuffle: true,
+		},
 		coverage: {
 			provider: 'v8',
 			reporter: ['text', 'lcov'],
