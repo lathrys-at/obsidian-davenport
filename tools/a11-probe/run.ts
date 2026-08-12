@@ -27,7 +27,12 @@ import {
 	pluginApiVersion,
 	probePlatform,
 } from './environment';
-import { describeError, isEmission, resultsPath } from './results';
+import {
+	PROBE_FOLDER,
+	describeError,
+	isEmission,
+	resultsPath,
+} from './results';
 import { sha256Hex, sha256HexOfText } from './sha256';
 import type {
 	FixtureEmission,
@@ -36,9 +41,6 @@ import type {
 	ProbeMarker,
 	ProbeResults,
 } from './results';
-
-/** The folder the probe writes into. Everything it touches lives here. */
-export const PROBE_FOLDER = 'frontmatter-probe';
 
 /** The mutation every fixture is put through, on every device. */
 export const MARKER: ProbeMarker = { key: 'probe-marker', value: 'fixed' };

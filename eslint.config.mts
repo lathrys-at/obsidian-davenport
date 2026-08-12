@@ -47,6 +47,7 @@ export default defineConfig(
 	globalIgnores([
 		'node_modules',
 		'.claude',
+		'.vaults',
 		'dist',
 		'tools/a11-probe/dist',
 		'coverage',
@@ -84,6 +85,7 @@ export default defineConfig(
 			'src/**/*.ts',
 			'test/**/*.ts',
 			'tools/**/*.ts',
+			'scripts/**/*.ts',
 			'vitest.config.ts',
 		],
 		extends: [
@@ -95,7 +97,12 @@ export default defineConfig(
 	// obsidianmd rules police plugin code, not tooling.
 	{
 		name: 'davenport/tooling',
-		files: ['scripts/**/*.mjs', 'tools/**/*.mjs', 'eslint.config.mts'],
+		files: [
+			'scripts/**/*.mjs',
+			'scripts/**/*.ts',
+			'tools/**/*.mjs',
+			'eslint.config.mts',
+		],
 		languageOptions: {
 			globals: {
 				...globals.node,
@@ -105,9 +112,26 @@ export default defineConfig(
 			'obsidianmd/no-nodejs-modules': 'off',
 		},
 	},
+	// The vault script lays out a vault from the outside, before any app has
+	// opened it, so there is no Vault to ask for the name of its
+	// configuration folder. What it creates is the name Obsidian defaults
+	// to, which is the only answer available here, and its tests describe
+	// vaults on disk in the same terms. The exemption names those files and
+	// nothing else.
+	{
+		name: 'davenport/vault-script',
+		files: [
+			'scripts/vault-core.ts',
+			'scripts/vault.mjs',
+			'test/vault-provisioning.test.ts',
+		],
+		rules: {
+			'obsidianmd/hardcoded-config-path': 'off',
+		},
+	},
 	{
 		name: 'davenport/tooling-console',
-		files: ['scripts/**/*.mjs', 'tools/**/*.mjs'],
+		files: ['scripts/**/*.mjs', 'scripts/**/*.ts', 'tools/**/*.mjs'],
 		rules: {
 			'obsidianmd/rule-custom-message': 'off',
 		},
@@ -206,7 +230,12 @@ export default defineConfig(
 	// adapter backs it with requestUrl. A direct fetch breaks on mobile.
 	{
 		name: 'davenport/no-global-fetch',
-		files: ['src/**/*.ts', 'test/**/*.ts', 'tools/**/*.ts'],
+		files: [
+			'src/**/*.ts',
+			'test/**/*.ts',
+			'tools/**/*.ts',
+			'scripts/**/*.ts',
+		],
 		rules: {
 			'no-restricted-globals': [
 				'error',
