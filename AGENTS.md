@@ -53,7 +53,7 @@ npm run build
       ui/               # Views, modals, settings tab (arrives with features)
     ```
 - **Do not commit build artifacts**: Never commit `node_modules/`, `main.js`, or other generated files to version control.
-- Keep the plugin small. Avoid large dependencies. Prefer browser-compatible packages.
+- Keep the plugin small. Do not add large dependencies. Prefer browser-compatible packages.
 - The generated output should go to the plugin root or to `dist/`. Your build setup decides which of the two locations applies. The release artifacts must be at the top level of the plugin folder in the vault (`main.js`, `manifest.json`, `styles.css`).
 
 ## Manifest rules (`manifest.json`)
@@ -100,7 +100,7 @@ Follow Obsidian's **Developer Policies** and **Plugin Guidelines**. Obey these r
 - Operate locally and offline by default. Make a network request only when the feature cannot work without it.
 - Do not add hidden telemetry. If you collect optional analytics or call third-party services, require an explicit opt-in from the user. If you collect optional analytics or call third-party services, also document the analytics and the services clearly in `README.md` and in the settings.
 - Never execute remote code. Never fetch and eval scripts. Never auto-update the plugin code outside of normal releases.
-- Keep the scope to a minimum. Read and write only the necessary files, and only inside the vault. Do not access files outside the vault.
+- Keep the scope to a minimum. Read and write only what is necessary, and only inside the vault. Do not access files outside the vault.
 - Disclose clearly all the external services that you use, all the data that you send, and all the risks.
 - Respect the privacy of the user. Do not collect vault contents, filenames, or personal information, unless the collection is absolutely necessary and the user gives explicit consent.
 - Do not use deceptive patterns, ads, or spammy notifications.

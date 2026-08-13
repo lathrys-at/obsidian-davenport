@@ -9,7 +9,7 @@ this document overlap, this document is canonical.
 ## Authorship and approval
 
 **The lead finalizes and posts all GitHub text.** Issue bodies, PR bodies, and
-comments reach GitHub only through the lead. The agent that holds the context
+comments reach GitHub only through the lead. Whoever holds the context
 writes the draft. A subagent drafts its PR body when the subagent is about to
 push a branch. A reviewer drafts the finding that the reviewer knows best. A
 subagent draft follows the writing process below. The subagent puts the draft
@@ -19,12 +19,13 @@ draft and posts it. Subagents never post.
 
 **The lead does not wait for approval to post.** Durable text — issue bodies,
 PR bodies, design rulings, review distillations — posts without prior user
-approval. The lead tells the user in session about the decisions that the text
-carries, as a digest. The lead revises the posted text when the user gives
+approval. The lead tells the user in session about the embedded decisions, as a
+digest. The lead revises the posted text when the user gives
 feedback. Design reaches the user before the design hardens. Plans and
-decisions that touch the spec go to the user, as
-[Feature design](#feature-design) specifies. Mechanical text is status notes,
-hold comments, and CI chatter. The lead posts this text under the template
+the user must approve plans and
+decisions that touch the spec, as [Feature design](#feature-design)
+specifies. Mechanical text — for example
+status notes, hold comments, and CI chatter — posts under the template
 rules. Drafts can stay in `~/.cache/davenport-dev/drafts/` while the lead
 composes them.
 
@@ -41,8 +42,8 @@ order:
    `.github/PULL_REQUEST_TEMPLATE.md`, `docs/dev/templates/`), read that
    template. Then follow the instructions that this template carries as
    comments.
-3. **Outline.** List what the text must contain. Make this list before you
-   write any of the text.
+3. **Outline.** List what the text must contain. Make this list before
+   the drafting starts.
 4. **Audience.** Name the intended reader. Read the audience card of that
    reader ([`docs/dev/audience/`](audience/)). Think about the state of mind
    of that reader. Ask why the reader reads the text, and what the reader
@@ -114,12 +115,13 @@ begins. This comment carries the substantive plan only, without the process
 notes. The issue then carries the why in its body and the agreed how in its
 comments. Implementation starts only after the lead posts the plan.
 
-Design is exploratory, and the lead leads it. The lead delegates research to
-subagents where this is useful. When the solution space is genuinely open,
+Design is exploratory, and the lead directs it. The lead delegates research
+to subagents where this is useful. When the solution space is genuinely open,
 subagents sketch and elaborate alternative approaches in parallel. The lead
-shows the emerging shape to the user as the shape forms. Trade-offs and open
-questions reach the user early, and not after the plan hardens. Plan mode
-presents the consensus that survives this process for approval.
+asks the user to react to the emerging shape as the shape forms. Trade-offs
+and open questions reach the user early, and not after the plan hardens. The
+consensus that survives this process is what plan mode presents for
+approval.
 
 ## Filesystem state
 
@@ -172,8 +174,8 @@ by hand.
 Each issue gets one branch, and each branch gets one PR. The PR body contains
 `Fixes #N`. Branch names are `‹type›/‹issue#›-‹slug›`. The type is one of
 `feat`, `fix`, `docs`, `chore`, `refactor`, `test`, `xfail`. Main is PR-only,
-squash-merge only, and linear history. Open PRs as drafts. Mark a PR ready
-after you address the review findings. Then run
+squash-merge only, and linear history. Open PRs as drafts. The lead marks a
+PR ready after the review findings are addressed. Then the lead runs
 `gh pr merge --squash --auto`. The single required check `ci-ok` gates the
 merge. Never auto-merge a draft.
 
@@ -205,7 +207,8 @@ auto-resolves them.
 
 ## Defect workflow
 
-A defect that is out of scope for the task in hand becomes resumable state.
+A defect that is out of scope for the task in hand must be captured as
+resumable state.
 Nobody fixes this defect inline, and nobody leaves it as prose. The resumable
 state is:
 
@@ -220,6 +223,6 @@ The failing test is the spec. The pushed branch is the handoff.
 
 At phase boundaries, several independent lenses (e.g. concurrency, security,
 contracts, test integrity, docs) each review the whole codebase against
-`main`. The lenses then cross-ratify each other's findings. After that, the
-findings consolidate into a single tracking issue that dispositions every
-finding. Fix PRs cite the sweep issue.
+`main`. The lenses then cross-ratify each other's findings. After that, the lead
+consolidates the findings into a single tracking issue that dispositions
+every finding. Fix PRs cite the sweep issue.
