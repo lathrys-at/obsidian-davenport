@@ -1,14 +1,17 @@
 /**
- * The decisions behind the QA vault script: the names it accepts and the
- * ones it draws, the verdict it reaches on a probe already installed in a
- * vault, what it makes of a vault it has walked, and the wording it prints
- * around all of that.
+ * The decisions behind the QA vault script:
  *
- * The script itself only walks a tree and copies files, so the module
- * beside it is where the answers are and where these point. The two ways a
- * run can end before it builds anything — the help text and a refused name
- * — are exercised as a process instead, because the exit status and the
- * single line of complaint are as much the interface as the words in it.
+ * - the names that the script accepts, and the names that it draws;
+ * - the verdict that it reaches on a probe already installed in a vault;
+ * - what it makes of a vault that it walked;
+ * - the wording that it prints around all of that.
+ *
+ * The script itself only walks a tree and copies files. Therefore the module
+ * beside it holds the answers, and these tests point at that module. A run
+ * can end in two ways before it builds anything: the help text, and a
+ * refused name. These tests exercise both ways as a process. The interface
+ * includes the exit status and the single line of complaint, and not only
+ * the words in that line.
  */
 
 import { spawnSync } from 'node:child_process';
@@ -51,34 +54,34 @@ const bytes = (text: string): Uint8Array => new TextEncoder().encode(text);
 const BUNDLE = bytes('the bundle');
 const MANIFEST = bytes('{"id":"davenport-a11-probe"}');
 
-/** A build of two files, as the script reads one back off disk. */
+/** A build of two files, as the script reads a build back off the disk. */
 const FRESH = new Map([
 	['main.js', BUNDLE],
 	['manifest.json', MANIFEST],
 ]);
 
-/** A property of a parsed value, without asserting what the value is. */
+/** A property of a parsed value. This does not assert what the value is. */
 function reach(holder: unknown, property: string): unknown {
 	return typeof holder === 'object' && holder !== null
 		? Reflect.get(holder, property)
 		: undefined;
 }
 
-/** The reason a name was refused, insisting that it was refused at all. */
+/** The reason for a refusal. This also asserts that a refusal happened. */
 function refusal(check: NameCheck): string {
 	if (check.ok) {
-		expect.fail(`${check.name} was accepted`);
+		expect.fail(`the check accepted ${check.name}`);
 	}
 	return check.reason;
 }
 
-/** Randomness a test can predict, so a drawn name can be asserted. */
+/** Randomness that a test can predict, so a test can assert a drawn name. */
 function fixedRandom(...draws: number[]): () => number {
 	let index = 0;
 	return () => draws[index++] ?? 0;
 }
 
-/** A seeded source, for asking the generator for a great many names. */
+/** A seeded source. It asks the generator for a great many names. */
 function seededRandom(seed: number): () => number {
 	let state = seed;
 	return () => {
@@ -87,7 +90,7 @@ function seededRandom(seed: number): () => number {
 	};
 }
 
-describe('what a vault may be called', () => {
+describe('what name a vault can have', () => {
 	it.each(['quiet-copper-harbor', 'a', 'vault2', '2026-08-12'])(
 		'accepts %s',
 		(name) => {
@@ -95,14 +98,14 @@ describe('what a vault may be called', () => {
 		},
 	);
 
-	it('refuses a name with nothing in it', () => {
+	it('refuses a name with no characters in it', () => {
 		expect(checkName('')).toEqual({
 			ok: false,
 			reason: 'a vault name cannot be empty',
 		});
 	});
 
-	it('names the characters it refused, including the invisible ones', () => {
+	it('names the characters that it refused, and the invisible ones too', () => {
 		const reason = refusal(checkName('My Vault'));
 		expect(reason).toContain('"M"');
 		expect(reason).toContain('a space');
@@ -122,15 +125,15 @@ describe('what a vault may be called', () => {
 		);
 	});
 
-	it('refuses a name longer than it says it takes', () => {
+	it('refuses a name that is longer than the stated limit', () => {
 		expect(checkName('a'.repeat(NAME_LIMIT)).ok).toBe(true);
 		expect(checkName('a'.repeat(NAME_LIMIT + 1)).ok).toBe(false);
 	});
 
-	// The alphabet is the whole of the containment: with no dot and no
-	// separator in it, an accepted name cannot name a directory above the
-	// one it is joined onto.
-	it('accepts nothing that could climb out of the vaults directory', () => {
+	// The alphabet is the whole of the containment. The alphabet has no dot
+	// and no separator. Therefore an accepted name cannot point to a
+	// directory above the one that the script joins it onto.
+	it('accepts no name that can point outside the vaults directory', () => {
 		fc.assert(
 			fc.property(fc.string(), (raw) => {
 				const checked = checkName(raw);
@@ -146,14 +149,15 @@ describe('what a vault may be called', () => {
 	});
 });
 
-describe('drawing a name for a vault', () => {
+describe('how the script draws a name for a vault', () => {
 	it('draws two adjectives and a noun', () => {
 		expect(generateName(fixedRandom(0, 0, 0))).toBe('amber-azure-anchor');
 	});
 
-	// The second adjective is drawn from the words the first one left, so a
-	// source that keeps answering the same way still cannot repeat a word.
-	it('never repeats a word, however the draw falls', () => {
+	// The generator draws the second adjective from the words that the first
+	// draw left. Therefore a source that always answers the same value still
+	// cannot repeat a word.
+	it('never repeats a word, whatever the draw gives', () => {
 		for (const draw of [0, 0.25, 0.5, 0.999]) {
 			const [first, second, noun] = generateName(() => draw).split('-');
 			expect(first).not.toBe(second);
@@ -161,15 +165,15 @@ describe('drawing a name for a vault', () => {
 		}
 	});
 
-	it('still names words when the source answers outside the unit interval', () => {
+	it('still gives words when the source answers outside the unit interval', () => {
 		expect(generateName(() => 1)).toBe('winter-western-willow');
 		expect(generateName(() => -1)).toBe('amber-azure-anchor');
 		expect(generateName(() => Number.NaN)).toBe('amber-azure-anchor');
 	});
 
-	// Generation and validation are two halves of the same rule, and a drawn
-	// name that the check would refuse is a vault nobody can ask for twice.
-	it('draws only names the check accepts', () => {
+	// Generation and validation are two halves of the same rule. If the check
+	// refuses a drawn name, nobody can ask for that vault a second time.
+	it('draws only the names that the check accepts', () => {
 		const random = seededRandom(20260812);
 		for (let draw = 0; draw < 2000; draw += 1) {
 			const name = generateName(random);
@@ -193,7 +197,7 @@ describe('whether the installed probe is the build beside it', () => {
 		});
 	});
 
-	it('calls a differing byte stale and names only that file', () => {
+	it('calls a byte that differs stale, and names only that file', () => {
 		const installed = new Map(FRESH);
 		installed.set('main.js', bytes('the bundle, once'));
 		expect(classifyInstall(FRESH, installed)).toEqual({
@@ -202,15 +206,15 @@ describe('whether the installed probe is the build beside it', () => {
 		});
 	});
 
-	it('sees a difference that does not change the length', () => {
+	it('sees a difference that does not change the number of bytes', () => {
 		const installed = new Map(FRESH);
 		installed.set('main.js', bytes('the bundlE'));
 		expect(classifyInstall(FRESH, installed).state).toBe('stale');
 	});
 
-	// A copy interrupted halfway is not a copy to leave in place, and it is
-	// not absent either: something is there and it is the wrong something.
-	it('calls a half-copied install stale rather than absent', () => {
+	// The script must not leave a copy that stopped halfway. Such a copy is
+	// also not absent: a file is there, and it is the wrong file.
+	it('calls a half-copied install stale, and not absent', () => {
 		const installed = new Map([['manifest.json', MANIFEST]]);
 		expect(classifyInstall(FRESH, installed)).toEqual({
 			state: 'stale',
@@ -219,7 +223,7 @@ describe('whether the installed probe is the build beside it', () => {
 	});
 });
 
-describe('what a walked vault amounts to', () => {
+describe('what a walked vault adds up to', () => {
 	const scan = {
 		files: [
 			'README.md',
@@ -235,17 +239,17 @@ describe('what a walked vault amounts to', () => {
 		unreadable: [],
 	};
 
-	// The note count is what "what shape is this vault in" is asking. The
-	// configuration is machinery nobody wrote by hand, and folding the two
-	// counts together answers neither question.
-	it('counts the vault apart from its configuration', () => {
+	// The question "what shape is this vault in" asks for the number of
+	// notes. The configuration is machinery, and nobody wrote it by hand. A
+	// count that adds the two together answers neither question.
+	it('counts the vault apart from the configuration of the vault', () => {
 		const report = summarizeVault(scan);
 		expect(report.markdownFiles).toBe(2);
 		expect(report.otherFiles).toBe(2);
 		expect(report.configFiles).toBe(3);
 	});
 
-	it('carries the directories it could not read', () => {
+	it('carries the directories that it could not read', () => {
 		const report = summarizeVault({
 			...scan,
 			unreadable: ['.obsidian/plugins/other', '.obsidian/themes'],
@@ -262,16 +266,16 @@ describe('what a walked vault amounts to', () => {
 		]);
 	});
 
-	it('calls an installed plugin the list leaves out not enabled', () => {
+	it('calls an installed plugin not enabled when the list omits it', () => {
 		const report = summarizeVault({ ...scan, enabledPlugins: [] });
 		expect(report.plugins).toEqual([
 			{ id: 'davenport-a11-probe', enabled: false },
 		]);
 	});
 
-	// A vault with no readable list enables nothing, which is the same
-	// answer a list enabling nothing gets, and the right one either way.
-	it('treats a missing list as enabling nothing', () => {
+	// A vault with no readable list enables no plugin. A list that enables no
+	// plugin gets the same answer. That answer is correct in both cases.
+	it('treats an absent list as a list that enables no plugin', () => {
 		const report = summarizeVault({ ...scan, enabledPlugins: null });
 		expect(report.plugins).toEqual([
 			{ id: 'davenport-a11-probe', enabled: false },
@@ -279,7 +283,7 @@ describe('what a walked vault amounts to', () => {
 		expect(report.enabledWithoutFolder).toEqual([]);
 	});
 
-	it('calls out an enabled id that no folder answers for', () => {
+	it('names an enabled id that no installed folder supplies', () => {
 		const report = summarizeVault({
 			...scan,
 			enabledPlugins: ['davenport-a11-probe', 'something-else'],
@@ -287,7 +291,7 @@ describe('what a walked vault amounts to', () => {
 		expect(report.enabledWithoutFolder).toEqual(['something-else']);
 	});
 
-	it('lists the probe results newest first, timed from their own names', () => {
+	it('lists the probe results newest first, and times them from their names', () => {
 		expect(summarizeVault(scan).results).toEqual([
 			{
 				name: 'emission-samples-20260812-134501Z.json',
@@ -300,7 +304,7 @@ describe('what a walked vault amounts to', () => {
 		]);
 	});
 
-	it('keeps a second run in the same second', () => {
+	it('keeps a second run that happened in the same second', () => {
 		const report = summarizeVault({
 			...scan,
 			files: [
@@ -332,14 +336,14 @@ describe('what a walked vault amounts to', () => {
 });
 
 /**
- * The script reads results files the probe wrote. Both halves take the
- * folder and the naming from the probe's own results module, and this is
- * what keeps them honest: a name the writer produces is put back through
- * the pattern the reader matches on, so a rename on either side fails here
- * rather than turning into a permanent `Probe results  none yet`.
+ * The script reads the results files that the probe wrote. Both halves take
+ * the folder and the naming from the results module of the probe. This keeps
+ * both halves honest. These tests put a name from the writer back through
+ * the pattern that the reader matches on. Therefore a rename on either side
+ * fails here. It does not turn into a permanent `Probe results  none yet`.
  */
-describe('the naming the script and the probe share', () => {
-	it('matches a name the probe would actually write', () => {
+describe('the naming that the script and the probe share', () => {
+	it('matches a name that the probe writes', () => {
 		const written = resultsPath(
 			PROBE_FOLDER,
 			new Date('2026-08-12T13:45:01.000Z'),
@@ -349,7 +353,7 @@ describe('the naming the script and the probe share', () => {
 		expect(RESULTS_NAME.test(basename(written))).toBe(true);
 	});
 
-	it('matches the name a second run in the same second takes', () => {
+	it('matches the name that a second run in the same second takes', () => {
 		const taken = new Set<string>();
 		const now = new Date('2026-08-12T13:45:01.000Z');
 		const first = resultsPath(PROBE_FOLDER, now, (path) => taken.has(path));
@@ -361,7 +365,7 @@ describe('the naming the script and the probe share', () => {
 		expect(RESULTS_NAME.test(basename(second))).toBe(true);
 	});
 
-	// And the reader reaches the same file through the report it builds.
+	// The reader also reaches the same file through the report that it builds.
 	it('finds a written name when the report walks over it', () => {
 		const written = resultsPath(
 			PROBE_FOLDER,
@@ -380,9 +384,9 @@ describe('the naming the script and the probe share', () => {
 	});
 });
 
-describe('the link that reopens a vault', () => {
-	// Obsidian asks for every value in the link to be encoded, separators
-	// and all, and resolves the most specific vault holding the path.
+describe('the link that opens a vault again', () => {
+	// You must encode every value in the link, and this includes the
+	// separators. Obsidian finds the most specific vault that holds the path.
 	it('encodes the separators and the spaces in the path', () => {
 		expect(vaultUri('/Users/ren/my vaults/quiet-harbor')).toBe(
 			'obsidian://open?path=%2FUsers%2Fren%2Fmy%20vaults%2Fquiet-harbor',
@@ -409,24 +413,26 @@ describe('what the script prints', () => {
 		cliFound: false,
 	};
 
-	it('gives a new vault the first-open step it cannot do for itself', () => {
+	it('gives a new vault the first-open step that no script can do', () => {
 		const printed = formatOutcome(base);
-		expect(printed).toContain('Created the vault quiet-copper-harbor');
+		expect(printed).toContain(
+			'The script made the vault quiet-copper-harbor',
+		);
 		expect(printed).toContain('/repo/.vaults/quiet-copper-harbor');
-		expect(printed).toContain('first open is by hand');
+		expect(printed).toContain('open it by hand one time');
 		expect(printed).toContain('restricted mode');
 		expect(printed).toContain(vaultUri(base.path));
 	});
 
-	it('does not repeat the first-open step for a vault already there', () => {
+	it('does not repeat the first-open step for a vault that exists', () => {
 		const printed = formatOutcome({
 			...base,
 			created: false,
 			install: { state: 'current', toWrite: [] },
 		});
-		expect(printed).toContain('is already there');
+		expect(printed).toContain('already exists');
 		expect(printed).toContain('Probe          already current');
-		expect(printed).not.toContain('first open is by hand');
+		expect(printed).not.toContain('open it by hand one time');
 		expect(printed).toContain(vaultUri(base.path));
 	});
 
@@ -436,19 +442,20 @@ describe('what the script prints', () => {
 			created: false,
 			install: { state: 'stale', toWrite: ['main.js'] },
 		});
-		expect(printed).toContain('refreshed, main.js rewritten');
+		expect(printed).toContain('refreshed, and the script rewrote main.js');
 	});
 
 	it('names both files when it installs the probe', () => {
 		expect(formatOutcome(base)).toContain(
-			'installed, main.js and manifest.json',
+			'installed, and the script wrote main.js and manifest.json',
 		);
 	});
 
-	// Obsidian's command line takes a vault by name and knows nothing of one
-	// it has no record of, so it is never offered as the way in. The link is
-	// the way in, and the command line is offered for the checking after.
-	it('offers the command line only where there is one', () => {
+	// The command line of Obsidian takes a vault by name, and it knows
+	// nothing of a vault that it has no record of. Therefore the script never
+	// offers the command line as the way in. The link is the way in, and the
+	// script offers the command line for the checks that come after.
+	it('offers the command line only when a command line is there', () => {
 		expect(formatOutcome(base)).not.toContain('obsidian vault=');
 		const withCli = formatOutcome({ ...base, cliFound: true });
 		expect(withCli).toContain('obsidian vault=quiet-copper-harbor plugins');
@@ -458,7 +465,7 @@ describe('what the script prints', () => {
 		for (const created of [true, false]) {
 			const printed = formatOutcome({ ...base, created, cliFound: true });
 			const opening = printed.slice(
-				printed.indexOf('Open it in Obsidian'),
+				printed.indexOf('Open the vault in Obsidian'),
 			);
 			expect(opening).toContain(`open '${vaultUri(base.path)}'`);
 			expect(opening).not.toContain(
@@ -467,7 +474,7 @@ describe('what the script prints', () => {
 		}
 	});
 
-	it('reports the results files and says so when there are none', () => {
+	it('reports the results files, and says so when there are none', () => {
 		expect(formatOutcome(base)).toContain('Probe results  none yet');
 		const withResults = formatOutcome({
 			...base,
@@ -489,9 +496,9 @@ describe('what the script prints', () => {
 		);
 	});
 
-	// The results files hang under their own label, so a row added after
-	// them cannot land in the middle of the list.
-	it('keeps the results together when a directory could not be read', () => {
+	// The results files hang under their own label. Therefore a row that
+	// comes after them cannot land in the middle of the list.
+	it('keeps the results together when it could not read a directory', () => {
 		const printed = formatOutcome({
 			...base,
 			report: summarizeVault({
@@ -514,7 +521,7 @@ describe('what the script prints', () => {
 		expect(lines[at + 2]).toContain('.obsidian/plugins/other');
 	});
 
-	it('says what a repair added to a vault that was already there', () => {
+	it('says what a repair added to a vault that already existed', () => {
 		const printed = formatOutcome({
 			...base,
 			created: false,
@@ -523,9 +530,10 @@ describe('what the script prints', () => {
 		expect(printed).toContain(
 			'Added          .obsidian/app.json and .obsidian/community-plugins.json',
 		);
-		// A vault only now given its plugin list has never been opened with
-		// the probe in it, so it gets the steps a new vault gets.
-		expect(printed).toContain('first open is by hand');
+		// This run wrote the plugin list into the vault. Therefore nobody
+		// opened that vault with the probe in it before, and the vault gets
+		// the steps that a new vault gets.
+		expect(printed).toContain('open it by hand one time');
 	});
 
 	it('says nothing about a repair when there was nothing to repair', () => {
@@ -534,7 +542,7 @@ describe('what the script prints', () => {
 		);
 	});
 
-	it('tells whoever opens the vault the one command to run', () => {
+	it('tells the person who opens the vault which command to run', () => {
 		const note = vaultReadme('quiet-copper-harbor');
 		expect(note).toContain('quiet-copper-harbor');
 		expect(note).toContain('Run frontmatter probe');
@@ -563,20 +571,20 @@ describe('the script as a process', () => {
 		};
 	}
 
-	it('prints how to use it and stops', () => {
+	it('prints the usage text and then stops', () => {
 		const result = run(['--help']);
 		expect(result.status).toBe(0);
 		expect(result.out).toContain('npm run vault');
 		expect(result.err).toBe('');
 	});
 
-	it('says the same thing the help constant does', () => {
+	it('says the same text as the help constant', () => {
 		expect(run(['-h']).out.trim()).toBe(HELP.trim());
 	});
 
-	// Each row is passed as it stands. Splitting a row on its spaces would
-	// turn the one that carries a space into two arguments, and the arity
-	// check would answer it before the name was ever looked at.
+	// Each row goes through as it stands. A split of a row on its spaces
+	// would turn the row that carries a space into two arguments. Then the
+	// arity check would answer that row before the check read the name.
 	it.each([
 		['a name with a space', ['My Vault']],
 		['a name that is not a name', ['--nonsense']],
@@ -591,11 +599,12 @@ describe('the script as a process', () => {
 		expect(result.out).toBe('');
 	});
 
-	// The property test pins what `checkName` accepts; this pins that the
-	// script asks it. Without this the check could be lifted out of the one
-	// place it is called and every other test would still pass, while a name
-	// carrying separators built a directory outside the checkout.
-	it('puts the name it was given through the name check', () => {
+	// The property test pins what `checkName` accepts. This test pins that
+	// the script calls it. Without this test, somebody could remove the check
+	// from the one place that calls it, and every other test would still
+	// pass, while a name with separators made a directory outside the
+	// checkout.
+	it('puts the name that it received through the name check', () => {
 		expect(run(['My Vault']).err).toContain(
 			'a vault name uses lowercase letters, digits and hyphens only',
 		);
@@ -610,9 +619,10 @@ describe('the script as a process', () => {
 });
 
 /**
- * The copying is thin, but it is also the whole of what the script can
- * destroy, and a pure test cannot see it. These run the real script against
- * real vaults under `.vaults/`, which git ignores, and take them down after.
+ * The copying is thin. The copying is also the whole of what the script can
+ * destroy, and a pure test cannot see it. These tests run the real script
+ * against real vaults under `.vaults/`. Git ignores that directory. These
+ * tests take the vaults down afterwards.
  */
 describe('running against a vault that already holds work', () => {
 	const script = fileURLToPath(
@@ -627,7 +637,7 @@ describe('running against a vault that already holds work', () => {
 		}
 	});
 
-	/** A vault path nothing else in the suite will collide with. */
+	/** A vault path that nothing else in the suite uses. */
 	function reserve(what: string): string {
 		const name = `test-${what}-${String(process.pid)}`;
 		const path = join(root, '.vaults', name);
@@ -648,7 +658,7 @@ describe('running against a vault that already holds work', () => {
 		return result.stdout;
 	}
 
-	/** Every file in the vault against the digest of its contents. */
+	/** Every file in the vault, against the digest of its contents. */
 	function digests(path: string): Map<string, string> {
 		const found = new Map<string, string>();
 		const walk = (directory: string, prefix: string): void => {
@@ -672,11 +682,11 @@ describe('running against a vault that already holds work', () => {
 		return found;
 	}
 
-	// A re-run may rewrite the probe's own two files and nothing else. Both
-	// halves of that matter: overwriting the settings would throw away the
-	// owner's edits, and clearing the plugin folder before copying would
-	// take the probe's data.json with it.
-	it('rewrites nothing the owner put there', () => {
+	// A second run can rewrite the two files of the probe and nothing else.
+	// Both halves of that rule matter. A write over the settings would throw
+	// away the edits of the owner. A clear of the plugin folder before the
+	// copy would take the data.json of the probe with it.
+	it('rewrites nothing that the owner put there', () => {
 		const path = reserve('holds-work');
 		vault(path);
 
@@ -706,7 +716,7 @@ describe('running against a vault that already holds work', () => {
 		expect(digests(path)).toEqual(before);
 	});
 
-	// The probe's own files are the exception, and only when they differ.
+	// The files of the probe are the exception, and only when they differ.
 	it('rewrites the probe alone when the installed copy is stale', () => {
 		const path = reserve('stale-probe');
 		vault(path);
@@ -717,7 +727,7 @@ describe('running against a vault that already holds work', () => {
 		const before = digests(path);
 
 		const printed = vault(path);
-		expect(printed).toContain('refreshed, main.js rewritten');
+		expect(printed).toContain('refreshed, and the script rewrote main.js');
 
 		const after = digests(path);
 		const changed = [...after]
@@ -731,9 +741,10 @@ describe('running against a vault that already holds work', () => {
 		).toBe(true);
 	});
 
-	// A directory that is not a laid-out vault is the shape a vault carried
-	// in from another device arrives in, and the shape a folder made by hand
-	// starts in. It is provisioned rather than left half-made.
+	// A vault that comes from another device arrives as a directory that
+	// nobody laid out. A folder that a person makes by hand starts the same
+	// way. The script provisions such a directory and does not leave it
+	// half-made.
 	it('lays out a directory that was never a vault', () => {
 		const path = reserve('bare-directory');
 		mkdirSync(join(path, 'notes'), { recursive: true });
@@ -754,19 +765,20 @@ describe('running against a vault that already holds work', () => {
 		);
 	});
 
-	// A vault that has only just been given its plugin list has never been
-	// opened with the probe in it, so it needs the steps a new vault needs.
-	it('gives a newly laid-out vault the first-open steps', () => {
+	// This run wrote the plugin list into the vault. Therefore nobody opened
+	// that vault with the probe in it before, and the vault needs the steps
+	// that a new vault needs.
+	it('gives a vault that it has just laid out the first-open steps', () => {
 		const path = reserve('needs-first-open');
 		mkdirSync(path, { recursive: true });
 
-		expect(vault(path)).toContain('first open is by hand');
-		// And drops them once the vault has everything.
-		expect(vault(path)).not.toContain('first open is by hand');
+		expect(vault(path)).toContain('open it by hand one time');
+		// The script drops the steps after the vault has everything.
+		expect(vault(path)).not.toContain('open it by hand one time');
 	});
 });
 
-describe('how the repository is wired for it', () => {
+describe('how the repository is wired for the script', () => {
 	const root = new URL('../', import.meta.url);
 	const read = (name: string): string =>
 		readFileSync(fileURLToPath(new URL(name, root)), 'utf8');
@@ -777,20 +789,21 @@ describe('how the repository is wired for it', () => {
 		expect(reach(scripts, 'vault')).toBe('node scripts/vault.mjs');
 	});
 
-	// The vaults hold a built plugin and whatever a probe run wrote, none of
-	// which belongs in the history of the repository that builds them.
+	// The vaults hold a built plugin and the files that a probe run wrote.
+	// None of these files belongs in the history of the repository that
+	// builds them.
 	it('keeps the vaults out of git', () => {
 		expect(read('.gitignore')).toContain('.vaults/');
 	});
 
-	it('keeps them out of the lint and format sweeps too', () => {
+	it('keeps the vaults out of the lint and format sweeps too', () => {
 		expect(read('eslint.config.mts')).toContain("'.vaults'");
 		expect(read('.prettierignore')).toContain('.vaults');
 	});
 
-	// The ignore rule is worth having only if it is working: this asks git
-	// itself what it is tracking, so a vault that slipped into the index
-	// fails here rather than in a review of someone's pull request.
+	// The ignore rule is worth having only while it works. This test asks git
+	// itself what it tracks. Therefore a vault that got into the index fails
+	// here, and not in a review of a pull request.
 	it('tracks no file under .vaults', () => {
 		const tracked = spawnSync('git', ['ls-files', '.vaults'], {
 			cwd: fileURLToPath(root),
