@@ -1,18 +1,19 @@
 /**
- * Makes a scratch Obsidian vault with the frontmatter probe installed, and
- * says how to open it.
+ * This script makes a scratch Obsidian vault with the frontmatter probe
+ * installed. The script also says how to open the vault.
  *
  *     npm run vault              a random three-word name
  *     npm run vault -- <name>    that name, new or already there
  *
- * Vaults are made under `.vaults/` at the top of the repository, which git
- * ignores. Naming one that already exists reports it rather than replacing
- * it: the probe is rebuilt and refreshed if the vault's copy has fallen
- * behind, and nothing else in the vault is touched.
+ * The script makes each vault under `.vaults/` at the top of the repository.
+ * Git ignores that directory. If you name a vault that already exists, the
+ * script reports on that vault and does not replace it. The script builds
+ * the probe on each run. If the copy in the vault is different, the script
+ * writes the new copy. The script touches nothing else in the vault.
  *
- * Walking the tree, running the build and copying files are here. What a
- * name may be and what a walked vault amounts to are in `vault-core.ts`;
- * the wording of everything printed is in `vault-text.ts`.
+ * This file walks the tree, runs the build, and copies the files.
+ * `vault-core.ts` holds the rules for a name and the sum of a walked vault.
+ * `vault-text.ts` holds the wording of everything that the script prints.
  */
 
 import { spawnSync } from 'node:child_process';
@@ -44,7 +45,10 @@ import {
 } from './vault-text.ts';
 
 const VAULTS_FOLDER = '.vaults';
-/** The pair a vault's plugin folder wants, as the probe build names them. */
+/**
+ * The two files that the plugin folder of a vault needs. The probe build
+ * gives them these names.
+ */
 const PROBE_FILES = ['main.js', 'manifest.json'];
 
 try {
@@ -71,14 +75,14 @@ function main() {
 	const name = chooseName(argv);
 	const path = join(root, VAULTS_FOLDER, name);
 
-	// Everything that can be known to be impossible is settled before the
-	// build runs, so a run that cannot work says so at once instead of
-	// spending a build first and failing on a mkdir afterwards.
+	// The script settles every known impossibility before the build runs.
+	// Thus a run that cannot work says so at once. It does not spend a build
+	// first and then fail on a mkdir afterwards.
 	requireDependencies();
 	requireUsableTarget(join(root, VAULTS_FOLDER), path);
 
 	const created = !existsSync(path);
-	console.log('Building the probe...');
+	console.log('The script builds the probe...');
 	const fresh = buildProbe(root);
 
 	const laidOut = layOutVault(path, name);
@@ -99,14 +103,15 @@ function main() {
 }
 
 /**
- * That the repository's dependencies are installed. The probe build imports
- * esbuild, so a fresh checkout that has not been installed fails inside
- * node's module loader with a stack about a package the owner never named.
- * Asking first turns that into the one instruction that fixes it.
+ * Requires that the repository has its dependencies installed. The probe
+ * build imports esbuild. A fresh checkout without an install fails inside
+ * the module loader of node. That failure shows a stack about a package that
+ * the owner never named. This check turns that failure into the one
+ * instruction that repairs it.
  */
 function requireDependencies() {
 	const missing = new Error(
-		'dependencies are not installed here; run npm ci first',
+		'this checkout has no installed dependencies; run npm ci first',
 	);
 	let resolved;
 	try {
@@ -114,22 +119,25 @@ function requireDependencies() {
 	} catch (error) {
 		throw new Error(missing.message, { cause: error });
 	}
-	// Resolution alone proves nothing: node answers with the path a package
-	// would occupy whether or not anything is there. The file has to exist.
+	// Resolution alone proves nothing. Node answers with the path that a
+	// package would occupy, whether or not the package is there. Therefore
+	// the file must also exist.
 	if (!existsSync(fileURLToPath(resolved))) {
 		throw missing;
 	}
 }
 
 /**
- * That a vault can be put at this path: that nothing else is already there
- * under that name, and that the directory it goes in can be written to. The
- * errno these would otherwise surface as names a path the owner did not
- * type and a call they did not make.
+ * Requires that a vault can go at this path. Nothing else can be there under
+ * that name. The script must be able to write to the directory that holds
+ * the vault. Without these checks, node reports an errno. That errno names a
+ * path that the owner did not type, and a call that the owner did not make.
  */
 function requireUsableTarget(vaults, path) {
 	if (existsSync(vaults) && !isDirectory(vaults)) {
-		throw new Error(`${vaults} is a file, and vaults are made inside it`);
+		throw new Error(
+			`${vaults} is a file, but the script makes vaults inside it`,
+		);
 	}
 	if (existsSync(path) && !isDirectory(path)) {
 		throw new Error(`${path} is a file, not a vault`);
@@ -145,7 +153,9 @@ function requireUsableTarget(vaults, path) {
 	try {
 		accessSync(writable, constants.W_OK);
 	} catch (error) {
-		throw new Error(`${writable} cannot be written to`, { cause: error });
+		throw new Error(`the script cannot write to ${writable}`, {
+			cause: error,
+		});
 	}
 }
 
@@ -158,9 +168,10 @@ function isDirectory(path) {
 }
 
 /**
- * The repository this script is a file in, found from its own location so
- * that the answer does not depend on where it was run from. A checkout is
- * what it needs: the probe to install comes out of one.
+ * The repository that holds this script. The function finds the repository
+ * from the location of the script. Thus the answer does not depend on the
+ * directory where the owner ran the script. The script needs a checkout,
+ * because the probe to install comes out of a checkout.
  */
 function repositoryRoot() {
 	const root = fileURLToPath(new URL('../', import.meta.url));
@@ -171,7 +182,7 @@ function repositoryRoot() {
 	const name = JSON.parse(readFileSync(manifest, 'utf8')).name;
 	if (name !== 'davenport') {
 		throw new Error(
-			`${root} holds ${String(name)}, not the davenport repository`,
+			`${root} holds the package ${String(name)}, and not the davenport repository`,
 		);
 	}
 	return root;
@@ -182,20 +193,23 @@ function probeBuild(root) {
 }
 
 /**
- * The name given on the command line, or one drawn for the occasion.
+ * The name from the command line, or a name that the script draws.
  *
- * An argument that is not a name is refused rather than skipped over. A
- * script that quietly made a randomly named vault because the name it was
- * handed looked like an option would be answering a question nobody asked.
+ * The script refuses an argument that is not a name. The script does not
+ * step over such an argument. An argument can look like an option. A script
+ * that quietly made a vault with a random name in that case would answer a
+ * question that nobody asked.
  */
 function chooseName(argv) {
 	const unknown = argv.find((argument) => argument.startsWith('-'));
 	if (unknown !== undefined) {
-		throw new Error(`unknown option ${unknown}; npm run vault -- --help`);
+		throw new Error(
+			`unknown option ${unknown}; for the usage text, run npm run vault -- --help`,
+		);
 	}
 	if (argv.length > 1) {
 		throw new Error(
-			`one name at a time, and ${String(argv.length)} were given`,
+			`the script takes one name at a time, and you gave ${String(argv.length)}`,
 		);
 	}
 	if (argv.length === 0) {
@@ -209,9 +223,10 @@ function chooseName(argv) {
 }
 
 /**
- * Runs the probe build and reads back what it wrote. The build is run every
- * time, so what a vault is compared against is the build of the tree as it
- * stands rather than whatever was left in `dist/` last.
+ * Runs the probe build and reads back the files that the build wrote. The
+ * build runs every time. Thus the script compares a vault against the build
+ * of the tree as it stands now, and not against the last contents of
+ * `dist/`.
  */
 function buildProbe(root) {
 	const built = spawnSync(process.execPath, [probeBuild(root)], {
@@ -235,15 +250,17 @@ function buildProbe(root) {
 }
 
 /**
- * A vault Obsidian will open: a configuration folder with the settings it
- * expects to find, the probe listed as one to enable, and a note at the top
- * saying what the vault is for. Returns the files it had to write.
+ * Makes a vault that Obsidian can open. The vault gets a configuration
+ * folder with the settings that Obsidian expects. The vault lists the probe
+ * as a plugin to enable. The vault gets a note at the top that says what the
+ * vault is for. The function returns the files that it had to write.
  *
- * Every write here is made only where there is no file already, so this runs
- * against a vault that already exists as readily as against a new one: a
- * directory that was never laid out, or one carried in from another device
- * with its dotfiles left behind, gains what it is missing and nothing else.
- * A file that is there is a file the owner is entitled to have edited.
+ * The function writes a file only where no file is there already. Therefore
+ * it runs against a vault that already exists as readily as against a new
+ * vault. This also applies to a directory that nobody laid out. This also
+ * applies to a directory that came from another device without its dotfiles.
+ * Such a directory gains what it does not have, and nothing else. A file
+ * that is there is a file that the owner had the right to edit.
  */
 function layOutVault(path, name) {
 	mkdirSync(join(path, CONFIG_FOLDER), { recursive: true });
@@ -262,7 +279,10 @@ function layOutVault(path, name) {
 	return written.map((file) => file.split(sep).join('/'));
 }
 
-/** Puts the build into the vault, or leaves a copy that matches it alone. */
+/**
+ * Puts the build into the vault. If the copy in the vault matches the build,
+ * the function does not touch that copy.
+ */
 function installProbe(path, fresh) {
 	const folder = join(path, CONFIG_FOLDER, 'plugins', PROBE_ID);
 	const installed = new Map();
@@ -282,7 +302,7 @@ function installProbe(path, fresh) {
 	return verdict;
 }
 
-/** The vault as the report wants it: every file, and what the plugins are. */
+/** The vault in the form that the report needs: every file, and the plugins. */
 function scanVault(path) {
 	const walked = { files: [], unreadable: [] };
 	walk(path, '', walked);
@@ -295,12 +315,13 @@ function scanVault(path) {
 }
 
 /**
- * Every file under this directory, as slash-separated relative paths.
+ * Every file under this directory, as relative paths with slashes.
  *
- * A directory that cannot be read is noted and stepped over. The report is
- * the last thing the run does and the least of what it is for; letting one
- * unreadable folder throw it away would lose the path, the link and the
- * probe's state over a directory the owner may not even have meant to keep.
+ * The walk notes a directory that it cannot read, and then steps over it.
+ * The report is the last work of the run and the least important work. One
+ * unreadable folder must not throw the report away. Such a throw would lose
+ * the path, the link, and the state of the probe. It would lose them over a
+ * directory that the owner may not even want to keep.
  */
 function walk(directory, prefix, walked) {
 	let entries;
@@ -331,9 +352,9 @@ function folderNames(directory) {
 }
 
 /**
- * The plugin ids the vault's own list enables. A list that is missing or
- * that holds something other than ids is reported as no list at all, which
- * reads differently from a list enabling nothing.
+ * The plugin ids that the list of the vault enables. The function reports an
+ * absent list, or a list that holds something other than ids, as no list at
+ * all. That result reads differently from a list that enables no plugin.
  */
 function enabledPlugins(path) {
 	const file = join(path, CONFIG_FOLDER, PLUGIN_LIST);
@@ -352,10 +373,11 @@ function enabledPlugins(path) {
 }
 
 /**
- * Whether a command of this name is on the path, without running it. It has
- * to be a file and it has to be executable: a directory of that name, or a
- * file nobody may run, is not a command, and offering one would hand the
- * owner a line that fails when they paste it.
+ * Whether a command with this name is on the path. The function does not run
+ * the command. The command must be a file, and the file must be executable.
+ * A directory with that name is not a command. A file that nobody can run is
+ * not a command. An offer of one of these would give the owner a line that
+ * fails when the owner pastes it.
  */
 function onPath(command) {
 	const paths = (process.env['PATH'] ?? '').split(delimiter);
@@ -365,7 +387,7 @@ function onPath(command) {
 		}
 		const candidate = join(entry, command);
 		try {
-			// statSync follows symlinks, so a dangling one is not a command.
+			// statSync follows a symlink, so a dangling symlink is not a command.
 			if (!statSync(candidate).isFile()) {
 				return false;
 			}
@@ -377,7 +399,7 @@ function onPath(command) {
 	});
 }
 
-/** Writes the file if it is not there, and says whether it did. */
+/** Writes the file when no file is there, and says whether it wrote. */
 function writeIfAbsent(file, contents) {
 	if (existsSync(file)) {
 		return false;

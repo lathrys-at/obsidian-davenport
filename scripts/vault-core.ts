@@ -1,36 +1,41 @@
 /**
- * The decisions behind the QA vault script: what a vault may be called, how
- * an unnamed one gets a name, whether the probe sitting in a vault still
- * matches the build beside it, and what a walked vault adds up to.
+ * The decisions behind the QA vault script:
  *
- * Nothing here reads a file, draws its own randomness or reads a clock, so
- * every decision can be put under test directly. Walking the tree, running
- * the build and copying files belong to `vault.mjs`; the wording printed
- * around these answers is in `vault-text.ts`.
+ * - what name a vault can have;
+ * - how a vault without a name gets one;
+ * - whether the probe in a vault still matches the build beside it;
+ * - what a walked vault adds up to.
  *
- * Where the probe writes and what it calls its files are the probe's own
- * business, so they are taken from its results module rather than written
- * down again here, and cannot drift from it.
+ * No function here reads a file, draws its own randomness, or reads a clock.
+ * Therefore a test can exercise every decision directly. `vault.mjs` walks
+ * the tree, runs the build, and copies the files. `vault-text.ts` holds the
+ * wording that the script prints around these answers.
+ *
+ * The probe owns the folder that it writes into and the names of its files.
+ * Therefore this module takes both from the results module of the probe.
+ * This module does not write them down again, and the two cannot drift
+ * apart.
  */
 
 import { PROBE_FOLDER, RESULTS_NAME } from '../tools/a11-probe/results.ts';
 
 export { PROBE_FOLDER };
 
-/** The longest name worth typing, with room to spare for three words. */
+/** The longest name that is worth typing. Three words fit easily in it. */
 export const NAME_LIMIT = 64;
 
 /**
- * A checked name, or the reason it was refused.
+ * A name that passed the check, or the reason for the refusal.
  *
- * The character rule is what keeps a name inside `.vaults/`: with no dot
- * and no slash in the alphabet, a name cannot name a directory above it.
+ * The character rule keeps a name inside `.vaults/`. The alphabet has no dot
+ * and no slash. Therefore a name cannot point to a directory above
+ * `.vaults/`.
  */
 export type NameCheck =
 	| { readonly ok: true; readonly name: string }
 	| { readonly ok: false; readonly reason: string };
 
-/** Whether this is a name a vault may be given, and if not, why not. */
+/** Whether a vault can have this name, and if not, the reason. */
 export function checkName(raw: string): NameCheck {
 	if (raw === '') {
 		return { ok: false, reason: 'a vault name cannot be empty' };
@@ -38,7 +43,7 @@ export function checkName(raw: string): NameCheck {
 	if (raw.length > NAME_LIMIT) {
 		return {
 			ok: false,
-			reason: `a vault name runs to ${String(NAME_LIMIT)} characters at most, and that one is ${String(raw.length)}`,
+			reason: `a vault name has ${String(NAME_LIMIT)} characters at most, and that name has ${String(raw.length)}`,
 		};
 	}
 	const offenders = [...new Set(raw)].filter(
@@ -49,7 +54,7 @@ export function checkName(raw: string): NameCheck {
 			ok: false,
 			reason:
 				'a vault name uses lowercase letters, digits and hyphens only, ' +
-				`and that one has ${listPhrase(offenders.map(describeCharacter))}`,
+				`and that name has ${listPhrase(offenders.map(describeCharacter))}`,
 		};
 	}
 	if (raw.startsWith('-') || raw.endsWith('-')) {
@@ -62,10 +67,10 @@ export function checkName(raw: string): NameCheck {
 }
 
 /**
- * A three-word name, drawn from the caller's randomness so that a test can
- * say which words it wants. Two adjectives and a noun, and the second
- * adjective is drawn from the words the first one left, so no name repeats
- * a word back at itself.
+ * A name of three words: two adjectives and a noun. The caller supplies the
+ * randomness, so a test can select the words. The function draws the second
+ * adjective from the words that the first draw left. Therefore a name never
+ * repeats a word.
  */
 export function generateName(random: () => number): string {
 	const first = pickWord(ADJECTIVES, random);
@@ -76,19 +81,20 @@ export function generateName(random: () => number): string {
 	return `${first}-${second}-${pickWord(NOUNS, random)}`;
 }
 
-/** Whether the copy installed in a vault is the build sitting beside it. */
+/** Whether the copy in a vault is the same as the build beside it. */
 export type InstallState = 'absent' | 'stale' | 'current';
 
 export interface InstallVerdict {
 	readonly state: InstallState;
-	/** The files to write, named as the build names them. */
+	/** The files to write, with the names that the build gives them. */
 	readonly toWrite: readonly string[];
 }
 
 /**
- * The installed copy weighed against the fresh build, byte for byte. A
- * missing file counts as one to write, so a half-copied install is stale
- * rather than current — the same answer a differing byte gets.
+ * The function compares the installed copy against the fresh build, byte for
+ * byte. An absent file counts as a file to write. Therefore a half-copied
+ * install is stale and not current. A byte that differs gets the same
+ * answer.
  */
 export function classifyInstall(
 	fresh: ReadonlyMap<string, Uint8Array>,
@@ -113,21 +119,26 @@ export function classifyInstall(
 	return { state: toWrite.length > 0 ? 'stale' : 'current', toWrite };
 }
 
-/** A vault as the walk found it, in vault-relative slash-separated paths. */
+/**
+ * A vault as the walk found it. The paths are relative to the vault, and
+ * they use a slash as the separator.
+ */
 export interface VaultScan {
 	readonly files: readonly string[];
-	/** The plugin folders under the vault's configuration directory. */
+	/** The plugin folders under the configuration directory of the vault. */
 	readonly installedPlugins: readonly string[];
 	/**
-	 * The plugin ids `community-plugins.json` lists, or null when the vault
-	 * has no readable list — which is not the same as a list enabling
-	 * nothing, and is reported differently.
+	 * The plugin ids that `community-plugins.json` lists. The value is null
+	 * when the vault has no readable list. A vault with no readable list is
+	 * not the same as a list that enables no plugin, and the report shows the
+	 * difference.
 	 */
 	readonly enabledPlugins: readonly string[] | null;
 	/**
-	 * Directories the walk was refused. A vault the report cannot read all
-	 * of is still a vault worth reporting, so these are carried through and
-	 * named rather than thrown.
+	 * The directories that the walk could not read. A vault that the report
+	 * cannot fully read is still a vault that is worth a report. Therefore the
+	 * scan carries these directories through and names them. The scan does not
+	 * throw an error.
 	 */
 	readonly unreadable: readonly string[];
 }
@@ -137,36 +148,40 @@ export interface PluginEntry {
 	readonly enabled: boolean;
 }
 
-/** One results file the probe left behind. */
+/** One results file that the probe wrote. */
 export interface ResultsFile {
 	readonly name: string;
-	/** The instant in the file's own name, or null when it carries none. */
+	/** The instant in the name of the file, or null when the name has none. */
 	readonly timestamp: string | null;
 }
 
 export interface VaultReport {
-	/** Notes: the markdown a person put in the vault. */
+	/** Notes: the markdown files that a person put in the vault. */
 	readonly markdownFiles: number;
-	/** Anything else in the vault that is not configuration. */
+	/** The other files in the vault that are not configuration. */
 	readonly otherFiles: number;
-	/** Files under the configuration folder, which nobody writes by hand. */
+	/** The files under the configuration folder. Nobody writes these by hand. */
 	readonly configFiles: number;
 	readonly plugins: readonly PluginEntry[];
-	/** Ids the list enables that no installed folder answers for. */
+	/** The ids that the list enables and that no installed folder supplies. */
 	readonly enabledWithoutFolder: readonly string[];
 	readonly results: readonly ResultsFile[];
 	readonly unreadable: readonly string[];
 }
 
-/** The vault's configuration folder, under the name Obsidian defaults to. */
+/**
+ * The configuration folder of the vault, with the name that Obsidian uses by
+ * default.
+ */
 export const CONFIG_FOLDER = '.obsidian';
 
 /**
- * What the walked vault amounts to, in the terms the report states.
+ * What the walked vault adds up to, in the terms that the report states.
  *
- * The vault's own contents are counted apart from its configuration. Asked
- * what shape a vault is in, what is wanted is how many notes are in it, and
- * a count that folds in the plugin's own files answers a different question.
+ * The function counts the contents of the vault apart from the configuration
+ * of the vault. The question "what shape is this vault in" asks how many
+ * notes the vault holds. A count that adds the files of the plugin answers a
+ * different question.
  */
 export function summarizeVault(scan: VaultScan): VaultReport {
 	const enabled = new Set(scan.enabledPlugins ?? []);
@@ -190,9 +205,10 @@ export function summarizeVault(scan: VaultScan): VaultReport {
 }
 
 /**
- * The probe's results files, newest name first. The instant a run finished
- * is in the file's own name, so the listing needs no clock and no stat: it
- * reads what the probe wrote there.
+ * The results files of the probe, with the newest name first. The name of
+ * each file holds the instant when that run finished. Therefore the listing
+ * needs no clock and no stat call. The listing reads what the probe wrote in
+ * the name.
  */
 export function readResultsFiles(files: readonly string[]): ResultsFile[] {
 	const prefix = `${PROBE_FOLDER}/`;
@@ -208,7 +224,7 @@ export function readResultsFiles(files: readonly string[]): ResultsFile[] {
 		.map((name) => ({ name, timestamp: readStamp(name) }));
 }
 
-/** The instant in a results file's name, read back as a plain one. */
+/** The instant in the name of a results file, in a plain form. */
 function readStamp(name: string): string | null {
 	const match = RESULTS_NAME.exec(name);
 	if (match === null) {
@@ -223,7 +239,7 @@ function readStamp(name: string): string | null {
 	return `${day} ${hour}Z`;
 }
 
-/** Whether two runs of bytes are the same run of bytes. */
+/** Whether two sequences of bytes are the same. */
 function sameBytes(left: Uint8Array, right: Uint8Array): boolean {
 	if (left.length !== right.length) {
 		return false;
@@ -232,9 +248,9 @@ function sameBytes(left: Uint8Array, right: Uint8Array): boolean {
 }
 
 /**
- * A word from the list. The draw is clamped rather than trusted, so a
- * source returning exactly 1, or anything outside the unit interval, still
- * names a word instead of nothing.
+ * A word from the list. The function clamps the draw and does not trust it.
+ * Therefore a source that answers exactly 1, or a value outside the unit
+ * interval, still gives a word and not nothing.
  */
 function pickWord(words: readonly string[], random: () => number): string {
 	const drawn = random();
@@ -251,7 +267,10 @@ function pickWord(words: readonly string[], random: () => number): string {
 	return word;
 }
 
-/** A character named so it can be read aloud, including the invisible ones. */
+/**
+ * A character in a form that a person can read aloud. This includes the
+ * characters that are invisible.
+ */
 function describeCharacter(character: string): string {
 	if (/\s/.test(character)) {
 		return 'a space';
@@ -259,7 +278,7 @@ function describeCharacter(character: string): string {
 	return `"${character}"`;
 }
 
-/** Items said as a list: one, two and three. */
+/** Items as a list in text: one, two and three. */
 export function listPhrase(items: readonly string[]): string {
 	if (items.length <= 1) {
 		return items.join('');
@@ -269,9 +288,9 @@ export function listPhrase(items: readonly string[]): string {
 }
 
 /**
- * The words a generated name is built from. They are meant to be pleasant
- * to read and to say over a desk, since a name from here ends up in a
- * window title, a path, and whatever the owner writes a result down in.
+ * The words that make a generated name. The words must be pleasant to read
+ * and to say over a desk. A name from this list goes into a window title,
+ * into a path, and into the notes where the owner writes a result.
  */
 const ADJECTIVES = words(`
 	amber azure brisk calm candid clear coastal copper crisp deft distant
@@ -288,7 +307,7 @@ const NOUNS = words(`
 	ridge river summit terrace thicket valley willow
 `);
 
-/** A written-out block of words as the list it reads as. */
+/** A block of written-out words, as the list of those words. */
 function words(block: string): readonly string[] {
 	return block.trim().split(/\s+/);
 }
