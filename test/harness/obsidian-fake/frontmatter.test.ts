@@ -8,25 +8,25 @@ import {
 } from './frontmatter';
 
 const leaveUnchanged = (): void => {
-	/* an identity update */
+	/* The body is empty on purpose: this update makes no change. */
 };
 
 describe('splitting a note', () => {
-	it('splits a note that opens with a block', () => {
+	it('splits a note that starts with a block', () => {
 		expect(splitNote('---\ntitle: One\n---\nbody\n')).toEqual({
 			yaml: 'title: One\n',
 			body: 'body\n',
 		});
 	});
 
-	it('reads an empty block as an empty block, not as absent', () => {
+	it('reads an empty block as an empty block, and not as a missing block', () => {
 		expect(splitNote('---\n---\nbody\n')).toEqual({
 			yaml: '',
 			body: 'body\n',
 		});
 	});
 
-	it('stops at the first closing delimiter and copies the rest', () => {
+	it('stops at the first closing --- line and copies the text after that line', () => {
 		const note = noteFixture('body-with-dashes').content;
 		const split = splitNote(note);
 		expect(split.yaml).toBe('title: Thematic breaks\n');
@@ -34,7 +34,7 @@ describe('splitting a note', () => {
 		expect(`---\n${split.yaml ?? ''}---\n${split.body}`).toBe(note);
 	});
 
-	it('treats a note without an opening delimiter as all body', () => {
+	it('gives the full note as the body when there is no opening --- line', () => {
 		const note = noteFixture('no-frontmatter').content;
 		expect(splitNote(note)).toEqual({ yaml: null, body: note });
 		expect(splitNote('no break at all')).toEqual({
@@ -43,19 +43,19 @@ describe('splitting a note', () => {
 		});
 	});
 
-	it('treats an unterminated block as all body', () => {
+	it('gives the full note as the body when no --- line closes the block', () => {
 		const note = '---\ntitle: One\n\nbody without a close\n';
 		expect(splitNote(note)).toEqual({ yaml: null, body: note });
 	});
 
-	it('accepts delimiters that end with a carriage return', () => {
+	it('accepts --- lines that end with a carriage return', () => {
 		expect(splitNote('---\r\ntitle: One\r\n---\r\nbody\r\n')).toEqual({
 			yaml: 'title: One\r\n',
 			body: 'body\r\n',
 		});
 	});
 
-	it('accepts a closing delimiter on the last line without a break', () => {
+	it('accepts a closing --- line that has no line break after it', () => {
 		expect(splitNote('---\ntitle: One\n---')).toEqual({
 			yaml: 'title: One\n',
 			body: '',
@@ -71,7 +71,7 @@ describe('reading frontmatter', () => {
 		});
 	});
 
-	it('reads a block holding nothing as an empty mapping', () => {
+	it('reads an empty block and a block of only comments as an empty mapping', () => {
 		expect(
 			readFrontmatter(noteFixture('empty-frontmatter').content),
 		).toEqual({ kind: 'mapping', data: {} });
@@ -81,7 +81,7 @@ describe('reading frontmatter', () => {
 		});
 	});
 
-	it('reads a missing block as absent', () => {
+	it('reads a note that has no block as absent', () => {
 		expect(readFrontmatter(noteFixture('no-frontmatter').content)).toEqual({
 			kind: 'absent',
 		});
@@ -97,7 +97,7 @@ describe('reading frontmatter', () => {
 		expect(read.kind).toBe('invalid');
 	});
 
-	it('keeps the shapes the corpus was built from', () => {
+	it('reads each scalar type and each list shape that the corpus holds', () => {
 		const scalars = readFrontmatter(noteFixture('scalars').content);
 		expect(scalars).toEqual({
 			kind: 'mapping',
@@ -135,8 +135,8 @@ describe('reading frontmatter', () => {
 	});
 });
 
-describe('the frontmatter writer canon', () => {
-	it('holds parsed keys in place and appends what the update adds', () => {
+describe('the rules of the frontmatter writer', () => {
+	it('keeps the keys of the note in place and puts new keys at the end', () => {
 		const note = noteFixture('key-order-reverse').content;
 		const written = writeFrontmatter(note, (frontmatter) => {
 			frontmatter.beta = 'rewritten';
@@ -147,7 +147,7 @@ describe('the frontmatter writer canon', () => {
 		);
 	});
 
-	it('drops a key that is deleted or set to undefined', () => {
+	it('removes a key that the update deletes or sets to undefined', () => {
 		const written = writeFrontmatter(
 			noteFixture('key-order-alpha').content,
 			(frontmatter) => {
@@ -158,7 +158,7 @@ describe('the frontmatter writer canon', () => {
 		expect(splitNote(written).yaml).toBe('gamma: third\n');
 	});
 
-	it('copies the body through byte for byte', () => {
+	it('copies the body byte for byte', () => {
 		const note = noteFixture('body-with-dashes').content;
 		const written = writeFrontmatter(note, (frontmatter) => {
 			frontmatter.added = true;
@@ -166,7 +166,7 @@ describe('the frontmatter writer canon', () => {
 		expect(splitNote(written).body).toBe(splitNote(note).body);
 	});
 
-	it('rebuilds the block without the comments the note carried', () => {
+	it('builds the block again and keeps no comment that the note had', () => {
 		const written = writeFrontmatter(
 			noteFixture('comments').content,
 			leaveUnchanged,
@@ -176,7 +176,7 @@ describe('the frontmatter writer canon', () => {
 		);
 	});
 
-	it('quotes only what plain style cannot hold, and never folds a line', () => {
+	it('uses quotes only if plain style cannot hold the value, and never breaks a long line', () => {
 		const written = writeFrontmatter(
 			noteFixture('quote-styles').content,
 			leaveUnchanged,
@@ -201,7 +201,7 @@ describe('the frontmatter writer canon', () => {
 		);
 	});
 
-	it('writes collections in block style, empty ones in flow style', () => {
+	it('writes a collection that has items in block style, and an empty collection in flow style', () => {
 		const written = writeFrontmatter(
 			noteFixture('lists').content,
 			leaveUnchanged,
@@ -230,7 +230,7 @@ describe('the frontmatter writer canon', () => {
 		);
 	});
 
-	it('repeats a shared value instead of emitting an anchor', () => {
+	it('writes a shared value two times and does not write an anchor', () => {
 		const shared = { name: 'Ren' };
 		const written = writeFrontmatter('---\n---\nbody\n', (frontmatter) => {
 			frontmatter.organizer = shared;
@@ -241,7 +241,7 @@ describe('the frontmatter writer canon', () => {
 		);
 	});
 
-	it('adds a block to a note that had none', () => {
+	it('adds a block to a note that has no block', () => {
 		const note = noteFixture('no-frontmatter').content;
 		const written = writeFrontmatter(note, (frontmatter) => {
 			frontmatter.title = 'Added';
@@ -249,7 +249,7 @@ describe('the frontmatter writer canon', () => {
 		expect(written).toBe(`---\ntitle: Added\n---\n${note}`);
 	});
 
-	it('keeps an empty block, and adds none where there was none', () => {
+	it('keeps an empty block when the note had a block, and adds no block when the note had no block', () => {
 		const kept = writeFrontmatter(
 			noteFixture('key-order-alpha').content,
 			(frontmatter) => {
@@ -266,7 +266,7 @@ describe('the frontmatter writer canon', () => {
 		expect(writeFrontmatter(note, leaveUnchanged)).toBe(note);
 	});
 
-	it('refuses a block it cannot read as a mapping', () => {
+	it('refuses a block that the writer cannot read as a mapping', () => {
 		expect(() =>
 			writeFrontmatter(
 				noteFixture('unparseable').content,
@@ -282,8 +282,8 @@ describe('the frontmatter writer canon', () => {
 	});
 });
 
-describe('writer determinism over the corpus', () => {
-	it('writes byte-identical output for identical input', () => {
+describe('the writer over the whole corpus', () => {
+	it('writes the same bytes for the same input', () => {
 		for (const note of NOTE_FIXTURES) {
 			if (readFrontmatter(note.content).kind === 'invalid') {
 				continue;
@@ -298,7 +298,7 @@ describe('writer determinism over the corpus', () => {
 		}
 	});
 
-	it('settles after one write: writing again changes nothing', () => {
+	it('changes nothing when the writer writes an already written note again', () => {
 		for (const note of NOTE_FIXTURES) {
 			if (readFrontmatter(note.content).kind === 'invalid') {
 				continue;
@@ -309,8 +309,8 @@ describe('writer determinism over the corpus', () => {
 	});
 });
 
-describe('writer canon: integer-like keys', () => {
-	it('sorts integer-index keys to the front, double-quoted', () => {
+describe('the writer and keys that look like integers', () => {
+	it('writes keys that look like array indexes first, and in double quotes', () => {
 		const note = '---\ntitle: T\nzeta: 1\n---\nbody\n';
 		const written = writeFrontmatter(note, (frontmatter) => {
 			frontmatter['2026'] = 'year';
@@ -321,7 +321,7 @@ describe('writer canon: integer-like keys', () => {
 		);
 	});
 
-	it('leaves keys that only resemble numbers in insertion order', () => {
+	it('keeps keys that only look like numbers in the order of insertion', () => {
 		const note = '---\ntitle: T\n---\nbody\n';
 		const written = writeFrontmatter(note, (frontmatter) => {
 			frontmatter['-1'] = 'a';
@@ -334,8 +334,8 @@ describe('writer canon: integer-like keys', () => {
 	});
 });
 
-describe('writer canon: unrepresentable values', () => {
-	it('reports them as frontmatter errors, not library errors', () => {
+describe('the writer and values that the writer cannot write', () => {
+	it('throws a frontmatter error for a value that it cannot write, and not a library error', () => {
 		const note = '---\ntitle: T\n---\nbody\n';
 		expect(() =>
 			writeFrontmatter(note, (frontmatter) => {

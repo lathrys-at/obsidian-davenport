@@ -15,22 +15,40 @@ import {
 } from './ics-lines';
 
 /**
- * The contract between the writer and the reader: folding a content line and
- * unfolding the result gives the line back. Neither module can assert it
- * alone. The corpus supplies the characters that make folding hard —
- * multi-octet runs, escape sequences, quoted parameters, continuations opened
- * with a tab — and each of its lines is also widened past the octet limit, so
- * every category drives the fold itself rather than only the identity path.
+ * Tests the agreement between the iCalendar writer and the iCalendar reader.
+ * The writer folds a content line that is longer than the octet limit. The
+ * fold makes two or more physical lines. The reader joins the physical lines
+ * back into one logical line. The agreement is that the reader gives back the
+ * line that the writer folded, character for character. The writer and the
+ * reader are different modules, and neither module can test this agreement
+ * alone.
+ *
+ * The ICS corpus supplies the characters that make a fold difficult:
+ * - characters of more than one octet;
+ * - escape sequences;
+ * - quoted parameters;
+ * - continuations that start with a tab.
+ *
+ * The test also makes every corpus line longer than the octet limit. A line
+ * that is short enough needs no fold, and the writer gives such a line back
+ * unchanged. Therefore the longer line makes the writer fold a line in every
+ * category of the corpus.
  */
 
 const utf8 = new TextDecoder('utf-8', { fatal: true });
 
-/** The logical content lines of a stored fixture. */
+/**
+ * The logical content lines of an iCalendar text. The function undoes every
+ * fold in the text.
+ */
 function logicalLinesOf(text: string): string[] {
 	return icsLogicalLines(icsPhysicalLines(text));
 }
 
-/** The line repeated until the writer has no choice but to fold it. */
+/**
+ * The given line, joined to copies of itself until the result is longer than
+ * the octet limit. The writer must fold a line of this length.
+ */
 function widened(line: string): string {
 	let wide = line;
 	do {
@@ -40,10 +58,13 @@ function widened(line: string): string {
 }
 
 /**
- * Folds one logical line and reads it back, checking the physical lines in
- * between: each within the octet limit, each continuation marked, and each
- * one valid UTF-8 on its own, which is what a fold splitting a multi-octet
- * sequence would break.
+ * Folds one logical line, reads the physical lines back into one logical
+ * line, and returns that line. The function checks three rules between the
+ * fold and the read. Each physical line must be no longer than the octet
+ * limit. Each physical line after the first must start as a continuation.
+ * Each physical line must be valid UTF-8 on its own. A fold that divided the
+ * octets of one character across two lines would break the UTF-8 rule. After
+ * the read, the physical lines must give back one logical line and no more.
  */
 function refold(line: string): string {
 	const physical = foldIcsLine(line);
@@ -59,9 +80,9 @@ function refold(line: string): string {
 	return read ?? '';
 }
 
-describe('folding and unfolding round trip', () => {
+describe('folding a line and unfolding it again', () => {
 	for (const category of ICS_CATEGORIES) {
-		it(`recovers every ${category} line, as it stands and widened`, () => {
+		it(`gives back every ${category} line, as stored and made long enough to fold`, () => {
 			const fixtures = icsFixturesFor(category);
 			expect(fixtures).not.toHaveLength(0);
 			let folded = 0;
@@ -79,7 +100,7 @@ describe('folding and unfolding round trip', () => {
 		});
 	}
 
-	it('recovers a whole fixture written back out as one text', () => {
+	it('writes a whole fixture as one text and reads every line back', () => {
 		for (const category of ICS_CATEGORIES) {
 			for (const fixture of icsFixturesFor(category)) {
 				const lines = logicalLinesOf(fixture.content);
@@ -94,7 +115,7 @@ describe('folding and unfolding round trip', () => {
 		}
 	});
 
-	it('recovers generated lines long enough to fold, whatever they carry', () => {
+	it('gives back a generated line long enough to fold, whatever characters it holds', () => {
 		fc.assert(
 			fc.property(
 				fc.string({

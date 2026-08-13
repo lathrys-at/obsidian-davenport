@@ -1,16 +1,21 @@
 /**
- * Event identity: the pair (collection href, UID) — the pair, not the UID
- * alone. CalDAV guarantees UID uniqueness only per collection, and iTIP
- * scheduling deliberately delivers the same UID to every attendee's
- * collection; one UID in two synced collections is two records.
+ * The identity of an event. The identity is a pair: the href of the
+ * collection, and the UID. The UID alone is not the identity.
+ *
+ * CalDAV promises that a UID is unique inside one collection only. iTIP
+ * scheduling sends the same UID to the collection of every attendee, and
+ * it does so by design. Therefore, when the plugin syncs two collections
+ * that both hold the same UID, the plugin holds two records.
  */
 export interface EventIdentity {
 	readonly collectionHref: string;
 	/**
-	 * UID minted by the plugin for vault-originated events, read from the
-	 * server for inbound ones, or synthesized from content for feed events
-	 * lacking one. Whatever its origin, it occupies the UID position of the
-	 * pair everywhere.
+	 * The UID of the event. The UID comes from one of three sources. The
+	 * plugin creates the UID for an event that starts in the vault. The
+	 * plugin reads the UID from the server for an event that comes in from
+	 * the server. The plugin builds the UID from the content of a feed
+	 * event when that event carries no UID. The source makes no difference
+	 * afterwards: the UID always fills the UID half of the pair.
 	 */
 	readonly uid: string;
 }

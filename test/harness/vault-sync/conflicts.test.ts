@@ -19,8 +19,10 @@ interface Diverged {
 }
 
 /**
- * Both devices edit the seeded file without seeing each other, which is
- * the state every resolution below has to answer for.
+ * Makes a divergence. Device `a` and device `b` each write the seeded
+ * file, and neither device sees the write of the other device. Every
+ * resolution that this file tests must handle this state. The function
+ * returns the channel and the clock that the channel uses.
  */
 async function diverge(
 	profile: SyncToolProfile,
@@ -51,13 +53,15 @@ function only(landed: readonly LandedDelivery[]): LandedDelivery {
 	expect(landed).toHaveLength(1);
 	const [first] = landed;
 	if (first === undefined) {
-		throw new Error('expected one landed delivery');
+		throw new Error(
+			'the list of landed deliveries has one entry, but the entry is not a delivery',
+		);
 	}
 	return first;
 }
 
 describe('vault-sync conflict copies', () => {
-	it('names the copy by the profile pattern and lands the delivery', async () => {
+	it('names the copy from the pattern of the profile and writes the delivered content to the record path', async () => {
 		const { channel } = await diverge(syncToolProfile('syncthing'));
 		const landed = only(await channel.deliver({ from: 'a', to: 'b' }));
 		expect(landed.outcome).toBe('conflict-copy');
@@ -71,7 +75,7 @@ describe('vault-sync conflict copies', () => {
 		).toBe('from b\n');
 	});
 
-	it('numbers a counted pattern past a copy already there', async () => {
+	it('takes the next number when the pattern has a counter and a copy is already there', async () => {
 		const { channel } = await diverge(syncToolProfile('icloud-drive'));
 		expect(
 			only(await channel.deliver({ from: 'a', to: 'b' })).conflictPath,
@@ -83,7 +87,7 @@ describe('vault-sync conflict copies', () => {
 		).toBe('records/abc123 3.md');
 	});
 
-	it('numbers an uncounted pattern that renders the same name twice', async () => {
+	it('adds a number when a pattern without a counter renders the same name twice', async () => {
 		const profile: SyncToolProfile = {
 			id: 'timestamped',
 			conflictCopyPattern:
@@ -105,7 +109,7 @@ describe('vault-sync conflict copies', () => {
 		).toBe('records/abc123 (conflicted copy 20260101-000100) 2.md');
 	});
 
-	it('keeps the copy at the time of the content it holds', async () => {
+	it('keeps the copy at the time of the content that the copy holds', async () => {
 		const { channel, clock } = await diverge(
 			syncToolProfile('icloud-drive'),
 		);
@@ -119,7 +123,7 @@ describe('vault-sync conflict copies', () => {
 		);
 	});
 
-	it('names a copy after the time of the content it moves aside', async () => {
+	it('names the copy after the time of the content that the copy moves aside', async () => {
 		const clock = new ControlledClock();
 		const channel = new VaultSyncChannel({
 			devices: ['a', 'b'],
@@ -143,7 +147,7 @@ describe('vault-sync conflict copies', () => {
 });
 
 describe('vault-sync divergence resolution', () => {
-	it('overwrites where the profile says so', async () => {
+	it('overwrites the local content when the profile says overwrite', async () => {
 		const profile: SyncToolProfile = {
 			...syncToolProfile('syncthing'),
 			divergentDelivery: 'overwrite',
@@ -155,7 +159,7 @@ describe('vault-sync divergence resolution', () => {
 		expect(channel.device('b').paths()).toEqual([RECORD]);
 	});
 
-	it('merges where the profile merges', async () => {
+	it('merges the two sides when the profile says merge', async () => {
 		const { channel } = await diverge(
 			syncToolProfile('obsidian-sync'),
 			lineMergeMangler(),
@@ -170,7 +174,7 @@ describe('vault-sync divergence resolution', () => {
 		);
 	});
 
-	it('falls back to a copy where the merge declines', async () => {
+	it('makes a conflict copy when the merge declines', async () => {
 		const { channel } = await diverge(
 			syncToolProfile('obsidian-sync'),
 			declineMerge,
@@ -182,7 +186,7 @@ describe('vault-sync divergence resolution', () => {
 		);
 	});
 
-	it('merges the way the profile says and lets the channel override it', async () => {
+	it('uses the merger of the profile, and lets a merger given to the channel win', async () => {
 		const profile: SyncToolProfile = {
 			...syncToolProfile('obsidian-sync'),
 			merger: () => 'from the profile\n',
@@ -202,14 +206,14 @@ describe('vault-sync divergence resolution', () => {
 		).toBe('conflict-copy');
 	});
 
-	it('overwrites where the merge declines and the profile makes no copies', async () => {
+	it('overwrites the local content when the merge declines and the profile makes no copies', async () => {
 		const { channel } = await diverge(syncToolProfile('git'), declineMerge);
 		const landed = only(await channel.deliver({ from: 'a', to: 'b' }));
 		expect(landed.outcome).toBe('overwritten');
 		expect(channel.device('b').paths()).toEqual([RECORD]);
 	});
 
-	it('treats independent creation of one path as a divergence', async () => {
+	it('treats the creation of one path on two devices, where neither device sees the write of the other device, as a divergence', async () => {
 		const clock = new ControlledClock();
 		const channel = new VaultSyncChannel({
 			devices: ['a', 'b'],
@@ -223,7 +227,7 @@ describe('vault-sync divergence resolution', () => {
 		expect(await channel.device('b').read(RECORD)).toBe('from a\n');
 	});
 
-	it('restores a file the destination deleted under a remote edit', async () => {
+	it('brings back a file that the origin edited and the destination deleted', async () => {
 		const clock = new ControlledClock();
 		const channel = new VaultSyncChannel({
 			devices: ['a', 'b'],
@@ -250,9 +254,11 @@ describe('vault-sync divergence winner', () => {
 	];
 
 	/**
-	 * Both devices edit the seeded file without seeing each other, `a`
-	 * later than `b`, and everything either of them has to say is
-	 * delivered until nothing is left in flight.
+	 * Makes a divergence and then delivers everything. Device `a` and
+	 * device `b` each write the seeded file, and neither device sees the
+	 * write of the other device. Device `a` writes after device `b`. The
+	 * function then delivers the pending deliveries again and again,
+	 * until no delivery is left. The function returns the channel.
 	 */
 	async function toExhaustion(
 		profile: SyncToolProfile,
@@ -276,7 +282,7 @@ describe('vault-sync divergence winner', () => {
 
 	for (const profile of profiles) {
 		for (const propagate of [false, true]) {
-			it(`converges on one set of bytes under ${profile.id}, copies ${propagate ? '' : 'not '}propagated`, async () => {
+			it(`converges on the same bytes under ${profile.id} when copy propagation is ${propagate ? 'on' : 'off'}`, async () => {
 				const channel = await toExhaustion({
 					...profile,
 					propagateConflictCopies: propagate,
@@ -297,7 +303,7 @@ describe('vault-sync divergence winner', () => {
 		}
 	}
 
-	it('keeps the local side where it wrote last', async () => {
+	it('keeps the local content when the local device wrote after the origin', async () => {
 		const clock = new ControlledClock();
 		const channel = new VaultSyncChannel({
 			devices: ['a', 'b'],
@@ -316,7 +322,7 @@ describe('vault-sync divergence winner', () => {
 		expect(await channel.device('b').read(RECORD)).toBe('from b\n');
 	});
 
-	it('takes the one-sided rules where a profile names one', async () => {
+	it('gives the path to the side that the profile names, incoming or local', async () => {
 		for (const [winner, expected] of [
 			['incoming', 'from a\n'],
 			['local', 'from b\n'],
@@ -359,7 +365,7 @@ describe('vault-sync three-way divergence', () => {
 		return channel;
 	}
 
-	it('settles a fourth device the same way whatever order it sees', async () => {
+	it('leaves a fourth device with the same bytes in every arrival order', async () => {
 		const seen = new Set<string>();
 		for (const order of [
 			['a', 'b', 'c'],
@@ -381,7 +387,7 @@ describe('vault-sync three-way divergence', () => {
 		expect(seen.size).toBe(1);
 	});
 
-	it('leaves every device on the same bytes once everything lands', async () => {
+	it('leaves every device with the same bytes after every delivery lands', async () => {
 		const channel = await raceOnThree(['a', 'b', 'c', 'd']);
 		while (channel.pending().length > 0) {
 			await channel.deliver();
@@ -400,7 +406,7 @@ describe('vault-sync conflict-copy propagation', () => {
 		return { ...syncToolProfile(id), propagateConflictCopies: true };
 	}
 
-	it('leaves the copy where it was made by default', async () => {
+	it('leaves the copy on the device that made the copy, by default', async () => {
 		const { channel } = await diverge(syncToolProfile('syncthing'));
 		expect(
 			only(await channel.deliver({ from: 'a', to: 'b' })).conflictPath,
@@ -409,7 +415,7 @@ describe('vault-sync conflict-copy propagation', () => {
 		expect(channel.device('a').paths()).toEqual([RECORD]);
 	});
 
-	it('sends the copy to the peers where the profile propagates', async () => {
+	it('sends the copy to the peers when the profile propagates copies', async () => {
 		const { channel } = await diverge(propagating('syncthing'));
 		expect(
 			only(await channel.deliver({ from: 'a', to: 'b' })).conflictPath,
@@ -423,7 +429,7 @@ describe('vault-sync conflict-copy propagation', () => {
 		expect(channel.device('a').paths()).toEqual([RECORD, COPY_FROM_B]);
 	});
 
-	it('carries a propagated copy once and never breeds another', async () => {
+	it('carries a propagated copy once and makes no new copy from that copy', async () => {
 		const { channel } = await diverge(propagating('syncthing'));
 		await channel.deliver();
 		expect(
@@ -441,7 +447,7 @@ describe('vault-sync conflict-copy propagation', () => {
 		expect(channel.converged()).toBe(true);
 	});
 
-	it('drops a copy onto a name another device gave other content', async () => {
+	it('discards a copy when the destination already holds other content at that name', async () => {
 		const clock = new ControlledClock();
 		const channel = new VaultSyncChannel({
 			devices: ['a', 'b', 'c'],
@@ -469,7 +475,7 @@ describe('vault-sync conflict-copy propagation', () => {
 });
 
 describe('vault-sync divergent deletion', () => {
-	it('keeps a locally edited file a copying profile would not destroy', async () => {
+	it('keeps the local edit when the origin deletes the file and the profile makes copies', async () => {
 		const clock = new ControlledClock();
 		const channel = new VaultSyncChannel({
 			devices: ['a', 'b'],
@@ -484,7 +490,7 @@ describe('vault-sync divergent deletion', () => {
 		expect(await channel.device('b').read(RECORD)).toBe('from b\n');
 	});
 
-	it('applies the deletion where the profile overwrites', async () => {
+	it('applies the deletion when the profile says overwrite', async () => {
 		const clock = new ControlledClock();
 		const channel = new VaultSyncChannel({
 			devices: ['a', 'b'],
@@ -503,7 +509,7 @@ describe('vault-sync divergent deletion', () => {
 		expect(channel.device('b').paths()).toEqual([]);
 	});
 
-	it('names a deletion of a file already gone as converged', async () => {
+	it('names the outcome converged when the origin deletes a file that the destination already deleted', async () => {
 		const clock = new ControlledClock();
 		const channel = new VaultSyncChannel({
 			devices: ['a', 'b'],

@@ -1,7 +1,8 @@
 /**
- * What one poll of a feed serves. A variant is data, not a callback: the
- * fixture renders it against the poll counter and the caller's reference
- * time, so the same declaration always produces the same octets.
+ * A variant states what one poll of a feed serves. A variant is data, and not
+ * a callback. The fixture renders the variant from the poll counter and from
+ * the reference time that the caller gives. The same declaration therefore
+ * always produces the same octets.
  */
 
 import { encodeIcsBytes } from '../ics-octets';
@@ -10,11 +11,17 @@ import { instantLine } from './events';
 import { escapeIcsText, icsText, icsUtcStamp } from './ics-text';
 
 export interface FeedVariantContext {
-	/** One-based count of polls this feed has served, this one included. */
+	/** The number of the poll that the feed serves now. The first poll is 1. */
 	readonly poll: number;
-	/** Epoch milliseconds every generated stamp derives from. */
+	/**
+	 * The reference time, in epoch milliseconds. Every generated stamp
+	 * derives from this time.
+	 */
 	readonly referenceTime: number;
-	/** How far DTSTAMP advances per poll when the feed churns it. */
+	/**
+	 * How much DTSTAMP advances from one poll to the next, on a feed that
+	 * changes DTSTAMP.
+	 */
 	readonly churnStepMs: number;
 }
 
@@ -25,20 +32,27 @@ export interface ServedBody {
 }
 
 export interface EventsVariantOptions {
-	/** Re-stamps DTSTAMP on every poll, deriving it from the poll counter. */
+	/**
+	 * Writes a new DTSTAMP on every poll. The new value derives from the poll
+	 * counter.
+	 */
 	readonly dtstampChurn?: boolean;
 	/**
-	 * Mints a fresh UID for every event on every poll, keyed by the UID the
-	 * event declares: two events declaring one UID are served one minted UID,
-	 * so an in-feed duplicate stays a duplicate. An event declaring no UID
-	 * still serves no UID line.
+	 * Mints a new UID for every event on every poll. To mint a UID is to make
+	 * a UID that no earlier poll served. The fixture keys each minted UID by
+	 * the UID that the event declares. Two events that declare one UID get one
+	 * minted UID. Two duplicate events in one feed therefore stay duplicates.
+	 * An event that declares no UID still serves no UID line.
 	 */
 	readonly uidReminting?: boolean;
 	readonly prodId?: string;
 	readonly calendarName?: string;
 }
 
-/** Where a truncated body is cut, measured in octets of the whole body. */
+/**
+ * Where the fixture cuts a truncated body. The fixture measures the cut
+ * against the octets of the whole body.
+ */
 export type TruncationPoint =
 	| { readonly kind: 'octets'; readonly value: number }
 	| { readonly kind: 'fraction'; readonly value: number };
@@ -71,9 +85,9 @@ const DEFAULT_PROD_ID = '-//Davenport//Feed fixture//EN';
 const CALENDAR_CONTENT_TYPE = 'text/calendar; charset=utf-8';
 
 /**
- * The page a captive portal or expired session serves in place of the feed:
- * HTTP 200 carrying HTML. It is a constant so its octets are stable across
- * runs.
+ * The page that a captive portal or an expired session serves in place of the
+ * feed. The server sends this HTML page with the status HTTP 200. The page is
+ * a constant, so its octets stay the same across runs.
  */
 export const LOGIN_WALL_HTML = [
 	'<!doctype html>',
@@ -87,7 +101,7 @@ export const LOGIN_WALL_HTML = [
 	'',
 ].join('\n');
 
-/** A full calendar built from the given events. */
+/** Builds a variant that serves a full calendar with the given events. */
 export function events(
 	specs: readonly FeedEventSpec[],
 	options: EventsVariantOptions = {},
@@ -95,12 +109,18 @@ export function events(
 	return { kind: 'events', events: specs, options };
 }
 
-/** A well-formed VCALENDAR carrying no components. */
+/**
+ * Builds a variant that serves a correctly formed VCALENDAR with no
+ * components.
+ */
 export function emptyCalendar(options: EventsVariantOptions = {}): FeedVariant {
 	return { kind: 'empty', options };
 }
 
-/** Another variant's body, cut short mid-file. */
+/**
+ * Builds a variant that serves the body of another variant, cut short in the
+ * middle of the file.
+ */
 export function truncated(
 	inner: FeedVariant,
 	keep: TruncationPoint = { kind: 'fraction', value: 0.5 },
@@ -126,7 +146,10 @@ export function loginWall(
 	};
 }
 
-/** Bytes served exactly as handed over, for replaying a stored body. */
+/**
+ * Builds a variant that serves the given bytes without a change. Use it to
+ * replay a stored body.
+ */
 export function raw(
 	body: string | Uint8Array,
 	overrides: { readonly status?: number; readonly contentType?: string } = {},
@@ -149,13 +172,14 @@ function dtstampFor(
 }
 
 /**
- * What each declared UID is served as. A re-minting generator hands out UIDs
- * bearing no trace of the previous poll's, so a consumer cannot pair polls by
- * UID text — only by content. A minted UID is derived from the position of
- * the first event declaring it rather than from each event's own position,
- * which is what keeps two events sharing a UID sharing the minted one. A feed
- * that does not re-mint declares nothing here and serves every UID as it
- * stands.
+ * Returns the map from each declared UID to the UID that the feed serves. A
+ * feed that re-mints hands out UIDs that keep no trace of the UIDs of the
+ * previous poll. A consumer therefore cannot pair two polls by UID text, and
+ * can pair them only by content. A minted UID derives from the position of
+ * the first event with that declared UID, and not from the position of each
+ * event. Two events that declare one UID therefore share one minted UID. A
+ * feed that does not re-mint puts nothing in this map, and serves every UID
+ * unchanged.
  */
 function mintedUids(
 	specs: readonly FeedEventSpec[],
@@ -240,7 +264,10 @@ function calendarBody(text: string): ServedBody {
 	};
 }
 
-/** Renders the variant to the status, headers, and octets one poll serves. */
+/**
+ * Renders the variant into the status, the headers, and the octets that one
+ * poll serves.
+ */
 export function renderVariant(
 	variant: FeedVariant,
 	context: FeedVariantContext,

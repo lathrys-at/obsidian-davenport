@@ -1,8 +1,9 @@
 /**
- * The value each WebDAV property takes for a given target. Which
- * properties a target carries is decided next door; this module knows only
- * what each one says once asked, including the ones whose presence and
- * value the capability switchboard decides.
+ * The value that each WebDAV property takes for one target. A different
+ * module decides which properties a target carries. This module knows
+ * only what each property says when a request asks for that property.
+ * This includes the properties whose presence and value the capability
+ * settings decide.
  */
 
 import type { MockServerCapabilities } from './capabilities';
@@ -19,7 +20,7 @@ import {
 	type XmlOutput,
 } from './xml';
 
-/** Null where this target does not carry the property. */
+/** Gives null when this target does not carry the property. */
 export function resolveProp(
 	out: XmlOutput,
 	target: PropTarget,
@@ -217,7 +218,10 @@ function resolveResourceProp(
 	return null;
 }
 
-/** The bytes a GET or calendar-data would return under this configuration. */
+/**
+ * Gives the bytes that a GET request or a calendar-data property returns
+ * with this configuration.
+ */
 export function servedBody(ics: string, caps: MockServerCapabilities): string {
 	return caps.getBodies === 're-serialized' ? reserialize(ics) : ics;
 }

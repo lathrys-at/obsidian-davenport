@@ -1,17 +1,23 @@
 /**
- * The run: every fixture written into the vault, put through the
- * frontmatter writer with one fixed mutation, and read back as bytes.
+ * The run. The run writes every fixture into the vault. Then the run puts
+ * each fixture through the frontmatter writer with one fixed change.
+ * Then the run reads the bytes back.
  *
- * Two things make a run comparable with a run on another device. The input
- * is identical everywhere — the corpus is embedded at build time and the
- * notes are rewritten from it before each mutation, so a second run starts
- * from the same text as the first. And the mutation is identical
- * everywhere — the same key, the same value, every fixture — so whatever
- * differs in the emitted bytes is the writer, not the input.
+ * Two conditions make a run comparable with a run on another device.
  *
- * A fixture the writer refuses is recorded and the run carries on. Losing
- * one fixture to a version that will not parse it is a result; losing the
- * other thirteen with it is not.
+ * The first condition is that the input is the same everywhere. The build
+ * puts the corpus into the bundle, and the run writes the notes again
+ * from that corpus before each change. Therefore a second run starts from
+ * the same text as the first run.
+ *
+ * The second condition is that the change is the same everywhere: the
+ * same key, the same value, and every fixture. Therefore a difference in
+ * the emitted bytes comes from the writer, and not from the input.
+ *
+ * The run records each fixture that the writer refuses, and then the run
+ * continues. The loss of one fixture to a version that will not parse
+ * that fixture is itself a result. The loss of the other thirteen
+ * fixtures at the same time is not a result.
  */
 
 import {
@@ -42,16 +48,20 @@ import type {
 	ProbeResults,
 } from './results';
 
-/** The mutation every fixture is put through, on every device. */
+/** The change that the probe makes to every fixture, on every device. */
 export const MARKER: ProbeMarker = { key: 'probe-marker', value: 'fixed' };
 
-/** How long to wait for the app to notice a note before writing to it. */
+/**
+ * How long the run waits for the app to read a note back, before the run
+ * writes to that note.
+ */
 const METADATA_WAIT_MS = 3000;
 
 /**
- * What the run needs from the plugin: the vault it works in, and the
- * cleanup registers, so that unloading mid-run takes the listener and the
- * timer with it.
+ * What the run needs from the plugin. The run needs the vault that the
+ * run works in. The run also needs the register functions that clean up.
+ * Then an unload during a run takes the listener and the timer away with
+ * the plugin.
  */
 export interface ProbeHost {
 	readonly app: App;
@@ -66,7 +76,10 @@ export interface ProbeRun {
 	readonly results: ProbeResults;
 	readonly emitted: number;
 	readonly failed: number;
-	/** Emissions whose wait ran out before the app read the note back. */
+	/**
+	 * How many samples had a wait that ran out before the app read the
+	 * note back.
+	 */
 	readonly timedOut: number;
 }
 
@@ -74,7 +87,7 @@ export interface ProbeRun {
 export async function runProbe(host: ProbeHost, now: Date): Promise<ProbeRun> {
 	if (PROBE_CORPUS.length === 0) {
 		throw new Error(
-			'the corpus is empty; this build embedded no fixtures at all',
+			'the corpus is empty, because this build put no fixtures into the bundle; build the probe again and install it again',
 		);
 	}
 	await ensureFolder(host.app, PROBE_FOLDER);
@@ -116,7 +129,10 @@ export async function runProbe(host: ProbeHost, now: Date): Promise<ProbeRun> {
 	};
 }
 
-/** One fixture: written fresh, mutated, read back as bytes. */
+/**
+ * One fixture. The function writes the note again from the text of the
+ * fixture, changes the frontmatter, and reads the bytes back.
+ */
 async function sample(
 	host: ProbeHost,
 	path: string,
@@ -144,19 +160,24 @@ async function sample(
 	};
 }
 
-/** Creates the probe folder, or accepts the one already there. */
+/** Makes the probe folder, or accepts the folder that is already there. */
 async function ensureFolder(app: App, path: string): Promise<void> {
 	const existing = app.vault.getAbstractFileByPath(path);
 	if (existing instanceof TFolder) {
 		return;
 	}
 	if (existing !== null) {
-		throw new Error(`${path} is a note, so the probe cannot use it`);
+		throw new Error(
+			`${path} is a note, and the probe needs a folder with this path; move the note away`,
+		);
 	}
 	await app.vault.createFolder(path);
 }
 
-/** Puts the fixture's own text back into the note, whatever was there. */
+/**
+ * Puts the text of the fixture back into the note, and replaces whatever
+ * the note held before.
+ */
 async function writePristine(
 	app: App,
 	path: string,
@@ -168,23 +189,28 @@ async function writePristine(
 		return existing;
 	}
 	if (existing !== null) {
-		throw new Error(`${path} is a folder, so the probe cannot use it`);
+		throw new Error(
+			`${path} is a folder, and the probe needs a note with this path; move the folder away`,
+		);
 	}
 	return await app.vault.create(path, content);
 }
 
 /**
- * Resolves once the app has read this path back, so the writer works from
- * the note as it now stands rather than as it stood before. The listener
- * goes on before the write, because the app can be quicker than the await
- * that follows it. A wait that runs out resolves anyway and says so: a
- * stale cache is worth recording, a hung command is not.
+ * The promise resolves when the app reads this path back. Then the writer
+ * works from the note as the note now is, and not as the note was before.
+ * The function starts the listener before the write, because the app can
+ * be quicker than the `await` that comes after the write. A wait that
+ * runs out also resolves, and the value it gives is `timeout`: a stale
+ * cache is worth a record, but a command that hangs is not.
  *
- * Both the listener and the fallback timer are handed to the plugin's
- * registers, which take them down if it unloads mid-run — a timer and an
- * interval share one set of ids, so the interval register cancels this
- * one. Whichever arrives first also clears the other here, so a run that
- * finishes normally leaves nothing behind either way.
+ * The function gives both the listener and the fallback timer to the
+ * register functions of the plugin. Then an unload during a run takes
+ * both of them down. The identifier of a timeout and the identifier of an
+ * interval come from one set. Therefore the register function for an
+ * interval cancels this timeout. The event or the timeout that arrives
+ * first also clears the other one here. Therefore a run that finishes
+ * normally leaves nothing behind, on both paths.
  */
 function metadataSettles(
 	host: ProbeHost,
@@ -217,7 +243,7 @@ function metadataSettles(
 	});
 }
 
-/** Writes the results file under a name no other run has taken. */
+/** Writes the results file with a name that no other run took. */
 async function writeResults(
 	app: App,
 	results: ProbeResults,

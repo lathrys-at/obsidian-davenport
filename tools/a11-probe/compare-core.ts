@@ -1,15 +1,18 @@
 /**
- * Reading results files and comparing them.
+ * Reads results files and compares them.
  *
- * Everything here is a pure function over the parsed files: the script
- * beside it does the reading and the printing. The comparison is over
- * bytes, not over hashes — a recorded hash is checked against the bytes it
- * claims to cover and reported when it does not match, so a truncated or
- * hand-edited file says so rather than passing as agreement.
+ * Each function here is a pure function on the parsed files. The script
+ * beside this module reads the files from disk and prints the report.
  *
- * Errors are reported, never compared. A version that refuses a fixture
- * everywhere has behaved consistently; the wording it refuses with is not
- * evidence about emitted bytes.
+ * The comparison uses the recorded bytes, and not the recorded hashes.
+ * The module also checks each recorded hash against the bytes that the
+ * file records under that hash. The module reports a hash that does not
+ * match. Thus a file that is truncated or edited by hand reports the
+ * problem, and does not pass as agreement.
+ *
+ * The module reports errors, and never compares them. A version that
+ * refuses a fixture in every environment behaved consistently. The words
+ * of the refusal are not evidence about emitted bytes.
  */
 
 import { Buffer } from 'node:buffer';
@@ -22,11 +25,11 @@ const DUMP_ROW = 16;
 const DUMP_ROWS_BEFORE = 1;
 const DUMP_ROWS_AFTER = 1;
 
-/** One results file, as the caller wants it named in the report. */
+/** One results file, with the name that the caller wants in the report. */
 export interface LoadedRun {
-	/** The short name the report refers to this environment by. */
+	/** The short name that the report uses for this environment. */
 	readonly label: string;
-	/** Where the file came from, for the legend. */
+	/** Where the file came from. The legend shows this text. */
 	readonly source: string;
 	readonly results: ProbeResults;
 }
@@ -36,7 +39,7 @@ export type FixtureOutcome =
 
 export type Verdict = 'agree' | 'diverge' | 'incomparable';
 
-/** The environments that emitted one and the same output. */
+/** The environments that emitted exactly the same output. */
 export interface OutputGroup {
 	readonly hash: string;
 	readonly byteLength: number;
@@ -48,12 +51,12 @@ export interface FixtureError {
 	readonly message: string;
 }
 
-/** Where two outputs part company, and what they look like there. */
+/** Where two outputs start to differ, and what the bytes are there. */
 export interface Divergence {
 	readonly reference: string;
 	readonly other: string;
 	readonly offset: number;
-	/** Whether the outputs differ in a byte or in length alone. */
+	/** Says whether the outputs differ in a byte, or only in length. */
 	readonly kind: 'byte' | 'length';
 	readonly referenceDump: readonly string[];
 	readonly otherDump: readonly string[];
@@ -64,25 +67,27 @@ export interface FixtureComparison {
 	readonly outcome: FixtureOutcome;
 	readonly groups: readonly OutputGroup[];
 	readonly errors: readonly FixtureError[];
-	/** Environments whose results file has no record of this fixture. */
+	/** The environments whose results file has no record of this fixture. */
 	readonly missing: readonly string[];
 	readonly divergences: readonly Divergence[];
 	/**
-	 * Environments that waited the metadata timeout out before this
-	 * fixture was written, so their bytes may have come from a stale view
-	 * of the note rather than from the text the run put there.
+	 * The environments where the wait used all of the metadata timeout
+	 * before the probe wrote this fixture. The bytes from such an
+	 * environment possibly came from a stale view of the note. In that case
+	 * the bytes did not come from the text that the run put in the note.
 	 */
 	readonly cautions: readonly string[];
 	/**
-	 * Whether this fixture differs and every side of the difference has a
-	 * timed-out environment on it. Such a difference may be a stale read
-	 * rather than the writer, and is evidence of nothing until the
-	 * environment runs the fixture again.
+	 * True when this fixture differs and each side of the difference has
+	 * an environment whose wait timed out. Such a difference is possibly
+	 * a stale read and not a difference in the writer, and these runs
+	 * cannot tell the two apart. The difference is evidence of nothing
+	 * until each of those environments runs the fixture again.
 	 */
 	readonly unproven: boolean;
 }
 
-/** A results file that does not add up on its own terms. */
+/** A results file whose own contents do not agree with each other. */
 export interface IntegrityFailure {
 	readonly label: string;
 	readonly id: string;
@@ -100,38 +105,46 @@ export interface EnvironmentSummary {
 export interface ComparisonReport {
 	readonly environments: readonly EnvironmentSummary[];
 	readonly fixtures: readonly FixtureComparison[];
-	/** Fixtures whose input text was not the same in every run. */
+	/** The fixtures whose input text was not the same in every run. */
 	readonly corpusMismatches: readonly string[];
 	readonly integrityFailures: readonly IntegrityFailure[];
-	/** What stops these files being compared at all. */
+	/** The conditions that make a comparison of these files impossible. */
 	readonly problems: readonly string[];
-	/** What is worth knowing before reading the verdict. */
+	/**
+	 * The facts that are worth knowing before the verdict. A warning does
+	 * not change the verdict.
+	 */
 	readonly warnings: readonly string[];
 	readonly verdict: Verdict;
 	readonly agreed: number;
 	readonly compared: number;
 }
 
-/** Reads a results file, or throws saying what is wrong with it. */
+/**
+ * Reads a results file. If the file is not a valid results file, the
+ * function throws an error that says what is wrong.
+ */
 export function parseResults(text: string, source: string): ProbeResults {
 	let value: unknown;
 	try {
 		value = JSON.parse(text);
 	} catch (error) {
 		const detail = error instanceof Error ? error.message : 'unreadable';
-		throw new Error(`${source}: not JSON (${detail})`);
+		throw new Error(`${source}: this file is not JSON (${detail})`);
 	}
 	const root = objectAt(value, 'the file', source);
 	if (root.kind !== KIND) {
 		throw new Error(
-			`${source}: not a results file; its kind is not ${KIND}`,
+			`${source}: this file is not a results file, because its kind field is not ${KIND}`,
 		);
 	}
 	const platform = objectAt(root.platform, 'platform', source);
 	const marker = objectAt(root.marker, 'marker', source);
 	const perFixture = root.perFixture;
 	if (!Array.isArray(perFixture)) {
-		throw new Error(`${source}: perFixture is missing or not a list`);
+		throw new Error(
+			`${source}: perFixture is missing, or perFixture is not a list`,
+		);
 	}
 	return {
 		kind: KIND,
@@ -159,15 +172,17 @@ export function parseResults(text: string, source: string): ProbeResults {
 }
 
 /**
- * How this environment should read in the legend. The engine string comes
- * with it: two runs of one Obsidian version on different OS builds, or on
- * a phone and a tablet, are alike in every other field.
+ * The text for this environment in the legend. The text includes the user
+ * agent string. Two runs of one Obsidian version on two different builds
+ * of an operating system have the same value in every other field. Two
+ * runs on a phone and on a tablet also have the same value in every other
+ * field.
  */
 export function describeEnvironment(results: ProbeResults): string {
 	return `${deviceOf(results)}, app ${results.obsidianVersion}, api ${results.apiVersion}, ${results.platform.userAgent}`;
 }
 
-/** The device this run happened on, in one word. */
+/** The device that this run used, as one word. */
 function deviceOf(results: ProbeResults): string {
 	const { platform } = results;
 	if (platform.isIosApp) {
@@ -292,10 +307,12 @@ export function compareRuns(runs: readonly LoadedRun[]): ComparisonReport {
 }
 
 /**
- * What stops these files being compared at all, as against what they
- * disagree about. A file holding no records agrees with everything, and so
- * does a set of files with no fixture in common: both would otherwise read
- * as total agreement on the one line that gets transcribed.
+ * The conditions that make a comparison impossible. These conditions are
+ * different from the things that the files disagree about. A file that
+ * holds no records agrees with every other file. A set of files with no
+ * fixture in common also agrees. Without this check, both conditions
+ * print as full agreement on the verdict line, and the verdict line is
+ * the line that the owner transcribes.
  */
 function problemsWith(
 	runs: readonly LoadedRun[],
@@ -317,7 +334,7 @@ function problemsWith(
 	return problems;
 }
 
-/** What is worth saying about the files before reading the verdict. */
+/** The facts about the files that are worth knowing before the verdict. */
 function warningsAbout(runs: readonly LoadedRun[]): string[] {
 	const byFingerprint = new Map<string, string[]>();
 	for (const run of runs) {
@@ -388,13 +405,16 @@ function compareFixture(
 }
 
 /**
- * Whether a difference is attested by environments that all settled by
- * event. Each distinct output is a side, and refusal is one more side; a
- * side speaks if any environment on it settled by event. Two sides that
- * speak disagree with each other whatever a third environment's wait did,
- * because a timeout on an environment that is not party to a difference
- * says nothing about that difference. A refusal is always taken as
- * speaking: it carries no wait that could have timed out.
+ * True when environments that did not time out show the difference. The
+ * function puts the environments into sides. Each different output is one
+ * side, and a refusal is one more side. A side counts when at least one
+ * environment on that side settled by event. The difference holds when
+ * two sides count.
+ *
+ * Two sides that count disagree with each other, whatever the wait on a
+ * third environment did. A timeout on an environment that is not on
+ * either side of a difference says nothing about that difference. A
+ * refusal always counts, because a refusal has no wait that can time out.
  */
 function attested(
 	groups: readonly OutputGroup[],
@@ -429,7 +449,7 @@ function outcomeFor(
 	return groups === 1 ? 'agree' : 'diverge';
 }
 
-/** Every other output against the first one, which is the reference. */
+/** Compares each other output against the first output, the reference. */
 function divergencesAmong(
 	groups: readonly { bytes: Uint8Array; labels: string[] }[],
 ): Divergence[] {
@@ -455,7 +475,10 @@ function divergencesAmong(
 	});
 }
 
-/** The offset the two outputs part company at. */
+/**
+ * The offset where the two outputs start to differ. The result is null
+ * when the two outputs are the same.
+ */
 export function firstDifference(
 	left: Uint8Array,
 	right: Uint8Array,
@@ -473,9 +496,10 @@ export function firstDifference(
 }
 
 /**
- * The rows around this offset, in the shape hexdump prints them: the row
- * holding the offset, one either side of it, and printable ASCII only in
- * the text column so a dump of arbitrary bytes stays readable.
+ * The rows of bytes around this offset, in the format that the hexdump
+ * program uses. The result holds the row that contains the offset, and
+ * one row on each side of that row. The text column shows printable ASCII
+ * characters only. Thus a dump of bytes with any value stays readable.
  */
 export function hexdump(bytes: Uint8Array, offset: number): string[] {
 	const row = Math.floor(offset / DUMP_ROW) * DUMP_ROW;
@@ -504,13 +528,18 @@ export function hexdump(bytes: Uint8Array, offset: number): string[] {
 }
 
 /**
- * A divergence is only a divergence if the sides of it can be trusted to
- * have been written from the text the run put there. Where every fixture
- * that differs rests on an environment that waited the metadata timeout
- * out, the answer is that these runs do not settle it — the fixture has to
- * be run again, not read as evidence of a writer that differs. One that
- * two unhurried environments show between them stands, whatever a third
- * environment's wait did.
+ * The verdict for the whole comparison. A difference counts as a
+ * divergence only when the comparison can trust each side of the
+ * difference. The comparison trusts a side when the bytes on that side
+ * came from the text that the run put in the note.
+ *
+ * A fixture that differs can rest on an environment that waited out the
+ * metadata timeout. When every fixture that differs rests on such an
+ * environment, these runs do not settle the question. The owner must run
+ * the fixture again, and must not read the difference as evidence that
+ * the writer differs. A difference that two environments without a
+ * timeout show between them stands, whatever the wait on a third
+ * environment did.
  */
 function verdictFor(
 	fixtures: readonly FixtureComparison[],
@@ -550,7 +579,10 @@ function sha256Hex(bytes: Uint8Array): string {
 	return createHash('sha256').update(bytes).digest('hex');
 }
 
-/** The entry under this key, put there by the maker if it is not. */
+/**
+ * The entry under this key. If the store holds no entry under this key,
+ * the function calls `make` and puts the new entry there.
+ */
 function entryOf<K, V>(store: Map<K, V>, key: K, make: () => V): V {
 	const existing = store.get(key);
 	if (existing !== undefined) {
@@ -586,7 +618,7 @@ function readFixture(
 	};
 }
 
-/** How the record says the wait before the writer ran ended. */
+/** How the record says the wait ended. The wait came before the writer. */
 function settlingAt(
 	record: Record<string, unknown>,
 	source: string,
@@ -595,7 +627,7 @@ function settlingAt(
 	const value = record.settledBy;
 	if (value !== 'event' && value !== 'timeout') {
 		throw new Error(
-			`${source}: ${where} does not say whether its wait settled by event or by timeout`,
+			`${source}: ${where} does not say whether the wait before the writer settled by event or by timeout`,
 		);
 	}
 	return value;
@@ -607,7 +639,9 @@ function objectAt(
 	source: string,
 ): Record<string, unknown> {
 	if (typeof value !== 'object' || value === null || Array.isArray(value)) {
-		throw new Error(`${source}: ${where} is missing or not an object`);
+		throw new Error(
+			`${source}: ${where} is missing, or the value at that place is not an object`,
+		);
 	}
 	return value as Record<string, unknown>;
 }
@@ -620,7 +654,9 @@ function stringAt(
 ): string {
 	const value = holder[key];
 	if (typeof value !== 'string') {
-		throw new Error(`${source}: ${where} has no ${key}, or it is not text`);
+		throw new Error(
+			`${source}: ${where} has no ${key}, or the value under this key is not text`,
+		);
 	}
 	return value;
 }
@@ -633,7 +669,7 @@ function booleanAt(
 	const value = holder[key];
 	if (typeof value !== 'boolean') {
 		throw new Error(
-			`${source}: platform has no ${key}, or it is not true or false`,
+			`${source}: platform has no ${key}, or the value under this key is not true or false`,
 		);
 	}
 	return value;

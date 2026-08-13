@@ -1,12 +1,18 @@
 /**
- * The static halves of the network-discipline ban: the lint selectors that
- * refuse a direct fetch in the source, and the scan that refuses one in the
- * bundle. The runtime half is the fetch poison, which has its own tests.
+ * The plugin must not call the global fetch function. Every network request
+ * goes through the transport port instead. Three guards hold this rule.
  *
- * Both halves are exercised as they are actually configured — the
- * selectors are read out of the lint configuration and the scan is run as
- * a process — so a guard weakened in either place fails here rather than
- * going quiet.
+ * Two of the guards are static. The first static guard is the set of lint
+ * selectors, and these selectors report a direct fetch in the source files.
+ * The second static guard is the bundle scan, and this scan reports a direct
+ * fetch in the built bundle. The third guard works while the code runs. That
+ * third guard is the fetch poison, and the poison has its own tests. This
+ * file tests the two static guards.
+ *
+ * Each test uses a guard in the form that the repository configures. The
+ * tests read the selectors out of the lint configuration, and they run the
+ * scan as a separate process. If a guard becomes weaker in either place, a
+ * test in this file fails. The tests make that change visible.
  */
 
 import { spawnSync } from 'node:child_process';
@@ -55,11 +61,13 @@ function blockNamed(name: string): ConfigBlock {
 	return block;
 }
 
-/** The syntax the named configuration block refuses. */
+/** The syntax that the block with this name does not allow. */
 function restrictions(name: string): RestrictedSyntax[] {
 	const rule: unknown = blockNamed(name).rules?.['no-restricted-syntax'];
 	if (!Array.isArray(rule)) {
-		throw new Error(`${name} restricts no syntax at all`);
+		throw new Error(
+			`the block named ${name} has no list of restricted syntax`,
+		);
 	}
 	const options: readonly unknown[] = rule;
 	return options.slice(1).map(asRestriction);
@@ -71,7 +79,9 @@ function asRestriction(option: unknown): RestrictedSyntax {
 			? Reflect.get(option, 'selector')
 			: undefined;
 	if (typeof selector !== 'string') {
-		throw new Error('a restricted-syntax option names no selector');
+		throw new Error(
+			'an option of the restricted-syntax rule has no selector',
+		);
 	}
 	return { selector };
 }
@@ -86,40 +96,42 @@ function refused(name: string, code: string): string[] {
 describe.each([['davenport/no-global-fetch'], ['davenport/core-boundary']])(
 	'%s',
 	(name) => {
-		it('refuses fetch read off a holder with Reflect.get', () => {
+		it('reports a fetch that Reflect.get reads off a holder object', () => {
 			expect(refused(name, REFLECT_CALL)).toHaveLength(1);
 			expect(refused(name, REFLECT_HOLDER)).toHaveLength(1);
 		});
 
-		it('refuses the templated spelling of the key as well', () => {
+		it('also reports a key that a template string spells', () => {
 			expect(refused(name, REFLECT_TEMPLATE)).toHaveLength(1);
 		});
 
-		it('still refuses the member spellings', () => {
+		it('still reports a fetch named on a global object', () => {
 			expect(refused(name, MEMBER_CALL)).toHaveLength(1);
 		});
 
-		it('says nothing about Reflect.get reaching another property', () => {
+		it('reports nothing when Reflect.get reads a different property', () => {
 			expect(refused(name, REFLECT_ELSEWHERE)).toEqual([]);
 		});
 
-		// A key assembled at run time reads as fetch and is not spelled as
-		// it, which is the boundary the poison covers and lint does not.
-		it('says nothing about a key it cannot read off the page', () => {
+		// This fixture builds the key while the code runs, so the fixture
+		// never spells the word fetch. Lint reads only what the source
+		// spells, and therefore lint reports nothing. The fetch poison
+		// covers this shape, because the poison replaces the property.
+		it('reports nothing when the source does not spell the key', () => {
 			expect(refused(name, REFLECT_INTERPOLATED)).toEqual([]);
 		});
 	},
 );
 
-describe('the exemption the fetch poison carries', () => {
-	it('covers the poison and its tests and nothing else', () => {
+describe('the lint exemption for the fetch poison', () => {
+	it('covers the poison file and its test file, and no other file', () => {
 		expect(blockNamed('davenport/fetch-poison-reflect').files).toEqual([
 			'test/harness/sweeps/fetch-poison.ts',
 			'test/harness/sweeps/fetch-poison.test.ts',
 		]);
 	});
 
-	it('lets the Reflect spelling through and keeps the rest banned', () => {
+	it('allows the Reflect.get spelling and reports the member spellings', () => {
 		const name = 'davenport/fetch-poison-reflect';
 		expect(refused(name, REFLECT_HOLDER)).toEqual([]);
 		expect(refused(name, REFLECT_TEMPLATE)).toEqual([]);
@@ -127,21 +139,27 @@ describe('the exemption the fetch poison carries', () => {
 	});
 });
 
-describe('the key spelling the static halves cannot see', () => {
-	// The exemption exists because two files read fetch off a holder. They
-	// spell the key out where they do it: a constant holding the key is the
-	// one form neither the selector nor the scan can follow, and an example
-	// of it in the tree is a worked answer for evading both.
+describe('the key spelling that the two static guards cannot see', () => {
+	// The lint exemption exists because two files read fetch off a holder
+	// object, and those two files spell the key as a literal. A constant
+	// that holds the key is the one form that neither the lint selector nor
+	// the bundle scan can follow. An example of that form in the repository
+	// would therefore show a reader how to get past both static guards.
 	//
-	// Written in POSIX classes because git's -E does not read \s or \w, and
-	// a pattern it cannot read matches nothing and reports a clean tree.
-	// The grep runs over tracked files, so the check follows the repository
-	// rather than the working directory.
+	// The heldKey pattern uses POSIX character classes because the -E
+	// option of git grep does not read \s or \w. git grep finds no match
+	// for a pattern that it cannot read. A pattern of that kind would
+	// report a clean repository and hide a real match. The command searches
+	// the tracked files, so the check follows the repository and not the
+	// working directory.
 	const heldKey = (value: string): string =>
 		'^[[:space:]]*(const|let|var)[[:space:]]+[[:alnum:]_]+[[:space:]]*' +
 		`=[[:space:]]*['"\`]${value}['"\`]`;
 
-	/** A constant of the shape the ban looks for, holding something else. */
+	/**
+	 * A constant with the shape that the search pattern finds. The value of
+	 * this constant is not the key.
+	 */
 	const CONTROL = 'not-a-key-at-all';
 
 	it('is written nowhere in the repository', () => {
@@ -151,10 +169,12 @@ describe('the key spelling the static halves cannot see', () => {
 		expect(held.stdout).toBe('');
 	});
 
-	// The negative above is worth having only if the pattern can find a
-	// constant at all, which the same engine is asked here: the line
-	// declaring the control above is one, and this must find it.
-	it('finds a constant of that shape when there is one', () => {
+	// The test above is worth having only when the search pattern can find
+	// a constant of this shape at all. This test builds the same pattern
+	// around the control value above, and runs the pattern through the same
+	// git grep. The line that declares the control has the shape, so this
+	// test must find that line.
+	it('finds a constant of this shape when the repository has one', () => {
 		const found = spawnSync('git', ['grep', '-nE', heldKey(CONTROL)], {
 			encoding: 'utf8',
 		});
@@ -167,7 +187,10 @@ describe('the bundle scan', () => {
 		new URL('../scripts/scan-bundle.mjs', import.meta.url),
 	);
 
-	/** One directory for every case, taken down when the block ends. */
+	/**
+	 * One directory that all the cases share. The block removes this
+	 * directory when the block ends.
+	 */
 	let directory = '';
 
 	beforeAll(() => {
@@ -178,7 +201,7 @@ describe('the bundle scan', () => {
 		rmSync(directory, { recursive: true, force: true });
 	});
 
-	/** Runs the scan over a bundle holding this text. */
+	/** Runs the bundle scan over a file that holds this text. */
 	function scan(bundle: string): { status: number | null; output: string } {
 		const file = join(directory, 'bundle.js');
 		writeFileSync(file, bundle, 'utf8');
@@ -190,21 +213,33 @@ describe('the bundle scan', () => {
 
 	it.each([
 		['a bare call', 'fetch("https://a.test/");'],
-		['a global member call', 'globalThis.fetch("https://a.test/");'],
-		['a bracketed member call', 'self["fetch"]("https://a.test/");'],
 		[
-			'a Reflect.get call',
+			'a call through a global object with a dotted key',
+			'globalThis.fetch("https://a.test/");',
+		],
+		[
+			'a call through a global object with a bracketed key',
+			'self["fetch"]("https://a.test/");',
+		],
+		[
+			'a Reflect.get read that the code calls at once',
 			'Reflect.get(globalThis,"fetch")("https://a.test/");',
 		],
-		['a Reflect.get read off a holder', "const f=Reflect.get(h,'fetch');"],
-		['a templated key', 'const f=Reflect.get(h,`fetch`);'],
-	])('fails a bundle carrying %s', (_name, bundle) => {
+		[
+			'a Reflect.get read that the code stores in a variable',
+			"const f=Reflect.get(h,'fetch');",
+		],
+		[
+			'a key that a template string spells',
+			'const f=Reflect.get(h,`fetch`);',
+		],
+	])('fails a bundle that carries %s', (_name, bundle) => {
 		const result = scan(bundle);
 		expect(result.status).toBe(1);
 		expect(result.output).toContain('direct fetch');
 	});
 
-	it('passes a bundle that reaches no fetch at all', () => {
+	it('passes a bundle that does not reach fetch', () => {
 		const result = scan(
 			'const url=Reflect.get(input,"url");requestUrl({url});',
 		);
@@ -212,7 +247,7 @@ describe('the bundle scan', () => {
 		expect(result.output).toContain('no direct fetch usage');
 	});
 
-	it('names the file it scanned as a path', () => {
+	it('prints the full path of the file that the scan read', () => {
 		expect(scan('fetch("https://a.test/");').output).toContain(
 			join(directory, 'bundle.js'),
 		);

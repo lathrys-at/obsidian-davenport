@@ -20,7 +20,7 @@ function alwaysFails(name: string, where = 'vault.files'): Sweep {
 const alwaysHolds: Sweep = { name: 'always-holds', check: () => [] };
 
 describe('sweep registry', () => {
-	it('starts from the standing set and keeps registration order', () => {
+	it('starts from the standing set and keeps the registration order', () => {
 		const registry = new SweepRegistry(STANDING_SWEEPS);
 		registry.register(alwaysHolds);
 		expect(registry.registered.map((sweep) => sweep.name)).toEqual([
@@ -29,14 +29,14 @@ describe('sweep registry', () => {
 		]);
 	});
 
-	it('refuses a name already registered', () => {
+	it('refuses a sweep whose name is already registered', () => {
 		const registry = new SweepRegistry([alwaysHolds]);
 		expect(() => {
 			registry.register({ name: 'always-holds', check: () => [] });
 		}).toThrow(/already registered/);
 	});
 
-	it('reports every sweep that found something, and only those', () => {
+	it('reports every sweep that found a violation, and no other sweep', () => {
 		const registry = new SweepRegistry([
 			alwaysFails('first'),
 			alwaysHolds,
@@ -58,7 +58,7 @@ describe('sweep registry', () => {
 		]);
 	});
 
-	it('names the sweep that threw instead of letting the error out', () => {
+	it('names the sweep that threw the error and does not let the error out', () => {
 		const registry = new SweepRegistry([
 			{
 				name: 'broken',
@@ -74,34 +74,34 @@ describe('sweep registry', () => {
 				violations: [
 					{
 						where: 'the sweep itself',
-						detail: 'threw the sweep is wrong',
+						detail: 'the check threw an error: the sweep is wrong',
 					},
 				],
 			},
 		]);
 	});
 
-	it('drops added sweeps on reset and keeps the standing set', () => {
+	it('drops the added sweeps on reset and keeps the standing set', () => {
 		const registry = new SweepRegistry(STANDING_SWEEPS);
 		registry.register(alwaysHolds);
 		registry.reset();
 		expect(registry.registered).toEqual(STANDING_SWEEPS);
 	});
 
-	it('resets the module registry between tests', () => {
+	it('puts a sweep into the module registry', () => {
 		registerSweep(alwaysHolds);
 		expect(registeredSweeps().map((sweep) => sweep.name)).toContain(
 			'always-holds',
 		);
 	});
 
-	it('sees no registration from the test before it', () => {
+	it('does not see the sweep that the test before it registered', () => {
 		expect(registeredSweeps().map((sweep) => sweep.name)).toEqual(
 			STANDING_SWEEPS.map((sweep) => sweep.name),
 		);
 	});
 
-	it('exposes the same registry the helpers act on', () => {
+	it('exposes the same registry that the helpers act on', () => {
 		registerSweep(alwaysHolds);
 		expect(sweeps.registered).toEqual(registeredSweeps());
 		resetSweeps();
@@ -110,13 +110,13 @@ describe('sweep registry', () => {
 });
 
 describe('failure text', () => {
-	it('names the run, each failing sweep, and each violating position', () => {
+	it('names the run, every failed sweep, and where every violation is', () => {
 		const registry = new SweepRegistry([
 			alwaysFails('first', 'caldav.requests[0].url'),
 			alwaysFails('second'),
 		]);
 		expect(describeReports('inbound poll', registry.evaluate(evidence())))
-			.toBe(`run "inbound poll" failed 2 sweeps
+			.toBe(`the run "inbound poll" failed 2 sweeps
   first — 1 violation
     caldav.requests[0].url: first objected
   second — 1 violation

@@ -8,13 +8,19 @@ import {
 	icsUtcStamp,
 } from './ics-text';
 
-/** The physical lines of an iCalendar text, their CRLF terminators removed. */
+/**
+ * The physical lines of an iCalendar text, without the CRLF that ends each
+ * line. This function also fails the test if the text does not end with CRLF.
+ */
 function physicalLines(text: string): string[] {
 	expect(text.endsWith('\r\n')).toBe(true);
 	return text.slice(0, -2).split('\r\n');
 }
 
-/** Rejoins folded lines by dropping the one space each continuation opens. */
+/**
+ * Joins folded lines back into logical lines. Each continuation starts with
+ * one space, and this function removes that space.
+ */
 function unfold(lines: readonly string[]): string[] {
 	const logical: string[] = [];
 	for (const line of lines) {
@@ -28,8 +34,8 @@ function unfold(lines: readonly string[]): string[] {
 	return logical;
 }
 
-describe('iCalendar text writing', () => {
-	it('terminates every physical line with CRLF and nothing else', () => {
+describe('writing iCalendar text', () => {
+	it('ends every physical line with CRLF and adds no other line break', () => {
 		const text = icsText([
 			'BEGIN:VCALENDAR',
 			'VERSION:2.0',
@@ -41,7 +47,7 @@ describe('iCalendar text writing', () => {
 		expect(text.replace(/\r\n/g, '')).not.toMatch(/[\r\n]/);
 	});
 
-	it('folds long lines within the 75-octet limit', () => {
+	it('folds a long line into physical lines of 75 octets or less', () => {
 		const line = `SUMMARY:${'a'.repeat(300)}`;
 		const folded = foldIcsLine(line);
 		expect(folded.length).toBeGreaterThan(1);
@@ -56,13 +62,13 @@ describe('iCalendar text writing', () => {
 		expect(unfold(folded)).toEqual([line]);
 	});
 
-	it('leaves a line that fits unfolded', () => {
+	it('keeps a line that fits the 75-octet limit as one physical line', () => {
 		const line = `SUMMARY:${'a'.repeat(ICS_LINE_OCTET_LIMIT - 8)}`;
 		expect(octetLength(line)).toBe(ICS_LINE_OCTET_LIMIT);
 		expect(foldIcsLine(line)).toEqual([line]);
 	});
 
-	it('folds between characters, never inside a multi-byte sequence', () => {
+	it('folds between two characters and never inside a multi-byte character', () => {
 		const line = `SUMMARY:${'\u{1f600}é中'.repeat(30)}`;
 		const folded = foldIcsLine(line);
 		for (const physical of folded) {
@@ -74,7 +80,7 @@ describe('iCalendar text writing', () => {
 		expect(folded.join('')).not.toContain('�');
 	});
 
-	it('folds through the whole text, recoverable line by line', () => {
+	it('folds a whole text, and unfolding gives every line back', () => {
 		const lines = [
 			'BEGIN:VEVENT',
 			`SUMMARY:${'z'.repeat(200)}`,
@@ -89,12 +95,12 @@ describe('iCalendar text writing', () => {
 		expect(unfold(physicalLines(text))).toEqual(lines);
 	});
 
-	it('escapes the characters iCalendar reserves in a text value', () => {
+	it('escapes the characters that iCalendar reserves in a text value', () => {
 		expect(escapeIcsText('a;b,c\\d')).toBe('a\\;b\\,c\\\\d');
 		expect(escapeIcsText('one\r\ntwo\nthree')).toBe('one\\ntwo\\nthree');
 	});
 
-	it('formats stamps from an explicit epoch, in UTC', () => {
+	it('writes the date stamp and the date-time stamp in UTC from the given time', () => {
 		const epochMs = Date.UTC(2026, 7, 10, 9, 30, 5);
 		expect(icsUtcStamp(epochMs)).toBe('20260810T093005Z');
 		expect(icsDateStamp(epochMs)).toBe('20260810');

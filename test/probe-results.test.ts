@@ -1,10 +1,14 @@
 /**
- * The two parts of the probe's results module that decide what the owner
- * reads and what a second run keeps: how a thrown value is worded, and the
- * name a results file takes when one is already there.
+ * Tests for the two decisions that the results module of the probe makes.
+ * The first decision is how the module puts a thrown value into words. The
+ * owner of the vault reads these words. The second decision is the name
+ * that a results file takes when a file of that name is already there.
+ * That name decides what a second run keeps.
  *
- * Both are pure, so they are testable here even though the run around them
- * only exists inside a vault.
+ * Both functions are pure: the caller supplies everything that the
+ * functions read, and the functions touch no platform. Therefore these
+ * tests call the functions directly. The probe run around the functions
+ * exists only inside a vault.
  */
 
 import { describe, expect, it } from 'vitest';
@@ -16,8 +20,8 @@ import {
 
 const NOW = new Date('2026-08-12T09:14:03.500Z');
 
-describe('saying what went wrong', () => {
-	it('keeps a name that says which writer refused', () => {
+describe('putting a thrown value into words', () => {
+	it('keeps a name in front of the message when the name tells which writer refused', () => {
 		const error = new Error('no end to the flow sequence');
 		error.name = 'YAMLParseError';
 		expect(describeError(error)).toBe(
@@ -25,25 +29,26 @@ describe('saying what went wrong', () => {
 		);
 	});
 
-	// The notice already says the probe failed, so a bare Error in front of
-	// its own message is a word the reader has to look past.
-	it('drops the bare word Error in front of its own message', () => {
+	// The notice already says that the probe failed. Thus the bare name
+	// Error in front of the message adds nothing, and the reader must look
+	// past that name.
+	it('drops the bare name Error and keeps only the message', () => {
 		expect(describeError(new Error('the folder is a note'))).toBe(
 			'the folder is a note',
 		);
 	});
 
-	it('falls back to the name when there is no message', () => {
+	it('gives the name when the error has no message', () => {
 		expect(describeError(new Error(''))).toBe('Error');
 	});
 
-	it('takes a thrown string as it is', () => {
+	it('gives back a thrown string without a change', () => {
 		expect(describeError('a rejection with no error')).toBe(
 			'a rejection with no error',
 		);
 	});
 
-	it('says what it was handed when it was not an error at all', () => {
+	it('names the type when the thrown value is not an error and not a string', () => {
 		expect(describeError({ code: 7 })).toBe('a thrown object');
 		expect(describeError(undefined)).toBe('a thrown undefined');
 	});
@@ -52,20 +57,20 @@ describe('saying what went wrong', () => {
 describe('naming the results file', () => {
 	const never = (): boolean => false;
 
-	it('names it for the instant the run finished', () => {
+	it('names the file for the instant when the run finished', () => {
 		expect(resultsPath('probe', NOW, never)).toBe(
 			'probe/emission-samples-20260812-091403Z.json',
 		);
 	});
 
-	it('steps past a name a run in the same second already took', () => {
+	it('steps past a name that another run in the same second already took', () => {
 		const taken = new Set(['probe/emission-samples-20260812-091403Z.json']);
 		expect(resultsPath('probe', NOW, (path) => taken.has(path))).toBe(
 			'probe/emission-samples-20260812-091403Z-2.json',
 		);
 	});
 
-	it('keeps stepping while the names are taken', () => {
+	it('keeps stepping while each new name is also taken', () => {
 		let free = '';
 		const path = resultsPath('probe', NOW, (candidate) => {
 			free = candidate;
@@ -77,7 +82,7 @@ describe('naming the results file', () => {
 		expect(free).toBe(path);
 	});
 
-	it('gives up rather than overwriting when every name is taken', () => {
+	it('throws instead of overwriting a file when every name is taken', () => {
 		const tried: string[] = [];
 		expect(() =>
 			resultsPath('probe', NOW, (candidate) => {

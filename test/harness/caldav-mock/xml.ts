@@ -1,9 +1,13 @@
 /**
- * XML in and out for the mock CalDAV server, over a namespace-aware DOM.
- * WebDAV bodies arrive with whatever prefixes the client picked, and a
- * default namespace is legal everywhere, so every lookup here is by
- * namespace URI and local name. Responses are built as a tree and
- * serialized; the mock never assembles or matches XML as strings.
+ * Reads and writes the XML of the mock CalDAV server. The functions use a
+ * DOM that knows about XML namespaces.
+ *
+ * A WebDAV client chooses its own namespace prefixes, and a default
+ * namespace is legal at every point in a body. A prefix therefore says
+ * nothing that the mock can trust. Every lookup in this file uses the
+ * namespace URI and the local name instead. The mock builds each response
+ * as a tree and then serializes the tree. The mock never puts XML together
+ * as strings, and never matches XML as strings.
  */
 
 import { DOMParser, XMLSerializer } from '@xmldom/xmldom';
@@ -28,15 +32,19 @@ const PREFIX_BY_NAMESPACE: ReadonlyMap<string, string> = new Map([
 	[CALENDARSERVER_NS, 'CS'],
 ]);
 
-/** A namespace-qualified element name, the mock's unit of XML identity. */
+/**
+ * An element name with its namespace. The mock identifies an element by
+ * this pair.
+ */
 export interface PropName {
 	readonly ns: string;
 	readonly local: string;
 }
 
 /**
- * A request body, told apart by what it is: no body at all is a legal
- * request shape, and bytes that will not parse are a bad request.
+ * A request body in one of three states. A request that carries no body at
+ * all is a legal request. A body that does not parse is a bad request. A
+ * body that parses carries a document.
  */
 export type XmlBody =
 	| { readonly kind: 'absent' }
@@ -55,7 +63,10 @@ export function parseBody(text: string): XmlBody {
 		: { kind: 'document', document };
 }
 
-/** Null when the body is empty or not well-formed. */
+/**
+ * Parses the text and returns the document. Returns null when the text is
+ * empty, and null when the text is not well formed.
+ */
 export function parseXml(text: string): XmlDocument | null {
 	if (text.trim() === '') {
 		return null;
@@ -70,12 +81,18 @@ export function parseXml(text: string): XmlDocument | null {
 	}
 }
 
-/** A body that will not parse is answered with a status, not with output. */
+/**
+ * Discards the errors of the parser. The mock answers a body that does
+ * not parse with a status code, and prints no message.
+ */
 function swallowParseError(): void {
 	return;
 }
 
-/** The document a parsed body carries, or null for absent and malformed. */
+/**
+ * Returns the document that a parsed body carries. Returns null when the
+ * body is absent, and null when the body does not parse.
+ */
 export function documentOf(body: XmlBody): XmlDocument | null {
 	return body.kind === 'document' ? body.document : null;
 }
@@ -102,7 +119,11 @@ export function isNamed(el: XmlElement, ns: string, local: string): boolean {
 	return el.namespaceURI === ns && el.localName === local;
 }
 
-/** Direct children only; descendant search would cross filter nesting. */
+/**
+ * Returns the direct children with the given name. The function looks at
+ * the direct children only. A search of all the descendants would cross
+ * the nesting of the filter elements.
+ */
 export function childrenNamed(
 	parent: XmlElement,
 	ns: string,
@@ -119,7 +140,11 @@ export function childNamed(
 	return childrenNamed(parent, ns, local)[0] ?? null;
 }
 
-/** Descendants at any depth, for props and hrefs whose nesting varies. */
+/**
+ * Returns the descendants with the given name, at any depth. The prop
+ * elements and the href elements sit at a different depth from body to
+ * body.
+ */
 export function descendantsNamed(
 	root: XmlElement,
 	ns: string,
@@ -137,14 +162,19 @@ export function nameOf(el: XmlElement): PropName {
 }
 
 /**
- * Builds a response document. The three namespaces the server speaks are
- * declared on the root, as servers do, so nested elements carry no
- * declarations of their own and output stays byte-stable for a given tree.
+ * Builds a response document.
  *
- * A request may name a property in any namespace at all, and the response
- * has to echo that name back in a 404 propstat. Namespaces beyond the
- * three get a prefix minted on first use and declared on the root, in the
- * order the tree needs them, so output stays byte-stable there too.
+ * The class declares the three namespaces of the server on the root
+ * element, as a real server does. The elements below the root therefore
+ * carry no declaration of their own, and one tree always serializes to the
+ * same octets.
+ *
+ * A request can name a property in any namespace at all, and the response
+ * must repeat that name in a propstat with status 404. For a namespace
+ * outside the three, the class makes a prefix at the first use of that
+ * namespace. The class then declares the prefix on the root element. The
+ * prefixes follow the order in which the tree needs them, so one tree
+ * serializes to the same octets here too.
  */
 export class XmlOutput {
 	private readonly doc: XmlDocument;

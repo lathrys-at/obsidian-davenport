@@ -1,7 +1,10 @@
 /**
- * PROPFIND: the discovery walk and collection listing. Depth 0 answers for
- * the target alone, Depth 1 adds its children, and infinite depth is
- * refused as most servers refuse it.
+ * This module answers the PROPFIND method. A client sends PROPFIND to
+ * read the properties of a target, and to list the members of a
+ * collection. The `Depth` header of the request sets the scope. Depth 0
+ * reads the target only. Depth 1 reads the target and the children of the
+ * target. The mock refuses infinite depth, because most real servers also
+ * refuse infinite depth.
  */
 
 import {
@@ -31,9 +34,10 @@ export function handlePropfind(
 	context: PropContext,
 	currentAccount: AccountState | null,
 ): MockResponse {
-	// A request with no body asks for everything a target carries; one
-	// whose bytes will not parse asked for something else, and answering
-	// it as an allprop is how a corrupt request passes for a working one.
+	// A request with no body asks for all the properties. A request whose
+	// body does not parse asks for something the mock cannot read. An
+	// answer that holds all the properties would hide the corruption, and
+	// a corrupt request would then look like a correct one.
 	if (body.kind === 'malformed') {
 		return plain(400);
 	}
@@ -55,8 +59,13 @@ export function handlePropfind(
 }
 
 /**
- * What the body asked for: named properties, the names alone, or — with
- * no body and for a body naming neither — everything the target carries.
+ * What the body of the request asks for. There are three possible
+ * answers. First, the body names the properties that the client wants.
+ * Second, the body asks for the names of the properties, and not the
+ * values. Third, the body asks for all the properties that the target
+ * carries. A request with no body gets the third answer. A request whose
+ * body asks for neither the first form nor the second form also gets the
+ * third answer.
  */
 export function requestedProps(document: XmlDocument | null): PropRequest {
 	const root = document?.documentElement;

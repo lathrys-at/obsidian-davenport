@@ -1,10 +1,11 @@
 /**
- * What the run should say about where it happened.
+ * What the run reports about the environment that the run used.
  *
- * The probe records the environment rather than branching on it: the whole
- * point of the exercise is to hold the input fixed and let the environment
- * be the only variable, so every identifier that might explain a
- * difference is written down.
+ * The probe records the environment. The probe never changes what it does
+ * because of the environment. The purpose of the exercise is to hold the
+ * input the same, and to let the environment be the only variable.
+ * Therefore this module writes down every identifier that can explain a
+ * difference.
  */
 
 import { Platform, apiVersion, type App } from 'obsidian';
@@ -12,18 +13,21 @@ import type { ProbePlatform } from './results';
 
 const UNKNOWN = 'unknown';
 
-/** The app version, which the typed API does not carry. */
+/**
+ * The version of the app. The typed API does not carry this value. The
+ * value is `unknown` when the app gives no version.
+ */
 export function obsidianVersion(app: App): string {
 	const version: unknown = Reflect.get(app, 'appVersion');
 	return typeof version === 'string' ? version : UNKNOWN;
 }
 
-/** The plugin API version this build of the app offers. */
+/** The version of the plugin API that this build of the app gives. */
 export function pluginApiVersion(): string {
 	return apiVersion;
 }
 
-/** The device, in the terms the app and the engine report it. */
+/** The device, in the terms that the app and the browser engine report. */
 export function probePlatform(): ProbePlatform {
 	return {
 		isDesktop: Platform.isDesktop,

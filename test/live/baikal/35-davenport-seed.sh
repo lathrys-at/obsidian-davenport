@@ -1,14 +1,22 @@
 #!/bin/sh
-# Gives Baikal the configuration and the one DAV account its web installer
-# would otherwise have to be clicked through to produce. The image runs
-# every executable script in this directory before starting the web
-# server; this one numbers after the script that creates the database
-# folder and before the one that fixes ownership. It does nothing when the
-# volumes already hold an instance.
+# Baikal needs a configuration file and one DAV account before Baikal can
+# answer CalDAV requests. The web installer of Baikal makes both, and a
+# person must click through that installer. This script makes both
+# instead, so no person opens the installer.
 #
-# The version below must match the image tag in docker-compose.yml: Baikal
-# sends a browser to its installer when it finds a configuration written
-# by an older release than the one running.
+# The image runs every executable script in the entrypoint directory
+# /docker-entrypoint.d before the image starts the web server. The name
+# of this script starts with 35. This number puts the script after the
+# script that makes the database folder, and before the script that
+# corrects the ownership.
+#
+# The script does nothing if the volumes already hold a Baikal instance.
+# An instance here is the configuration file together with the database.
+#
+# The version value below must match the image tag in docker-compose.yml.
+# Baikal compares the release that wrote the configuration against the
+# release that runs. If the release that wrote the configuration is the
+# older release, Baikal sends the browser to the installer.
 
 set -e
 
@@ -21,8 +29,9 @@ config=/var/www/baikal/config/baikal.yaml
 database=/var/www/baikal/Specific/db/db.sqlite
 schema=/var/www/baikal/Core/Resources/Db/SQLite/db.sql
 
-# Baikal stores passwords as the HTTP Digest A1 hash, for both Basic and
-# Digest authentication.
+# The digest function makes the HTTP Digest A1 hash of a username and a
+# password. Baikal stores every password in this form. Baikal uses this
+# form for Basic authentication and for Digest authentication.
 digest() {
 	printf '%s:%s:%s' "$1" "$realm" "$2" | md5sum | cut -d ' ' -f 1
 }
@@ -30,7 +39,7 @@ digest() {
 mkdir -p "$(dirname "$config")" "$(dirname "$database")"
 
 if [ ! -f "$config" ]; then
-	echo "35-davenport-seed.sh: writing $config"
+	echo "35-davenport-seed.sh: the script writes $config"
 	cat >"$config" <<CONFIG
 system:
     configured_version: '$version'
@@ -51,7 +60,7 @@ CONFIG
 fi
 
 if [ ! -s "$database" ]; then
-	echo "35-davenport-seed.sh: creating $database for $username"
+	echo "35-davenport-seed.sh: the script makes $database for the user $username"
 	sqlite3 "$database" <"$schema"
 	sqlite3 "$database" <<SQL
 INSERT INTO users (username, digesta1)

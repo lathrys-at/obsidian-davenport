@@ -1,62 +1,88 @@
 /**
- * The per-run switchboard. Providers disagree on every one of these, so a
- * suite states the server it is testing against rather than inheriting one
- * shape of server. Anything a real deployment varies belongs here; the
- * component set a collection accepts is the exception, since it is a
- * property of the collection rather than of the server.
+ * The settings that state how the mock server behaves during one test run.
+ * Real CalDAV servers behave differently from each other in each of the
+ * ways below. A suite therefore states the server behavior that it tests
+ * against, and does not inherit one fixed behavior.
+ *
+ * Every behavior that changes from one real deployment to another belongs
+ * in this file. There is one exception. The set of components that a
+ * collection accepts is a property of the collection, and not a property
+ * of the server. This set therefore does not belong here.
  */
 
 export type SyncCollectionSupport = 'supported' | 'unsupported';
 
 /**
- * `frozen` models a server that advertises a CTag and never changes it —
- * the failure mode that makes CTag polling silently miss writes.
+ * How the collection reports its CTag. The server changes the CTag after
+ * each write to the collection. A client reads the CTag to find the writes
+ * that the client has not seen. With `frozen`, the server gives a
+ * CTag and then never changes that CTag. A client that polls such a
+ * server misses every write, and sees no sign that a write occurred.
  */
 export type CtagBehavior = 'advertised' | 'absent' | 'frozen';
 
-/** `per-fetch` mints a new ETag every time one is reported. */
+/**
+ * How stable the ETag of a resource is. With `per-fetch`, the server
+ * makes a new ETag each time that the server reports an ETag.
+ */
 export type EtagStability = 'stable' | 'per-fetch';
 
-/** `re-serialized` returns the stored event reformatted, never verbatim. */
+/**
+ * How a read returns a stored event. With `re-serialized`, the server
+ * formats the stored event again, and never returns the stored octets.
+ */
 export type GetBodyMode = 'byte-stable' | 're-serialized';
 
 /**
- * A response failure aimed at matching requests. `status` answers with the
- * given code instead of handling the request; `truncate` handles it and
- * then cuts the body short at `truncateAfter` octets.
+ * A failure that the server applies to the requests that match the fault.
+ * A fault of kind `status` answers with the given status code, and does
+ * not handle the request. A fault of kind `truncate` handles the request,
+ * and then cuts the body short after `truncateAfter` octets.
  */
 export interface FaultInjection {
 	readonly kind: 'status' | 'truncate';
-	/** Matches every method when absent. */
+	/** The fault matches every method when this field is absent. */
 	readonly method?: string;
-	/** Matches every path when absent. */
+	/** The fault matches every path when this field is absent. */
 	readonly pathContains?: string;
-	/** Number of matching requests to affect; unlimited when absent. */
+	/**
+	 * How many matching requests the fault affects. The fault affects
+	 * every matching request when this field is absent.
+	 */
 	readonly times?: number;
 	readonly status?: number;
 	readonly truncateAfter?: number;
 }
 
-/** A discovery hop answered with a redirect instead of a response. */
+/**
+ * A step of discovery that the server answers with a redirect, and not
+ * with the usual answer.
+ */
 export interface RedirectInjection {
 	readonly location: string;
 	readonly status?: number;
 }
 
 export interface MockServerCapabilities {
-	/** Whether the collection advertises and serves WebDAV-Sync. */
+	/** `supported` makes the collection advertise and serve WebDAV-Sync. */
 	readonly syncCollection: SyncCollectionSupport;
-	/** Rejects every presented sync-token, including ones it just issued. */
+	/**
+	 * When true, the server refuses every sync-token that a client sends,
+	 * including a token that the server issued a moment before.
+	 */
 	readonly rejectSyncToken: boolean;
 	readonly ctag: CtagBehavior;
 	readonly enforceIfMatch: boolean;
 	readonly enforceIfNoneMatch: boolean;
 	readonly etags: EtagStability;
 	readonly getBodies: GetBodyMode;
-	/** Whether calendar-query accepts a prop-filter on UID. */
+	/** When true, a calendar-query accepts a prop-filter on the UID. */
 	readonly calendarQueryUidFilter: boolean;
 	readonly managedAttachments: boolean;
-	/** Request path to the redirect that answers it. */
+	/**
+	 * Each key is a request path. The value is the redirect that answers a
+	 * request for that path.
+	 */
 	readonly redirects: Readonly<Record<string, RedirectInjection>>;
 	readonly faults: readonly FaultInjection[];
 }

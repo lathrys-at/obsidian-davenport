@@ -1,9 +1,11 @@
 /**
- * The server model: accounts, each with a principal, a calendar home, and
- * collections holding resources. Resources are ICS bytes with an ETag;
- * collections carry a CTag and the change history WebDAV-Sync reports
- * from. Every identifier comes from a counter, so a run's ETags, CTags,
- * and sync-tokens are the same on every machine.
+ * The model of the server. The model holds accounts. Each account has a
+ * principal, a calendar home, and collections. Each collection holds
+ * resources. A resource is a set of ICS bytes with an ETag. A collection
+ * carries a CTag and a history of changes, and the WebDAV-Sync report
+ * reads that history. Every identifier comes from a counter. The ETags,
+ * the CTags, and the sync tokens of a run are therefore the same on every
+ * machine.
  */
 
 import type { EtagStability, MockServerCapabilities } from './capabilities';
@@ -11,7 +13,10 @@ import type { EtagStability, MockServerCapabilities } from './capabilities';
 const SYNC_TOKEN_PREFIX = 'http://davenport.test/ns/sync';
 
 export interface ResourceSeed {
-	/** Basename within the collection, conventionally `{uid}.ics`. */
+	/**
+	 * The name of the resource in the collection. The usual form is
+	 * `{uid}.ics`.
+	 */
 	readonly name: string;
 	readonly ics: string;
 }
@@ -19,7 +24,10 @@ export interface ResourceSeed {
 export interface CollectionSeed {
 	readonly name: string;
 	readonly displayName?: string;
-	/** Defaults to events only, the ecosystem's usual split. */
+	/**
+	 * The default is events only. Real servers usually keep each kind of
+	 * component in a collection of its own.
+	 */
 	readonly components?: readonly string[];
 	readonly resources?: readonly ResourceSeed[];
 }
@@ -56,18 +64,27 @@ export interface CollectionState {
 	syncCounter: number;
 }
 
-/** A managed attachment, addressed by the identifier that minted it. */
+/**
+ * A managed attachment. The server gives each attachment a managed
+ * identifier, and the address of the attachment holds that identifier.
+ */
 export interface AttachmentState {
 	readonly managedId: string;
 	readonly href: string;
-	/** Href of the resource it was minted against, which bounds its life. */
+	/**
+	 * The href of the resource that the server made this attachment for.
+	 * The attachment lives only as long as that resource.
+	 */
 	readonly owner: string;
 	readonly filename: string;
 	readonly contentType: string;
 	body: string;
 }
 
-/** What an attachment is minted from; its identifier is the server's. */
+/**
+ * The data that the server makes an attachment from. The server, and not
+ * the seed, gives the attachment its identifier.
+ */
 export interface AttachmentSeed {
 	readonly owner: string;
 	readonly filename: string;
@@ -114,9 +131,11 @@ export type Route =
 	| { readonly kind: 'unknown' };
 
 /**
- * A collection's members in name order. Map order would follow write
- * history, so deleting and re-creating a resource would move it, and a
- * listing would then be asserting the order the test wrote in.
+ * The members of a collection, in the order of their names. The order of
+ * a `Map` follows the order of the writes. With that order, a delete and
+ * a new write of the same resource would move that resource in the list.
+ * A test that checked the list would then check the order that the test
+ * itself wrote in.
  */
 export function membersOf(
 	collection: CollectionState,
@@ -148,8 +167,9 @@ export class ServerState {
 	}
 
 	/**
-	 * The account the well-known and principal-root endpoints answer for.
-	 * A real server reads it from the credentials; the mock names it.
+	 * The account that the well-known endpoint and the principal-root
+	 * endpoint answer for. A real server finds this account from the
+	 * credentials of the request. The mock names the account directly.
 	 */
 	get currentAccount(): AccountState | null {
 		return this.accounts.get(this.defaultAccount) ?? null;
@@ -157,7 +177,9 @@ export class ServerState {
 
 	authenticateAs(name: string): void {
 		if (!this.accounts.has(name)) {
-			throw new Error(`mock server has no account ${name}`);
+			throw new Error(
+				`mock server has no account "${name}": add the account to the seeds`,
+			);
 		}
 		this.defaultAccount = name;
 	}
@@ -165,7 +187,9 @@ export class ServerState {
 	account(name: string): AccountState {
 		const found = this.accounts.get(name);
 		if (!found) {
-			throw new Error(`mock server has no account ${name}`);
+			throw new Error(
+				`mock server has no account "${name}": add the account to the seeds`,
+			);
 		}
 		return found;
 	}
@@ -173,7 +197,9 @@ export class ServerState {
 	collection(account: string, collection: string): CollectionState {
 		const found = this.account(account).collections.get(collection);
 		if (!found) {
-			throw new Error(`mock server has no collection ${collection}`);
+			throw new Error(
+				`mock server has no collection "${collection}": add the collection to the seeds`,
+			);
 		}
 		return found;
 	}
@@ -219,8 +245,8 @@ export class ServerState {
 		if (resourceName === undefined) {
 			return { kind: 'collection', account, collection };
 		}
-		// A resource is not a collection, so the trailing-slash spelling of
-		// its path names nothing rather than the same resource twice.
+		// A resource is not a collection. Thus a path that ends with a
+		// slash names nothing, and one resource does not get two names.
 		if (segments.length > 4 || path.endsWith('/')) {
 			return { kind: 'unknown' };
 		}
@@ -236,8 +262,10 @@ export class ServerState {
 	}
 
 	/**
-	 * Creates or replaces a resource and advances the collection's CTag and
-	 * change history. Shared by the request path and out-of-band seeding.
+	 * Creates a resource, or replaces a resource that exists. The method
+	 * then advances the CTag of the collection and adds an entry to the
+	 * change history. Two callers use this method: the request path, and
+	 * the code that seeds state without a request.
 	 */
 	write(collection: CollectionState, name: string, ics: string): string {
 		const existing = collection.resources.get(name);
@@ -257,7 +285,10 @@ export class ServerState {
 		return etag;
 	}
 
-	/** Stores attachment bytes and hands back the resource that holds them. */
+	/**
+	 * Stores the bytes of an attachment. The result is the record that
+	 * holds those bytes.
+	 */
 	addAttachment(seed: AttachmentSeed): AttachmentState {
 		this.attachmentCounter += 1;
 		const managedId = `attachment-${String(this.attachmentCounter)}`;
@@ -278,11 +309,12 @@ export class ServerState {
 	}
 
 	/**
-	 * Removes a resource and the attachments minted against it. Collection
-	 * happens here rather than on the request path, so a resource removed
-	 * out of band leaves no attachment behind either: an attachment URI
-	 * outliving the only resource that could name it would answer for a
-	 * calendar object no client can still reach.
+	 * Removes a resource. The method also removes every attachment that
+	 * the server made for that resource. The method removes those
+	 * attachments here, and not on the request path. A resource that a
+	 * test removes without a request therefore also leaves no attachment
+	 * behind. An attachment address that outlived its only resource would
+	 * answer for a calendar object that no client can reach.
 	 */
 	remove(collection: CollectionState, name: string): boolean {
 		if (!collection.resources.delete(name)) {
@@ -299,10 +331,11 @@ export class ServerState {
 	}
 
 	/**
-	 * The ETag to report now. A per-fetch server mints a fresh one on every
-	 * read, so any read invalidates the ETag every other reader is holding:
-	 * a client's own read-then-write still succeeds, and a write behind
-	 * somebody else's read does not.
+	 * The ETag to report now. A server with per-fetch ETags makes a new
+	 * ETag on every read. Each read therefore invalidates the ETag that
+	 * every other reader holds. A client that reads and then writes still
+	 * succeeds. A client that writes after another client read the
+	 * resource fails.
 	 */
 	reportedEtag(resource: ResourceState, stability: EtagStability): string {
 		if (stability === 'per-fetch') {
@@ -329,10 +362,12 @@ export class ServerState {
 	}
 
 	/**
-	 * Null when the token is not one this collection issued. The candidate
-	 * counter is read strictly and the token is then rebuilt and compared
-	 * whole, so a truncated token, a padded one, and anything numeric
-	 * coercion would have accepted are all refused.
+	 * The counter that a sync token carries. The result is null when this
+	 * collection did not issue the token. The method reads the counter
+	 * strictly. The method then builds the token again and compares the
+	 * two tokens whole. The method therefore refuses a token that is cut
+	 * short, a token with extra padding, and every token that a numeric
+	 * conversion alone would have accepted.
 	 */
 	parseSyncToken(collection: CollectionState, token: string): number | null {
 		const prefix = `${SYNC_TOKEN_PREFIX}${collection.href}`;

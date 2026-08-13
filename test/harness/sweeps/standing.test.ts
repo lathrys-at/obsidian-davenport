@@ -16,7 +16,9 @@ const PASSWORD = 'hunter2-app-specific-password';
 function standing(name: string): Sweep {
 	const sweep = STANDING_SWEEPS.find((held) => held.name === name);
 	if (!sweep) {
-		throw new Error(`no standing sweep named ${name}`);
+		throw new Error(
+			`no standing sweep has the name ${name}; add the sweep to STANDING_SWEEPS or correct the name`,
+		);
 	}
 	return sweep;
 }
@@ -40,7 +42,10 @@ function request(index: number, patch: Partial<RequestLogEntry> = {}) {
 	} satisfies RequestLogEntry;
 }
 
-/** A delivery that landed, carrying the given file content to a peer. */
+/**
+ * Makes a delivery that landed. The delivery carries the given file
+ * content from one device to a peer device.
+ */
 function delivery(content: string) {
 	return {
 		delivery: {
@@ -78,18 +83,18 @@ function violations(sweep: Sweep, record: RunEvidence): string[] {
 describe('fetch-poison-active', () => {
 	const sweep = standing('fetch-poison-active');
 
-	it('holds on a run the poison covered', () => {
+	it('reports no violation when the fetch poison held for the full run', () => {
 		expect(sweep.check(evidence())).toEqual([]);
 	});
 
-	it('objects when the poison was not in place', () => {
+	it('reports a violation when the fetch poison did not hold', () => {
 		const record = evidence({ network: { poisoned: false, attempts: [] } });
 		expect(violations(sweep, record)).toEqual([
 			'network.poisoned: global fetch was reachable during the run',
 		]);
 	});
 
-	it('objects to every call the poison refused', () => {
+	it('reports one violation for each call that the fetch poison refused', () => {
 		const record = evidence({
 			network: {
 				poisoned: true,
@@ -109,14 +114,14 @@ describe('fetch-poison-active', () => {
 describe('secrets-scan', () => {
 	const sweep = standing('secrets-scan');
 
-	it('holds when the run registered nothing sensitive', () => {
+	it('reports no violation when the run registered no sensitive value', () => {
 		const record = evidence({
 			vault: { changes: [], files: { 'Events/one.md': PASSWORD } },
 		});
 		expect(sweep.check(record)).toEqual([]);
 	});
 
-	it('finds a planted value wherever in the evidence it landed', () => {
+	it('finds a registered value at every position that holds the value', () => {
 		const record = evidence({
 			secrets: [{ label: 'app password', value: PASSWORD }],
 			caldav: {
@@ -147,7 +152,7 @@ describe('secrets-scan', () => {
 		]);
 	});
 
-	it('never prints the value it found', () => {
+	it('names the label of the value and never prints the value itself', () => {
 		const record = evidence({
 			secrets: [{ label: 'app password', value: PASSWORD }],
 			vault: { changes: [], files: { 'Events/one.md': PASSWORD } },
@@ -157,7 +162,7 @@ describe('secrets-scan', () => {
 		expect(printed).toContain('app password');
 	});
 
-	it('does not match the registry of values against itself', () => {
+	it('does not scan the registry of sensitive values', () => {
 		const record = evidence({
 			secrets: [{ label: 'app password', value: PASSWORD }],
 		});
@@ -167,7 +172,7 @@ describe('secrets-scan', () => {
 		]);
 	});
 
-	it('finds a value embedded in longer text', () => {
+	it('finds a registered value inside a longer piece of text', () => {
 		const record = evidence({
 			secrets: [{ label: 'token', value: 'abc123' }],
 			vault: {
@@ -180,7 +185,7 @@ describe('secrets-scan', () => {
 		]);
 	});
 
-	it('finds a value in a request body and in a request header', () => {
+	it('finds a registered value in a request body and in a request header', () => {
 		const record = evidence({
 			secrets: [{ label: 'app password', value: PASSWORD }],
 			caldav: {
@@ -199,7 +204,7 @@ describe('secrets-scan', () => {
 		]);
 	});
 
-	it('finds a value in a file the sync channel carried to a peer', () => {
+	it('finds a registered value in a file that the sync channel carried to a peer', () => {
 		const record = evidence({
 			secrets: [{ label: 'app password', value: PASSWORD }],
 			vaultSync: { deliveries: [delivery(PASSWORD)] },
@@ -209,7 +214,7 @@ describe('secrets-scan', () => {
 		]);
 	});
 
-	it('finds a value in note content the end of the run no longer holds', () => {
+	it('finds a registered value in a note that the run wrote and then deleted', () => {
 		const record = evidence({
 			secrets: [{ label: 'app password', value: PASSWORD }],
 			vault: {
@@ -239,14 +244,14 @@ describe('secrets-scan', () => {
 describe('remote-observed-no-server-requests', () => {
 	const sweep = standing('remote-observed-no-server-requests');
 
-	it('holds on a run that opened no such stretch', () => {
+	it('reports no violation when the run recorded no remote-observed stretch', () => {
 		const record = evidence({
 			caldav: { requests: [request(0), request(1)], scheduling: [] },
 		});
 		expect(sweep.check(record)).toEqual([]);
 	});
 
-	it('objects to a calendar request issued inside one', () => {
+	it('reports a violation when the run sent a calendar request inside a stretch', () => {
 		const record = evidence({
 			caldav: { requests: [request(0), request(1)], scheduling: [] },
 			remoteObserved: [
@@ -262,7 +267,7 @@ describe('remote-observed-no-server-requests', () => {
 		]);
 	});
 
-	it('objects to a feed poll issued inside one', () => {
+	it('reports a violation when the run polled a feed inside a stretch', () => {
 		const record = evidence({
 			feed: { requests: [poll(0), poll(1)] },
 			remoteObserved: [
@@ -278,7 +283,7 @@ describe('remote-observed-no-server-requests', () => {
 		]);
 	});
 
-	it('objects on every surface a single stretch spans', () => {
+	it('reports a violation on every surface that one stretch spans', () => {
 		const record = evidence({
 			caldav: { requests: [request(0)], scheduling: [] },
 			feed: { requests: [poll(0)] },
@@ -295,7 +300,7 @@ describe('remote-observed-no-server-requests', () => {
 		).toEqual(['caldav.requests[0]', 'feed.requests[0]']);
 	});
 
-	it('ignores requests either side of the stretch', () => {
+	it('reports no violation for the requests before and after a stretch', () => {
 		const record = evidence({
 			caldav: {
 				requests: [request(0), request(1), request(2)],
@@ -313,7 +318,7 @@ describe('remote-observed-no-server-requests', () => {
 		expect(sweep.check(record)).toEqual([]);
 	});
 
-	it('says nothing about deliveries the sync channel made inside one', () => {
+	it('reports no violation for deliveries that the sync channel made inside a stretch', () => {
 		const record = evidence({
 			vaultSync: { deliveries: [delivery('note text')] },
 			remoteObserved: [
@@ -327,7 +332,7 @@ describe('remote-observed-no-server-requests', () => {
 		expect(sweep.check(record)).toEqual([]);
 	});
 
-	it('stops at the end of a surface when the cursor overshoots it', () => {
+	it('stops at the last request of a surface when the cursor points past the end', () => {
 		const record = evidence({
 			caldav: { requests: [request(0)], scheduling: [] },
 			remoteObserved: [

@@ -35,9 +35,16 @@ function copiesIn(channel: VaultSyncChannel): (string | null)[] {
 }
 
 /**
- * One device edits the seeded record while the other deletes it, neither
- * having seen the other. Both deliveries are then made, the one from
- * `first` landing before the other.
+ * Makes an edit and a deletion that race each other, and returns the
+ * channel.
+ *
+ * The channel holds two devices, `a` and `b`. Both devices start with the
+ * seeded record. Device `a` writes new content to the record. Device `b`
+ * deletes the record. Neither device knows about the change of the other
+ * device.
+ *
+ * The function then delivers both changes. The parameter `first` names a
+ * device, and the change from that device lands before the other change.
  */
 async function editDeleteRace(
 	profile: SyncToolProfile,
@@ -52,7 +59,7 @@ async function editDeleteRace(
 }
 
 describe('vault-sync causality', () => {
-	it('fast-forwards a device that is behind, whatever order the deliveries arrive in', async () => {
+	it('brings a device that is behind up to date, in any delivery order', async () => {
 		const channel = channelOf(
 			['a', 'b', 'c'],
 			syncToolProfile('syncthing'),
@@ -76,7 +83,7 @@ describe('vault-sync causality', () => {
 		expect(copiesIn(channel)).toEqual([]);
 	});
 
-	it('copies where two devices edited without seeing each other', async () => {
+	it('makes a conflict copy when two devices change the same record without knowledge of each other', async () => {
 		const channel = channelOf(
 			['a', 'b', 'c'],
 			syncToolProfile('syncthing'),
@@ -92,7 +99,7 @@ describe('vault-sync causality', () => {
 		expect(await channel.device('c').read(RECORD)).toBe('from a\n');
 	});
 
-	it('writes nothing for a deletion the destination has already moved past', async () => {
+	it('writes nothing when the destination already holds a change made after the deletion', async () => {
 		const channel = channelOf(
 			['a', 'b', 'c'],
 			syncToolProfile('syncthing'),
@@ -110,7 +117,7 @@ describe('vault-sync causality', () => {
 		expect(await channel.device('c').read(RECORD)).toBe('v1\n');
 	});
 
-	it('tells a device that never held a path from one that deleted it', async () => {
+	it('reports a creation for a device that never held the record, and a resurrection for a device that deleted the record', async () => {
 		const channel = channelOf(['a', 'b'], syncToolProfile('syncthing'));
 		await channel.device('a').write(RECORD, 'from a\n');
 		expect(outcomes(await channel.deliver())).toEqual(['created']);
@@ -135,7 +142,7 @@ describe('vault-sync edit against deletion', () => {
 	for (const profile of profiles) {
 		const survives = profile.divergentDelivery !== 'overwrite';
 		for (const first of ['a', 'b'] as const) {
-			it(`converges under ${profile.id} with the delivery from ${first} landing first`, async () => {
+			it(`converges under the ${profile.id} profile when the delivery from ${first} lands first`, async () => {
 				const channel = await editDeleteRace(profile, first);
 				const a = channel.device('a');
 				const b = channel.device('b');

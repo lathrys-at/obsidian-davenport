@@ -1,7 +1,8 @@
 /**
- * Response shapes the handlers share: the multistatus envelope, and the
- * precondition errors WebDAV and CalDAV name for a refusal, which is how a
- * client distinguishes "not supported" from "not found".
+ * The response shapes that the handlers share. The first shape is the
+ * `multistatus` envelope. The second shape is the precondition error that
+ * WebDAV and CalDAV define for a refusal. A precondition error lets a
+ * client see the difference between "not supported" and "not found".
  */
 
 import { DAV_NS, XmlOutput, type XmlElement } from './xml';
@@ -26,7 +27,9 @@ export function multistatus(
 	};
 }
 
-/** A `<error>` body naming the precondition the request failed. */
+/**
+ * An `<error>` body that names the precondition that the request failed.
+ */
 export function preconditionError(
 	status: number,
 	ns: string,

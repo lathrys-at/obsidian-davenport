@@ -36,7 +36,7 @@ function inputs(overrides: Partial<MergeInputs> = {}): MergeInputs {
 }
 
 describe('line merge mangling', () => {
-	it('produces a file neither device wrote', () => {
+	it('produces a file that neither device wrote', () => {
 		const merged = lineMergeMangler()(inputs());
 		expect(merged).toBe(
 			[
@@ -51,26 +51,26 @@ describe('line merge mangling', () => {
 		expect(merged).not.toBe(INCOMING);
 	});
 
-	it('takes the local side of a line both changed when told to', () => {
+	it('takes the local side of a line that both sides changed, when the rule is take-local', () => {
 		expect(
 			lineMergeMangler({ onBothChanged: 'take-local' })(inputs()),
 		).toContain('checksum: bbbb');
 	});
 
-	it('marks a line both changed when told to', () => {
+	it('writes conflict markers around a line that both sides changed, when the rule is markers', () => {
 		const merged = lineMergeMangler({ onBothChanged: 'markers' })(inputs());
 		expect(merged).toContain('<<<<<<< local\nchecksum: bbbb');
 		expect(merged).toContain('=======\nchecksum: cccc\n>>>>>>> incoming');
 	});
 
-	it('keeps a line only one side changed', () => {
+	it('takes the changed side when only one side changed the line', () => {
 		const merger = lineMergeMangler();
 		expect(merger(inputs({ local: BASE }))).toBe(INCOMING);
 		expect(merger(inputs({ incoming: BASE }))).toBe(LOCAL);
 		expect(merger(inputs({ local: INCOMING }))).toBe(INCOMING);
 	});
 
-	it('carries a line past the end of the shorter side', () => {
+	it('keeps the extra line when one side has more lines than the other', () => {
 		expect(
 			lineMergeMangler()({
 				path: 'records/abc123.md',
@@ -81,12 +81,12 @@ describe('line merge mangling', () => {
 		).toBe('one\nTWO\nthree');
 	});
 
-	it('declines where the two sides share no base', () => {
+	it('declines to merge when the two sides share no base', () => {
 		expect(lineMergeMangler()(inputs({ base: null }))).toBeNull();
 		expect(declineMerge(inputs())).toBeNull();
 	});
 
-	it('answers the same way every time', () => {
+	it('produces the same merged content every time for the same inputs', () => {
 		const merger = lineMergeMangler();
 		const first = merger(inputs());
 		for (let run = 0; run < 20; run += 1) {

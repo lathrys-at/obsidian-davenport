@@ -1,35 +1,63 @@
 /**
- * Frontmatter reading and writing for the vault fake. The writer's output
- * is a pure function of the data it is handed, so the same operations
- * always produce the same bytes.
+ * Frontmatter reading and writing for the vault fake. Frontmatter is the
+ * block of YAML at the start of a note. The writer is deterministic. The
+ * output of the writer depends only on the data that the writer gets, so
+ * the same operations always give the same bytes.
  *
- * The canon the writer emits, whatever the note looked like before:
+ * Some words below come from YAML. A mapping is a set of keys, with one
+ * value for each key. A sequence is a list of values. A scalar is a
+ * single value: not a mapping, and not a sequence. An anchor gives a name
+ * to a value, and an alias later points to that name.
  *
- * - The block is `---`, the YAML text, then `---`, each on its own line,
- *   separated by line feeds. Everything after the closing line is copied
- *   through byte for byte.
- * - Keys appear in the property order of the object the update leaves
- *   behind: keys parsed from the note hold their position, keys the update
- *   adds follow in the order it added them, and keys it removes are gone.
- *   JavaScript orders integer-like keys ahead of the rest, so a key such
- *   as `2026` moves to the front.
- * - Collections are block style, indented two spaces, sequences indented
- *   under their key. An empty collection has no block form and emits as
- *   `[]` or `{}`.
- * - Scalars are plain where the YAML 1.2 core schema permits, double
- *   quoted where it does not, and literal blocks where the string spans
- *   lines or ends in a line break. Lines are never folded to a width.
- * - A key set to `undefined` goes the way of a key that was deleted.
- * - Repeated references to one object emit as repeated values rather than
- *   anchors and aliases, and a cycle is an error rather than an anchor.
- * - Comments do not survive a write: the block is rebuilt from parsed
- *   data, so any comment in it is lost.
- * - A block with no keys emits as an empty block when the note already had
- *   one, and as no block at all when it did not.
+ * YAML has more than one way to write the same data. Block style writes
+ * each key of a mapping on its own line, and each item of a sequence on
+ * its own line. Flow style writes a mapping between `{` and `}`, and a
+ * sequence between `[` and `]`, on one line. Plain style writes a scalar
+ * with no quotation marks around it. A literal block writes a string on
+ * the lines below its key, and keeps each line break in the string.
  *
- * This is determinism by construction, not a claim about the writer
- * Obsidian itself ships. Whether the two agree byte for byte is measured
- * against real installations and never assumed here.
+ * The writer applies these rules to every note, and the content that the
+ * block had before does not change the rules:
+ *
+ * - The block starts with a line that contains `---` and nothing else.
+ *   The YAML text comes next. A line that contains `---` and nothing else
+ *   closes the block. A line feed ends each of these lines. The writer
+ *   copies the text after the closing `---` line byte for byte.
+ * - The keys keep the property order that the object has after the update
+ *   function runs. A key that came from the note keeps its position. A
+ *   key that the update function added comes after these keys, in the
+ *   order that the update function added the keys. A key that the update
+ *   function removed does not appear. JavaScript puts the keys that look
+ *   like an array index before the other keys, so a key such as `2026`
+ *   moves to the front.
+ * - The writer writes a mapping and a sequence in block style, with an
+ *   indent of two spaces. A sequence is indented below its key. Block
+ *   style has no form for an empty mapping and no form for an empty
+ *   sequence. The writer writes an empty mapping as `{}` and an empty
+ *   sequence as `[]`, in flow style.
+ * - The writer writes a scalar in plain style if the YAML 1.2 core schema
+ *   permits plain style. If the schema does not permit plain style, the
+ *   writer writes the scalar in double quotation marks. If the string
+ *   contains a line break, or ends with a line break, the writer writes a
+ *   literal block. The writer never breaks a long line into shorter
+ *   lines.
+ * - The writer removes a key that is set to `undefined`, the same as a
+ *   key that the update function deleted.
+ * - If more than one value in the data points to one object, the writer
+ *   writes that object again each time. The writer does not write an
+ *   anchor with an alias. If the data contains a cycle, the writer throws
+ *   an error, and does not write an anchor.
+ * - The writer keeps no comment. The writer builds the block again from
+ *   the parsed data, so each comment in the block is lost.
+ * - If the data has no keys, and the note already had a block, the writer
+ *   writes an empty block. If the data has no keys, and the note had no
+ *   block, the writer writes no block.
+ *
+ * The construction of the writer gives this determinism. The rules above
+ * are not a claim about the frontmatter writer that Obsidian itself
+ * supplies. A measurement against real Obsidian installations shows if
+ * the two writers give the same bytes. This file never assumes that the
+ * two writers agree.
  */
 
 import { parse, stringify } from 'yaml';
@@ -54,7 +82,10 @@ const STRINGIFY_OPTIONS = {
 	aliasDuplicateObjects: false,
 } as const;
 
-/** Raised when a note's frontmatter block cannot be rewritten. */
+/**
+ * The writer throws this error when it cannot rewrite the frontmatter
+ * block of a note.
+ */
 export class FrontmatterError extends Error {
 	constructor(message: string) {
 		super(message);
@@ -64,18 +95,19 @@ export class FrontmatterError extends Error {
 
 export interface SplitNote {
 	/**
-	 * The YAML text between the delimiters, ending in a line feed unless
-	 * empty; null when the note carries no block.
+	 * The YAML text between the two `---` lines. A line feed ends this
+	 * text, unless the text is empty. The value is null when the note has
+	 * no block.
 	 */
 	readonly yaml: string | null;
 	/**
-	 * Everything after the closing delimiter line, or the whole note when
-	 * there is no block.
+	 * All the text after the closing `---` line. When the note has no
+	 * block, this is the full text of the note.
 	 */
 	readonly body: string;
 }
 
-/** What a block reads as once it is there to read. */
+/** The result when the reader reads a block that the note contains. */
 export type BlockRead =
 	| { readonly kind: 'invalid'; readonly reason: string }
 	| { readonly kind: 'mapping'; readonly data: Record<string, unknown> };
@@ -83,10 +115,11 @@ export type BlockRead =
 export type FrontmatterRead = { readonly kind: 'absent' } | BlockRead;
 
 /**
- * Splits a note into its frontmatter block and its body. A block counts
- * only when `---` opens the very first line and a later line is `---` on
- * its own; an unterminated block is body text. Delimiter lines may end
- * with a carriage return.
+ * Splits a note into its frontmatter block and its body. The note has a
+ * block only when the first line of the note is `---` and nothing else,
+ * and a later line is `---` and nothing else. When no later line closes
+ * the block, the function makes the full note the body. A `---` line can
+ * end with a carriage return.
  */
 export function splitNote(content: string): SplitNote {
 	const firstBreak = content.indexOf('\n');
@@ -116,9 +149,11 @@ export function splitNote(content: string): SplitNote {
 }
 
 /**
- * Reads a note's frontmatter. A block that is empty, or holds nothing but
- * comments, reads as an empty mapping; one that does not parse, or parses
- * to anything other than a mapping, reads as invalid.
+ * Reads the frontmatter of a note. A note that has no block reads as
+ * absent. An empty block gives an empty mapping, and a block that
+ * contains only comments also gives an empty mapping. A block that does
+ * not parse is invalid, and a block that parses to a value that is not a
+ * mapping is also invalid.
  */
 export function readFrontmatter(content: string): FrontmatterRead {
 	const { yaml } = splitNote(content);
@@ -126,9 +161,11 @@ export function readFrontmatter(content: string): FrontmatterRead {
 }
 
 /**
- * Applies `update` to a note's frontmatter and returns the rewritten note.
- * A note with no block starts from an empty mapping; a note whose block
- * does not read as a mapping is refused rather than overwritten.
+ * Applies the `update` function to the frontmatter of a note, then
+ * returns the new text of the note. When the note has no block, the
+ * update starts from an empty mapping. When the block of the note does
+ * not read as a mapping, the function throws `FrontmatterError` and does
+ * not overwrite the block.
  */
 export function writeFrontmatter(
 	content: string,
@@ -138,7 +175,7 @@ export function writeFrontmatter(
 	const read = yaml === null ? null : parseBlock(yaml);
 	if (read !== null && read.kind === 'invalid') {
 		throw new FrontmatterError(
-			`frontmatter does not read as a mapping: ${read.reason}`,
+			`the writer cannot rewrite the frontmatter. Correct the frontmatter block in the note, then write again. The reason: ${read.reason}`,
 		);
 	}
 	const data = read === null ? {} : read.data;
@@ -160,7 +197,7 @@ function parseBlock(yaml: string): BlockRead {
 		return { kind: 'mapping', data: {} };
 	}
 	if (!isMapping(document)) {
-		return { kind: 'invalid', reason: 'block is not a mapping' };
+		return { kind: 'invalid', reason: 'the block is not a mapping' };
 	}
 	return { kind: 'mapping', data: { ...document } };
 }
@@ -184,7 +221,7 @@ function composeNote(
 			);
 		} catch (error) {
 			throw new FrontmatterError(
-				`frontmatter holds a value the writer cannot represent: ${
+				`the writer cannot write a value in the frontmatter as YAML. Use a value that YAML can hold. The reason: ${
 					error instanceof Error ? error.message : String(error)
 				}`,
 			);

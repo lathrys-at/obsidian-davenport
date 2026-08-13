@@ -1,11 +1,14 @@
 /**
  * SHA-256 over bytes.
  *
- * Written out here rather than taken from the environment: the probe runs
- * on desktop and on phones, and a digest it carries itself is one fewer
- * thing that can differ between them or be missing on one of them. The
- * comparison script checks these digests against the bytes they claim to
- * cover, so an implementation that drifted would be caught there.
+ * The probe is a plugin, and it runs on desktop computers and on phones.
+ * This file holds all of the SHA-256 algorithm. The probe therefore does
+ * not ask the platform for a digest function. A platform function can
+ * give different results on a desktop computer and on a phone, and a
+ * platform function can be absent on one of the two. The function in this
+ * file has neither problem. The comparison script checks each recorded
+ * digest against the bytes that the digest claims to cover. A change that
+ * makes this code different from SHA-256 makes that check fail.
  */
 
 const ROUND_CONSTANTS = words([
@@ -25,7 +28,10 @@ const ROUND_CONSTANTS = words([
 const BLOCK_BYTES = 64;
 const SCHEDULE_WORDS = 64;
 
-/** The digest of these bytes, lowercase hex. */
+/**
+ * Calculates the SHA-256 digest of the bytes. The result is lowercase
+ * hexadecimal text.
+ */
 export function sha256Hex(bytes: Uint8Array): string {
 	const message = padded(bytes);
 	const input = new DataView(
@@ -107,12 +113,18 @@ export function sha256Hex(bytes: Uint8Array): string {
 	return [h0, h1, h2, h3, h4, h5, h6, h7].map(hex).join('');
 }
 
-/** The digest of this text encoded as UTF-8, lowercase hex. */
+/**
+ * Encodes the text as UTF-8, then calculates the SHA-256 digest of those
+ * bytes. The result is lowercase hexadecimal text.
+ */
 export function sha256HexOfText(text: string): string {
 	return sha256Hex(new TextEncoder().encode(text));
 }
 
-/** The message with the padding and length the algorithm appends. */
+/**
+ * Gives back the bytes with the padding that SHA-256 adds at the end. The
+ * padding finishes with the length of the input in bits.
+ */
 function padded(bytes: Uint8Array): Uint8Array {
 	const bitLength = bytes.length * 8;
 	const blocks = Math.ceil((bytes.length + 9) / BLOCK_BYTES);
@@ -125,7 +137,11 @@ function padded(bytes: Uint8Array): Uint8Array {
 	return message;
 }
 
-/** These values as big-endian words, reachable without index arithmetic. */
+/**
+ * Puts the values into a DataView as big-endian 32-bit words. The caller
+ * then reads one whole word at a time, and does not build a word out of
+ * single bytes.
+ */
 function words(values: readonly number[]): DataView {
 	const view = new DataView(new ArrayBuffer(values.length * 4));
 	values.forEach((value, index) => {

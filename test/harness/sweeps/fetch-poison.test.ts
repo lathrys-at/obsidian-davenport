@@ -12,9 +12,12 @@ import { runSimulation } from './run';
 const ALIASES = ['window', 'self', 'global'] as const;
 
 /**
- * Installs an alias of the given name holding its own fetch, so the walk
- * meets a spelling that is a separate object. Node resolves every alias to
- * one global, which would let a poison that covers only globalThis pass.
+ * Defines a global object under the given name, and returns a function that
+ * puts the earlier value back. The new object holds `own` as its own fetch,
+ * or holds no fetch when `own` is undefined. The poison walks the global
+ * names, and the walk then meets a name that holds a separate object. Node
+ * resolves every alias name to one global object, so without a separate
+ * object a poison that covers only globalThis would pass these tests.
  */
 function withAlias(name: string, own: (() => unknown) | undefined): () => void {
 	const original = Object.getOwnPropertyDescriptor(globalThis, name);
@@ -34,10 +37,10 @@ function withAlias(name: string, own: (() => unknown) | undefined): () => void {
 }
 
 /**
- * The fetch a caller would reach through the named global. A bare `fetch(…)`
- * resolves this same property on the global object, and the lint rules bar
- * that spelling from being written anywhere in the repository, so the tests
- * reach it this way.
+ * Returns the fetch that a caller reaches through the named global object.
+ * A bare `fetch(…)` call reads this same property on the global object. The
+ * lint rules forbid a bare `fetch(…)` call in every file of the repository.
+ * These tests therefore read the property through `Reflect.get`.
  */
 function fetchOf(name: string): unknown {
 	const holder: unknown = Reflect.get(globalThis, name);
@@ -49,7 +52,7 @@ function fetchOf(name: string): unknown {
 function callFetchOf(name: string, input: unknown): void {
 	const call = fetchOf(name);
 	if (typeof call !== 'function') {
-		throw new TypeError(`${name}.fetch is not callable`);
+		throw new TypeError(`${name}.fetch is not a function`);
 	}
 	(call as (request: unknown) => never)(input);
 }
@@ -60,8 +63,9 @@ function lastAttempt() {
 }
 
 afterEach(() => {
-	// The setup file poisons once per test file; a test that lifted the
-	// poison puts it back so the tests after it run under it.
+	// The setup file poisons the global objects one time for each test file.
+	// A test in this file can lift the poison. This hook puts the poison
+	// back, so that the tests after that test also run under the poison.
 	poisonFetch();
 	clearFetchAttempts();
 });
@@ -71,7 +75,7 @@ describe('fetch poisoning', () => {
 		expect(fetchPoisonHolds()).toBe(true);
 	});
 
-	it('throws where a bare call would, naming what was asked for', () => {
+	it('throws on a call through globalThis, and records the url', () => {
 		expect(() => {
 			callFetchOf(
 				'globalThis',
@@ -83,7 +87,7 @@ describe('fetch poisoning', () => {
 		);
 	});
 
-	it('reads the url off a URL and off a request-shaped argument', () => {
+	it('reads the url from a URL and from an object with a url', () => {
 		expect(() => {
 			callFetchOf(
 				'globalThis',
@@ -103,13 +107,13 @@ describe('fetch poisoning', () => {
 		]);
 	});
 
-	it('names an argument it cannot read a url from', () => {
+	it('reports that the poison cannot read a url from the argument', () => {
 		expect(() => {
 			callFetchOf('globalThis', 42);
-		}).toThrow(/no readable url/);
+		}).toThrow(/no url that the poison can read/);
 	});
 
-	it.each(ALIASES)('covers %s when it is its own object', (name) => {
+	it.each(ALIASES)('covers a separate object under %s', (name) => {
 		restoreFetch();
 		let reached = false;
 		const remove = withAlias(name, () => {
@@ -129,14 +133,14 @@ describe('fetch poisoning', () => {
 		}
 	});
 
-	it('puts back the fetch it found, and reports itself lifted', () => {
+	it('puts back the fetch of globalThis, and then reports no poison', () => {
 		const poison = fetchOf('globalThis');
 		restoreFetch();
 		expect(fetchPoisonHolds()).toBe(false);
 		expect(fetchOf('globalThis')).not.toBe(poison);
 	});
 
-	it('holds when a global stub carries no fetch at all', async () => {
+	it('holds when a stub global object has no fetch at all', async () => {
 		const remove = withAlias('window', undefined);
 		try {
 			expect(fetchPoisonHolds()).toBe(true);
@@ -148,7 +152,7 @@ describe('fetch poisoning', () => {
 		}
 	});
 
-	it('reports itself broken when a stub brings its own live fetch', () => {
+	it('reports a breach when a stub global object brings a live fetch', () => {
 		const remove = withAlias('window', () => undefined);
 		try {
 			expect(fetchPoisonHolds()).toBe(false);
@@ -160,7 +164,7 @@ describe('fetch poisoning', () => {
 		}
 	});
 
-	it('leaves an alias without its own fetch alone once restored', () => {
+	it('puts back the fetch of an alias, and leaves no poison behind', () => {
 		restoreFetch();
 		const remove = withAlias('window', () => undefined);
 		try {
@@ -174,7 +178,7 @@ describe('fetch poisoning', () => {
 		}
 	});
 
-	it('does not stack a second poison over the first', () => {
+	it('does not put a second poison over the first', () => {
 		const first = fetchOf('globalThis');
 		poisonFetch();
 		expect(fetchOf('globalThis')).toBe(first);
@@ -182,7 +186,7 @@ describe('fetch poisoning', () => {
 		expect(fetchPoisonHolds()).toBe(false);
 	});
 
-	it('reports itself broken when something replaces fetch', () => {
+	it('reports a breach when something replaces the fetch of globalThis', () => {
 		const original = Object.getOwnPropertyDescriptor(globalThis, 'fetch');
 		Object.defineProperty(globalThis, 'fetch', {
 			value: () => undefined,

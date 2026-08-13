@@ -1,9 +1,12 @@
 /**
- * The probe carries its own SHA-256 so that it hashes the same way on a
- * phone as on a desktop and needs nothing from the environment it runs in.
- * That only holds if it is really SHA-256, which is what this asks: the
- * same digests node's own implementation produces, over the corpus the
- * probe actually hashes and over the lengths that exercise the padding.
+ * The probe carries its own SHA-256 code. That code gives the probe two
+ * properties. The probe hashes in the same way on a phone and on a
+ * desktop computer, and the code needs nothing from the environment that
+ * the probe runs in. Both properties hold only if the carried code really
+ * is SHA-256. This file checks that condition. The tests compare the
+ * digests of the carried code against the digests of the SHA-256 that
+ * node supplies. The tests use the note corpus that the probe hashes, and
+ * the input lengths where a mistake in the padding shows itself.
  */
 
 import { createHash } from 'node:crypto';
@@ -11,23 +14,27 @@ import { describe, expect, it } from 'vitest';
 import { sha256Hex, sha256HexOfText } from '../tools/a11-probe/sha256';
 import { NOTE_FIXTURES } from './harness/fixtures/note-corpus';
 
-/** What node says, for the same bytes. */
+/**
+ * Calculates the digest of the same bytes with the SHA-256 that node
+ * supplies. The result is lowercase hexadecimal text.
+ */
 function reference(bytes: Uint8Array): string {
 	return createHash('sha256').update(bytes).digest('hex');
 }
 
-describe('the probe digest', () => {
-	it('agrees with node over every fixture in the corpus', () => {
+describe('the digest that the probe carries', () => {
+	it('matches the digest from node for every note in the corpus', () => {
 		for (const fixture of NOTE_FIXTURES) {
 			const bytes = new TextEncoder().encode(fixture.content);
 			expect(sha256HexOfText(fixture.content)).toBe(reference(bytes));
 		}
 	});
 
-	// One block is 64 bytes and the length takes the last 8 of them, so 55,
-	// 56 and 64 are where a padding mistake shows up.
+	// SHA-256 works on blocks of 64 bytes, and the length of the input
+	// takes the last 8 bytes of the final block. A mistake in the padding
+	// therefore shows itself at the lengths 55, 56 and 64.
 	it.each([0, 1, 55, 56, 63, 64, 65, 119, 120, 1000])(
-		'agrees with node over %i bytes',
+		'matches the digest from node for an input of %i bytes',
 		(length) => {
 			const bytes = Uint8Array.from(
 				{ length },
@@ -37,14 +44,14 @@ describe('the probe digest', () => {
 		},
 	);
 
-	it('agrees with node over text that is not ASCII', () => {
+	it('matches the digest from node for text that is not ASCII', () => {
 		const text = '週次ミーティング — Café Müller 🎉';
 		expect(sha256HexOfText(text)).toBe(
 			reference(new TextEncoder().encode(text)),
 		);
 	});
 
-	it('gives the published digest of the empty input', () => {
+	it('gives the published digest for an input of zero bytes', () => {
 		expect(sha256Hex(new Uint8Array(0))).toBe(
 			'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
 		);

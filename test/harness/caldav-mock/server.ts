@@ -1,17 +1,23 @@
 /**
- * The mock CalDAV server. It implements the transport port directly: the
- * engine under test receives it where the Obsidian adapter would go, and
- * no socket, no `requestUrl`, and no network stack sit in between.
+ * The mock CalDAV server. The class implements the transport port itself.
+ * A test gives the server to the engine under test in the place of the
+ * Obsidian adapter. No socket, no `requestUrl`, and no network stack sits
+ * between the engine and this class.
  *
- * Everything the server answers is a function of its seeded state, its
- * capability configuration, and the requests it has received. Identifiers
- * come from counters, so two runs of the same sequence produce the same
- * bytes.
+ * The answer to a request is a function of three things:
  *
- * The model accessors set a scene or check one without going through a
- * request. None of them touches the request log or the scheduling record:
- * state changed that way stands for another client's work, not for a write
- * by the engine under test.
+ * - the state that the test seeded,
+ * - the capability settings,
+ * - the requests that the server received before.
+ *
+ * Counters supply the identifiers. Two runs of the same sequence therefore
+ * produce the same bytes.
+ *
+ * The model accessors set up a scene, or examine one, without a request.
+ * No model accessor reads or writes the request log or the scheduling
+ * record. State that an accessor changes stands for the work of a
+ * different client. It does not stand for a write by the engine under
+ * test.
  */
 
 import type {
@@ -63,7 +69,7 @@ export interface MockServerConfig {
 const DEFAULT_ORIGIN = 'https://caldav.davenport.test';
 const XML_METHODS = new Set(['PROPFIND', 'REPORT']);
 
-/** A request the server has taken apart and entered in the log. */
+/** A request that the server took apart and entered in the log. */
 interface Incoming {
 	readonly method: string;
 	readonly path: string;
@@ -72,11 +78,17 @@ interface Incoming {
 	readonly parsed: XmlBody;
 	readonly query: URLSearchParams;
 	readonly contentType: string | null;
-	/** Its place in the request log, which a write points back at. */
+	/**
+	 * The place of the request in the log. A write points back at this
+	 * place.
+	 */
 	readonly index: number;
 }
 
-/** A failure inside the mock reads as a server failure, which is a 500. */
+/**
+ * Makes the response for a failure inside the mock. Such a failure stands
+ * for a failure of the server, and a failure of the server is a 500.
+ */
 function serverFailure(error: unknown): MockResponse {
 	return plain(
 		500,
@@ -107,7 +119,11 @@ export class MockCalDavServer implements HttpTransport {
 		return this.config;
 	}
 
-	/** Changes the server mid-run, for tokens that stop being accepted. */
+	/**
+	 * Changes the capability settings while a test runs. A test calls the
+	 * method, for example, to make the server refuse the tokens that the
+	 * server accepted before.
+	 */
 	configure(patch: Partial<MockServerCapabilities>): void {
 		this.config = withCapabilities(this.config, patch);
 		if ('faults' in patch) {
@@ -216,8 +232,9 @@ export class MockCalDavServer implements HttpTransport {
 		try {
 			return this.answer(req);
 		} catch (error) {
-			// The port rejects only for transport failure, so a fault in the
-			// mock's own code has to come back as a response like any other.
+			// The transport port rejects only when the transport itself
+			// fails. A failure in the code of the mock must therefore come
+			// back as a response, like every other answer.
 			return toHttpResponse(serverFailure(error), null);
 		}
 	}
@@ -265,9 +282,11 @@ export class MockCalDavServer implements HttpTransport {
 	}
 
 	/**
-	 * Faults are matched only once the request is one this server would
-	 * have handled, so a request for another origin and a redirected hop
-	 * leave a fault's budget alone.
+	 * Answers one request. The method looks for a fault only after it
+	 * knows that this server handles the request. A request for a
+	 * different origin therefore does not count against the number of
+	 * requests that a fault affects. A request that a redirect answers
+	 * does not count either.
 	 */
 	private serve(incoming: Incoming): {
 		response: MockResponse;
@@ -317,8 +336,8 @@ export class MockCalDavServer implements HttpTransport {
 		};
 
 		if (route.kind === 'well-known') {
-			// Nothing is served here: a well-known URI either redirects to
-			// the principal or is not there at all.
+			// A well-known URI gives a redirect to the principal, or it is
+			// not there at all. This mock serves no content at this path.
 			return plain(404);
 		}
 		if (method === 'OPTIONS') {

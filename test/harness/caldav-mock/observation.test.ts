@@ -36,7 +36,7 @@ function server(): MockCalDavServer {
 }
 
 describe('request log', () => {
-	it('keeps requests in arrival order with the status each received', async () => {
+	it('keeps the requests in arrival order, with the status of each request', async () => {
 		const mock = server();
 		await mock.request({
 			url: mock.principalUrl('alice'),
@@ -82,7 +82,7 @@ describe('request log', () => {
 		expect(mock.log.forPath(WORK)).toHaveLength(1);
 	});
 
-	it('records the headers and report the engine sent', async () => {
+	it('records the headers and the kind of REPORT that the engine sent', async () => {
 		const mock = server();
 		await mock.request({
 			url: mock.collectionUrl('alice', 'work'),
@@ -109,7 +109,7 @@ describe('request log', () => {
 		expect(creation?.ifNoneMatch).toBe('*');
 	});
 
-	it('records the token a sync presented, empty for an initial sync', async () => {
+	it('records the sync token that a request presented, and empty text for an initial sync', async () => {
 		const mock = server();
 		await mock.request({
 			url: mock.collectionUrl('alice', 'work'),
@@ -128,14 +128,14 @@ describe('request log', () => {
 		]);
 	});
 
-	it('counts nothing for state changed out of band', () => {
+	it('records nothing when a test changes the state without a request', () => {
 		const mock = server();
 		mock.seedResource('alice', 'work', 'two.ics', SOLO);
 		mock.removeResource('alice', 'work', 'two.ics');
 		expect(mock.log.entries).toStrictEqual([]);
 	});
 
-	it('keeps the body a write carried', async () => {
+	it('keeps the body that a write carried', async () => {
 		const mock = server();
 		await mock.request({
 			url: mock.resourceUrl('alice', 'work', 'one.ics'),
@@ -147,7 +147,7 @@ describe('request log', () => {
 		expect(entry?.bodyTruncated).toBe(false);
 	});
 
-	it('records an empty body for a request that carried none', async () => {
+	it('records an empty body for a request that carried no body', async () => {
 		const mock = server();
 		await mock.request({
 			url: mock.resourceUrl('alice', 'work', 'one.ics'),
@@ -156,7 +156,7 @@ describe('request log', () => {
 		expect(mock.log.entries[0]?.body).toBe('');
 	});
 
-	it('cuts a body at the cap and says that it did', async () => {
+	it('cuts a body at the limit and records that the cut occurred', async () => {
 		const mock = server();
 		const long = icsEvent({
 			uid: 'one',
@@ -172,7 +172,7 @@ describe('request log', () => {
 		expect(entry?.bodyTruncated).toBe(true);
 	});
 
-	it('keeps every header the request carried, credentials included', async () => {
+	it('keeps every header that the request carried, credentials included', async () => {
 		const mock = server();
 		await mock.request({
 			url: mock.resourceUrl('alice', 'work', 'one.ics'),
@@ -191,7 +191,7 @@ describe('request log', () => {
 		});
 	});
 
-	it('records the content type the port states without a header', async () => {
+	it('records the content type that the port gives outside the headers', async () => {
 		const mock = server();
 		await mock.request({
 			url: mock.resourceUrl('alice', 'work', 'one.ics'),
@@ -206,7 +206,7 @@ describe('request log', () => {
 });
 
 describe('scheduling record', () => {
-	it('records a write that gains attendees', async () => {
+	it('records a write that adds the first attendees to a resource', async () => {
 		const mock = server();
 		await mock.request({
 			url: mock.resourceUrl('alice', 'work', 'one.ics'),
@@ -237,7 +237,7 @@ describe('scheduling record', () => {
 		expect(mock.scheduling.entries[0]?.transition).toBe('retains');
 	});
 
-	it('records a write that drops the last attendee', async () => {
+	it('records a write that removes the last attendee', async () => {
 		const mock = server();
 		mock.seedResource('alice', 'work', 'one.ics', WITH_GUEST);
 		await mock.request({
@@ -251,7 +251,7 @@ describe('scheduling record', () => {
 		expect(entry?.attendeesAfter).toStrictEqual([]);
 	});
 
-	it('records deleting a resource that carried attendees', async () => {
+	it('records a DELETE of a resource that carried attendees', async () => {
 		const mock = server();
 		mock.seedResource('alice', 'work', 'one.ics', WITH_GUEST);
 		await mock.request({
@@ -264,7 +264,7 @@ describe('scheduling record', () => {
 		expect(entry?.attendeesBefore).toStrictEqual([ORGANIZER, GUEST]);
 	});
 
-	it('records an attachment write against a resource with attendees', async () => {
+	it('records an attachment write to a resource that has attendees', async () => {
 		const mock = new MockCalDavServer({
 			capabilities: { managedAttachments: true },
 			accounts: [
@@ -293,7 +293,7 @@ describe('scheduling record', () => {
 		expect(entry?.requestIndex).toBe(0);
 	});
 
-	it('reads the attendees off a body written with LF endings', async () => {
+	it('reads the attendees from a body that uses LF line endings', async () => {
 		const mock = server();
 		const lineFed = WITH_GUEST.replace(/\r\n/g, '\n');
 		await mock.request({
@@ -307,7 +307,7 @@ describe('scheduling record', () => {
 		expect(mock.resourceIcs('alice', 'work', 'one.ics')).toBe(lineFed);
 	});
 
-	it('records nothing for writes that touch no attendee', async () => {
+	it('records nothing for a write that touches no attendee', async () => {
 		const mock = server();
 		await mock.request({
 			url: mock.resourceUrl('alice', 'work', 'one.ics'),
@@ -321,7 +321,7 @@ describe('scheduling record', () => {
 		expect(mock.scheduling.entries).toStrictEqual([]);
 	});
 
-	it('records nothing for a write the server refused', async () => {
+	it('records nothing for a write that the server refused', async () => {
 		const mock = server();
 		mock.seedResource('alice', 'work', 'one.ics', WITH_GUEST);
 		const refused = await mock.request({
@@ -334,14 +334,14 @@ describe('scheduling record', () => {
 		expect(mock.scheduling.entries).toStrictEqual([]);
 	});
 
-	it('records nothing for attendee-bearing state seeded out of band', () => {
+	it('records nothing when a test seeds and removes attendees without a request', () => {
 		const mock = server();
 		mock.seedResource('alice', 'work', 'two.ics', WITH_GUEST);
 		mock.removeResource('alice', 'work', 'two.ics');
 		expect(mock.scheduling.entries).toStrictEqual([]);
 	});
 
-	it('points each entry at the request that caused it', async () => {
+	it('points each entry at the request that caused the entry', async () => {
 		const mock = server();
 		await mock.request({
 			url: mock.collectionUrl('alice', 'work'),

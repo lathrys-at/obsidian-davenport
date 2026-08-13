@@ -1,18 +1,23 @@
 /**
- * A standalone probe that records how this build of Obsidian writes
- * frontmatter, so runs from different versions and devices can be compared
+ * The probe plugin. This plugin is separate from the Davenport plugin.
+ * The plugin records how this build of Obsidian writes frontmatter. Thus
+ * you can compare runs from different versions and different devices,
  * byte for byte.
  *
- * Lifecycle and copy only: the run itself is in `run.ts`. The probe reads
- * and writes one folder in the vault, reaches no network, and stores
- * nothing anywhere else.
+ * This file holds the plugin lifecycle and the text of the notices. The
+ * run itself is in `run.ts`. The probe reads and writes one folder in the
+ * vault. The probe uses no network. The probe stores nothing anywhere
+ * else.
  */
 
 import { Notice, Plugin } from 'obsidian';
 import { describeError } from './results';
 import { runProbe } from './run';
 
-/** Long enough to read a path off a phone screen. */
+/**
+ * How long a notice stays on screen. This time is long enough to read a
+ * path off a phone screen.
+ */
 const NOTICE_MS = 20000;
 
 export default class FrontmatterProbePlugin extends Plugin {
@@ -27,20 +32,22 @@ export default class FrontmatterProbePlugin extends Plugin {
 	}
 
 	private async probe(): Promise<void> {
-		new Notice('Frontmatter probe: running…');
+		new Notice('Frontmatter probe: the run started…');
 		try {
 			const run = await runProbe(this, new Date());
 			const said = [`${String(run.emitted)} samples`];
 			if (run.failed > 0) {
-				said.push(`${String(run.failed)} refused by the writer`);
+				said.push(
+					`${String(run.failed)} fixtures that the writer refused`,
+				);
 			}
 			if (run.timedOut > 0) {
 				said.push(
-					`${String(run.timedOut)} waited out the cache timeout and may be stale`,
+					`${String(run.timedOut)} samples that waited out the cache timeout and are possibly stale`,
 				);
 			}
 			new Notice(
-				`Frontmatter probe: ${said.join(', ')}. Results in ${run.path}`,
+				`Frontmatter probe: ${said.join(', ')}. The results file is ${run.path}`,
 				NOTICE_MS,
 			);
 		} catch (error) {

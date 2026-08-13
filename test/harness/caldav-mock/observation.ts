@@ -1,30 +1,44 @@
 /**
- * The two surfaces tests assert against: an ordered log of every request
- * the server handled, and the scheduling record — the ledger of writes a
- * scheduling-capable server would have turned into mail to attendees.
+ * The mock CalDAV server keeps two records, and the tests assert against
+ * them. The first record is the request log. It holds every request that
+ * the server handled.
  *
- * Both are append-only within a run and ordered by arrival. Entries are
- * added by the request path only: state seeded or changed out of band
- * stands for another client's work, which neither this engine issued nor
- * would be blamed for.
+ * The second record is the scheduling record. Some writes touch a
+ * resource that has attendees before the write or after the write. For a
+ * write of this kind, a CalDAV server that supports scheduling sends
+ * mail to the attendees of that resource. The scheduling record lists
+ * the writes that would have caused such mail.
+ *
+ * Within one run, each record only takes new entries, and each new entry
+ * goes at the end. Both records therefore keep the order of arrival. Only
+ * the request path adds an entry. A test can also put state into the
+ * server, or change that state, without a request. A change of that kind
+ * stands for the work of a different client: the engine under test did
+ * not send it, and neither record counts it against the engine.
  */
 
 export type ReportKind =
 	'sync-collection' | 'calendar-query' | 'calendar-multiget';
 
 /**
- * How much of a request body an entry keeps: 4096 characters, after which
- * the body is cut and the entry says it was. A calendar object is far
- * smaller than that, so a run asserting on what it sent sees all of it,
- * while a run that uploads something large does not hold a second copy of
- * it for as long as the log lives. Anything scanning bodies for credential
- * material reads what is kept, so a value hidden past the cut is a value
- * the scan cannot report.
+ * The largest number of characters of a request body that one entry
+ * keeps. The limit is 4096 characters. When the body is longer than the
+ * limit, the entry keeps the first 4096 characters, and the entry also
+ * says that the cut occurred.
+ *
+ * A calendar object is much smaller than this limit. A run that asserts
+ * on the body that it sent therefore sees the whole body. A run can also
+ * upload a body that is larger than the limit. The log then holds no
+ * second copy of the whole body for as long as the log lives.
+ *
+ * A check that searches request bodies for credentials reads only the
+ * characters that the entry keeps. A credential that sits after the cut
+ * is a credential that such a check cannot report.
  */
 export const REQUEST_BODY_CAP = 4096;
 
 export interface RequestLogEntry {
-	/** Arrival order, from zero. */
+	/** The place of the request in the arrival order. The first is zero. */
 	readonly index: number;
 	readonly method: string;
 	readonly url: string;
@@ -32,15 +46,28 @@ export interface RequestLogEntry {
 	readonly depth: string | null;
 	readonly ifMatch: string | null;
 	readonly ifNoneMatch: string | null;
-	/** The REPORT this request carried, or null for other methods. */
+	/**
+	 * The kind of REPORT that the request carried. The value is null for a
+	 * request that carried no REPORT of these kinds.
+	 */
 	readonly report: ReportKind | null;
-	/** The token a sync-collection presented; empty text for initial sync. */
+	/**
+	 * The sync token that a sync-collection REPORT presented. The value is
+	 * empty text for an initial sync, which presents no token. The value is
+	 * null for a request that is not a sync-collection REPORT.
+	 */
 	readonly syncToken: string | null;
-	/** Every header the request carried, keyed by its lowercased name. */
+	/**
+	 * Every header that the request carried. The key of each entry is the
+	 * name of the header in lower case.
+	 */
 	readonly headers: Readonly<Record<string, string>>;
-	/** The body as sent, cut at the cap; empty text where none was sent. */
+	/**
+	 * The body as the request sent it, cut at the limit. The value is empty
+	 * text for a request that sent no body.
+	 */
 	readonly body: string;
-	/** Whether the cap cut the body short. */
+	/** True when the limit cut the body short. */
 	readonly bodyTruncated: boolean;
 	readonly status: number;
 }
@@ -55,7 +82,10 @@ export interface RequestLogDraft {
 	readonly report: ReportKind | null;
 	readonly syncToken: string | null;
 	readonly headers: Readonly<Record<string, string>>;
-	/** The whole body; the log keeps as much of it as the cap allows. */
+	/**
+	 * The whole body. The entry keeps the first part of this body, up to
+	 * the limit.
+	 */
 	readonly body: string;
 }
 
@@ -64,9 +94,9 @@ interface MutableLogEntry extends RequestLogEntry {
 }
 
 /**
- * Status is unset until the response is known. Every request the server
- * begins is completed, including one whose handling failed, so no entry is
- * ever read carrying this.
+ * The status of an entry before the server knows the response. The server
+ * completes every request that it begins, and this includes a request
+ * whose handling failed. Therefore no read of an entry finds this status.
  */
 const PENDING_STATUS = 0;
 
@@ -74,8 +104,10 @@ export class RequestLog {
 	private readonly items: MutableLogEntry[] = [];
 
 	/**
-	 * Reserves this request's place in the order before it is handled, so
-	 * the log records arrival rather than completion.
+	 * Adds an entry at the end of the log, and returns the index of that
+	 * entry. The caller calls this method before the server handles the
+	 * request. The log therefore holds the order of arrival, and not the
+	 * order of completion.
 	 */
 	begin(draft: RequestLogDraft): number {
 		const index = this.items.length;
@@ -128,10 +160,18 @@ export class RequestLog {
 }
 
 /**
- * How a write moved the resource's attendee set. `retains` is a write to a
- * resource that had attendees before and after, which servers propagate as
- * an update; `loses` covers both removing the last attendee and deleting
- * an attendee-bearing resource, which servers propagate as a cancellation.
+ * How a write changed the set of attendees on a resource:
+ *
+ * - `gains`: the resource had no attendees before the write, and it has
+ *   attendees after the write.
+ * - `retains`: the resource had attendees before the write, and it has
+ *   attendees after the write. A server that supports scheduling sends
+ *   this write to the attendees as an update.
+ * - `loses`: the resource had attendees before the write, and it has none
+ *   after the write. This value covers two cases. In the first case, the
+ *   write removed the last attendee. In the second case, the write
+ *   deleted a resource that had attendees. A server that supports
+ *   scheduling sends this write to the attendees as a cancellation.
  */
 export type AttendeeTransition = 'gains' | 'loses' | 'retains';
 
@@ -144,7 +184,9 @@ export interface SchedulingFact {
 
 export interface SchedulingEntry extends SchedulingFact {
 	readonly index: number;
-	/** Position of the write in the request log. */
+	/**
+	 * The index in the request log of the request that made this write.
+	 */
 	readonly requestIndex: number;
 	readonly transition: AttendeeTransition;
 }
@@ -153,9 +195,12 @@ export class SchedulingRecord {
 	private readonly items: SchedulingEntry[] = [];
 
 	/**
-	 * Records a write that would notify. Writes touching no attendees on
-	 * either side are not scheduling events and are dropped here rather
-	 * than at the call sites, so no write path can forget the check.
+	 * Adds an entry for a write that would cause mail to attendees. A
+	 * server that supports scheduling sends this mail. A write to a
+	 * resource that has no attendees before the write and no attendees
+	 * after the write causes no mail. This method drops such a write. The
+	 * call sites do not make this check. Therefore no write path can
+	 * forget the check.
 	 */
 	record(requestIndex: number, fact: SchedulingFact): void {
 		const before = fact.attendeesBefore.length > 0;

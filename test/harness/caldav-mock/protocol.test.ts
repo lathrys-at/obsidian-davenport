@@ -62,7 +62,7 @@ function server(
 }
 
 describe('mock CalDAV server: discovery', () => {
-	it('walks well-known to principal to home to collections', async () => {
+	it('answers each discovery step: the well-known URL leads to the principal, the principal gives the calendar home URL, and the home lists the collections', async () => {
 		const mock = server({
 			redirects: { '/.well-known/caldav': { location: '/principals/' } },
 		});
@@ -116,7 +116,7 @@ describe('mock CalDAV server: discovery', () => {
 		]);
 	});
 
-	it('reads a request whose namespaces use no prefix at all', async () => {
+	it('reads a request that declares the DAV namespace as the default and uses no prefix', async () => {
 		const mock = server();
 		const response = await mock.request({
 			url: mock.collectionUrl('alice', 'work'),
@@ -129,7 +129,7 @@ describe('mock CalDAV server: discovery', () => {
 		).toBe('Work');
 	});
 
-	it('refuses infinite depth', async () => {
+	it('refuses a PROPFIND that asks for infinite depth', async () => {
 		const mock = server();
 		const response = await mock.request({
 			url: mock.homeUrl('alice'),
@@ -141,7 +141,7 @@ describe('mock CalDAV server: discovery', () => {
 		expect(errorConditionIn(response.text)).toBe('d:propfind-finite-depth');
 	});
 
-	it('lists resources with etags at depth 1 and reports unknown props missing', async () => {
+	it('lists the collection and its members at depth 1, gives each member its etag, and reports an unknown property as missing', async () => {
 		const mock = server();
 		const response = await mock.request({
 			url: mock.collectionUrl('alice', 'work'),
@@ -161,7 +161,7 @@ describe('mock CalDAV server: discovery', () => {
 		expect(responses[1]?.missing).toContain('c:calendar-description');
 	});
 
-	it('answers a property in a namespace it never heard of', async () => {
+	it('answers a request for a property in an unknown namespace, and reports the property as missing', async () => {
 		const mock = server();
 		const vendor = { x: 'http://apple.com/ns/ical/' };
 		const propfind = await mock.request({
@@ -199,7 +199,7 @@ describe('mock CalDAV server: discovery', () => {
 		]);
 	});
 
-	it('answers a PROPFIND for property names without their values', async () => {
+	it('answers a PROPFIND for property names with the names only, and with no values', async () => {
 		const mock = server();
 		const response = await mock.request({
 			url: mock.collectionUrl('alice', 'work'),
@@ -213,7 +213,7 @@ describe('mock CalDAV server: discovery', () => {
 		expect(collection?.missing).toStrictEqual([]);
 	});
 
-	it('tells a corrupt PROPFIND body from an absent one', async () => {
+	it('refuses a PROPFIND body that is not complete XML, but answers a PROPFIND that has no body', async () => {
 		const mock = server();
 		const corrupt = await mock.request({
 			url: mock.collectionUrl('alice', 'work'),
@@ -234,7 +234,7 @@ describe('mock CalDAV server: discovery', () => {
 		).toBe('Work');
 	});
 
-	it('names each collection its own component set', async () => {
+	it('gives each collection its own set of supported components', async () => {
 		const mock = server();
 		const response = await mock.request({
 			url: mock.collectionUrl('alice', 'chores'),
@@ -247,7 +247,7 @@ describe('mock CalDAV server: discovery', () => {
 });
 
 describe('mock CalDAV server: reports', () => {
-	it('reports every member on an initial sync and only changes thereafter', async () => {
+	it('reports every member when the sync token is empty, and only the changes after that', async () => {
 		const mock = server();
 		const initial = await mock.request({
 			url: mock.collectionUrl('alice', 'work'),
@@ -276,7 +276,7 @@ describe('mock CalDAV server: reports', () => {
 		expect(syncTokenIn(next.text)).not.toBe(token);
 	});
 
-	it('reports a removed resource as a 404 response', async () => {
+	it('reports a deleted resource with a 404 status', async () => {
 		const mock = server();
 		const initial = await mock.request({
 			url: mock.collectionUrl('alice', 'work'),
@@ -294,7 +294,7 @@ describe('mock CalDAV server: reports', () => {
 		expect(only?.status).toContain('404');
 	});
 
-	it('refuses a token issued by another collection', async () => {
+	it('refuses a sync token that another collection issued', async () => {
 		const mock = server();
 		const response = await mock.request({
 			url: mock.collectionUrl('alice', 'work'),
@@ -305,7 +305,7 @@ describe('mock CalDAV server: reports', () => {
 		expect(errorConditionIn(response.text)).toBe('d:valid-sync-token');
 	});
 
-	it('refuses a token it never issued, whatever it looks like', async () => {
+	it('refuses each sync token that the server did not issue, even a token that differs only in the spelling of its number', async () => {
 		const mock = server();
 		const issued = mock.syncToken('alice', 'work');
 		const prefix = issued.replace(/\d+$/, '');
@@ -335,7 +335,7 @@ describe('mock CalDAV server: reports', () => {
 		expect(genuine.status).toBe(207);
 	});
 
-	it('spans a whole day for an all-day event with no end', async () => {
+	it('treats an all-day event that has no end as one whole day', async () => {
 		const mock = server();
 		mock.seedResource(
 			'alice',
@@ -371,7 +371,7 @@ describe('mock CalDAV server: reports', () => {
 		).toStrictEqual([`${WORK}allday.ics`]);
 	});
 
-	it('filters a calendar-query by half-open time range', async () => {
+	it('filters a calendar-query by a time range that includes the start and excludes the end', async () => {
 		const mock = server();
 		const inRange = await mock.request({
 			url: mock.collectionUrl('alice', 'work'),
@@ -406,7 +406,7 @@ describe('mock CalDAV server: reports', () => {
 		]);
 	});
 
-	it('filters a calendar-query by UID and by component', async () => {
+	it('filters a calendar-query by UID and by component name', async () => {
 		const mock = server();
 		const byUid = await mock.request({
 			url: mock.collectionUrl('alice', 'work'),
@@ -423,7 +423,7 @@ describe('mock CalDAV server: reports', () => {
 		expect(hrefsIn(byComponent.text)).toStrictEqual([]);
 	});
 
-	it('answers a multiget aimed at one calendar object resource', async () => {
+	it('answers a multiget that a client sends to one resource, and not to the collection', async () => {
 		const mock = server();
 		const response = await mock.request({
 			url: mock.resourceUrl('alice', 'work', 'one.ics'),
@@ -434,7 +434,7 @@ describe('mock CalDAV server: reports', () => {
 		expect(hrefsIn(response.text)).toStrictEqual([`${WORK}one.ics`]);
 	});
 
-	it('answers a multiget with the found resources and a 404 for the rest', async () => {
+	it('answers a multiget with each resource that exists, and with a 404 for each resource that does not exist', async () => {
 		const mock = server();
 		const response = await mock.request({
 			url: mock.collectionUrl('alice', 'work'),
@@ -457,7 +457,7 @@ describe('mock CalDAV server: reports', () => {
 });
 
 describe('mock CalDAV server: resources', () => {
-	it('creates, updates, and deletes', async () => {
+	it('creates a resource, updates that resource, and deletes that resource', async () => {
 		const mock = server();
 		const created = await mock.request({
 			url: mock.resourceUrl('alice', 'work', 'new.ics'),
@@ -496,7 +496,7 @@ describe('mock CalDAV server: resources', () => {
 		expect(missing.status).toBe(404);
 	});
 
-	it('returns the stored bytes on GET', async () => {
+	it('returns the stored bytes and the calendar content type on GET', async () => {
 		const mock = server();
 		const body = icsEvent({ uid: 'one', start: '20260310T090000Z' });
 		await mock.request({
@@ -514,7 +514,7 @@ describe('mock CalDAV server: resources', () => {
 		);
 	});
 
-	it('lists members in name order however they were written', async () => {
+	it('lists the members in name order, whatever order the writes used', async () => {
 		const mock = server();
 		mock.removeResource('alice', 'work', 'one.ics');
 		mock.seedResource('alice', 'work', 'one.ics', icsEvent({ uid: 'one' }));
@@ -535,7 +535,7 @@ describe('mock CalDAV server: resources', () => {
 		]);
 	});
 
-	it('refuses a component the collection does not hold', async () => {
+	it('refuses a component that the collection does not support, and accepts a component that the collection supports', async () => {
 		const mock = server();
 		const response = await mock.request({
 			url: mock.resourceUrl('alice', 'chores', 'event.ics'),
@@ -556,7 +556,7 @@ describe('mock CalDAV server: resources', () => {
 		expect(accepted.status).toBe(201);
 	});
 
-	it('names nothing at a resource path spelled as a collection', async () => {
+	it('answers a 404 for a resource path that ends with a slash', async () => {
 		const mock = server();
 		const response = await mock.request({
 			url: `${mock.resourceUrl('alice', 'work', 'one.ics')}/`,
@@ -565,7 +565,7 @@ describe('mock CalDAV server: resources', () => {
 		expect(response.status).toBe(404);
 	});
 
-	it('answers a write under a missing collection with a conflict', async () => {
+	it('answers a 409 for a PUT under a collection that does not exist', async () => {
 		const mock = server();
 		const response = await mock.request({
 			url: mock.url('/calendars/alice/nowhere/one.ics'),
@@ -575,7 +575,7 @@ describe('mock CalDAV server: resources', () => {
 		expect(response.status).toBe(409);
 	});
 
-	it('answers OPTIONS only where something is served', async () => {
+	it('answers OPTIONS with the DAV header on a known path, and with a 404 on an unknown path', async () => {
 		const mock = server();
 		const served = await mock.request({
 			url: mock.collectionUrl('alice', 'work'),
@@ -591,7 +591,7 @@ describe('mock CalDAV server: resources', () => {
 		expect(nowhere.status).toBe(404);
 	});
 
-	it('refuses a body that is not calendar data', async () => {
+	it('refuses a PUT body that is not calendar data', async () => {
 		const mock = server();
 		const response = await mock.request({
 			url: mock.resourceUrl('alice', 'work', 'junk.ics'),
@@ -602,7 +602,7 @@ describe('mock CalDAV server: resources', () => {
 		expect(errorConditionIn(response.text)).toBe('c:valid-calendar-data');
 	});
 
-	it('answers the principal root for whichever account is authenticated', async () => {
+	it('answers the principal root with the principal of the account that is authenticated', async () => {
 		const mock = new MockCalDavServer({
 			accounts: [
 				{ name: 'alice', collections: [{ name: 'work' }] },
@@ -625,7 +625,7 @@ describe('mock CalDAV server: resources', () => {
 		expect(await ask()).toBe('/principals/bob/');
 	});
 
-	it('answers for no other origin', async () => {
+	it('answers a 404 for a URL on another origin', async () => {
 		const mock = server();
 		const response = await mock.request({
 			url: 'https://elsewhere.example/calendars/alice/work/one.ics',

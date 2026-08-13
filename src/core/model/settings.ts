@@ -1,12 +1,16 @@
 import type { CalendarRegistryEntry } from './registry';
 
 /**
- * Synced-settings schema: semantic configuration that must agree across
- * devices — accounts minus secrets, and the calendar registry; event
- * types, routing rules, and global defaults join as they land.
- * Device-local state lives behind the DeviceStore port; templates and
- * claim blocks live in the vault; secrets are stored separately and never
- * appear here.
+ * The schema of the synced settings. These settings hold the
+ * configuration that carries meaning, and not the mechanical state that
+ * one device keeps for itself. Every device must hold the same values.
+ * These settings hold the accounts, without the secrets, and the calendar
+ * registry. Event types, routing rules, and global defaults join these
+ * settings as those features land.
+ *
+ * Three kinds of data stay out of these settings. State that belongs to
+ * one device sits behind the DeviceStore port. Templates and claim blocks
+ * sit in the vault. Secrets sit in separate storage.
  */
 
 export type CredentialType = 'app-password' | 'oauth';
@@ -16,7 +20,10 @@ export interface AccountConfig {
 	readonly serverUrl: string;
 	readonly username: string;
 	readonly credentialType: CredentialType;
-	/** Opaque reference into secret storage — never the secret itself. */
+	/**
+	 * A reference into the secret storage. This value has no meaning
+	 * outside that storage, and this value is never the secret itself.
+	 */
 	readonly credentialRef: string;
 }
 

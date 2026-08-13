@@ -1,6 +1,9 @@
 /**
- * The Obsidian API fake: an in-memory vault behind the vault port, with
- * the frontmatter reader and deterministic writer it is built on.
+ * This module holds the fake for the API of Obsidian. The fake is a vault
+ * that keeps the files in memory and implements the vault port. The module
+ * also exports the frontmatter reader and the frontmatter writer that the
+ * fake is built on. The writer is deterministic, which means that it makes
+ * the same bytes from the same data every time.
  */
 
 export { FakeVault } from './vault';

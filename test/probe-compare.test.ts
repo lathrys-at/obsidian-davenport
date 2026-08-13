@@ -1,12 +1,13 @@
 /**
- * The comparison the probe kit exists for: results files from several
- * environments, in and a verdict out.
+ * The comparison that the probe kit exists for. The input is one results
+ * file from each of several environments. The output is a verdict.
  *
- * The plugin half is exercised by hand in a real vault, which is the only
- * place it can be. This half is a pure function over parsed files, so the
- * cases that matter — agreement, divergence, a fixture the writer refused,
- * and a file that does not add up — are all reachable from here with
- * results built to order.
+ * A real vault is the only place where the plugin half can run. A person
+ * therefore runs the plugin half by hand in a real vault. The comparison
+ * half is a pure function on parsed files. Therefore these tests can build
+ * results to order, and can reach each case that matters: agreement,
+ * divergence, a fixture that the writer refused, and a file whose own
+ * contents do not agree with each other.
  */
 
 import { createHash } from 'node:crypto';
@@ -31,7 +32,7 @@ function digest(bytes: Uint8Array): string {
 	return createHash('sha256').update(bytes).digest('hex');
 }
 
-/** A fixture that came through, carrying this text as its output. */
+/** A fixture that the writer accepted, with this text as its output. */
 function emitted(
 	id: string,
 	text: string,
@@ -50,12 +51,12 @@ function emitted(
 	};
 }
 
-/** The same, from an environment whose wait for the app ran out. */
+/** The same record, from an environment whose wait for the app ran out. */
 function stale(id: string, text: string): FixtureResult {
 	return emitted(id, text, { settledBy: 'timeout' });
 }
 
-/** A fixture the writer refused. */
+/** A fixture that the writer refused. */
 function refused(id: string, message: string, input = id): FixtureResult {
 	return {
 		id,
@@ -89,7 +90,7 @@ function resultsOf(
 	};
 }
 
-/** Runs labelled the way the script labels them. */
+/** Runs with the labels that the script gives them. */
 function runsOf(...results: readonly ProbeResults[]): LoadedRun[] {
 	return results.map((entry, index) => ({
 		label: `#${String(index + 1)}`,
@@ -133,14 +134,14 @@ describe('environments that agree', () => {
 		expect(fixture.divergences).toEqual([]);
 	});
 
-	it('says so in the verdict', () => {
+	it('puts the agreement in the verdict', () => {
 		expect(report.verdict).toBe('agree');
 		expect(formatReport(report)).toContain(
 			'verdict: all 1 fixtures agree across 2 environments',
 		);
 	});
 
-	it('names each environment by what it ran on', () => {
+	it('names the device that each environment ran on', () => {
 		const printed = formatReport(report);
 		expect(printed).toContain('macOS, app 1.9.14, api 1.9.14');
 		expect(printed).toContain('iOS, app 1.9.14, api 1.9.14');
@@ -148,8 +149,9 @@ describe('environments that agree', () => {
 });
 
 describe('environments that diverge', () => {
-	// Twenty-four bytes with one changed at offset 20, so the dump has a
-	// row before the difference and the marked row holds it.
+	// The two strings are twenty-four bytes long, and they differ at
+	// offset 20. This length gives the dump one row before the difference.
+	// This offset puts the difference in the marked row.
 	const left = 'abcdefghijklmnopqrstuvwx';
 	const right = 'abcdefghijklmnopqrstQvwx';
 	const report = compareRuns(
@@ -168,7 +170,7 @@ describe('environments that diverge', () => {
 		]);
 	});
 
-	it('names the byte the two outputs part company at', () => {
+	it('names the byte where the two outputs start to differ', () => {
 		const divergence = only(fixture.divergences);
 		expect(divergence.offset).toBe(20);
 		expect(divergence.kind).toBe('byte');
@@ -176,7 +178,7 @@ describe('environments that diverge', () => {
 		expect(divergence.other).toBe('#2');
 	});
 
-	it('shows the bytes either side of it', () => {
+	it('shows the bytes on each side of the difference', () => {
 		const divergence = only(fixture.divergences);
 		expect(divergence.referenceDump).toEqual([
 			'  00000000  61 62 63 64 65 66 67 68 69 6a 6b 6c 6d 6e 6f 70  |abcdefghijklmnop|',
@@ -204,7 +206,7 @@ describe('outputs where one is the start of the other', () => {
 		),
 	);
 
-	it('reports the length rather than a differing byte', () => {
+	it('reports the length, and not a differing byte', () => {
 		const divergence = only(fixtureNamed(report, 'minimal').divergences);
 		expect(divergence.kind).toBe('length');
 		expect(divergence.offset).toBe(3);
@@ -214,8 +216,8 @@ describe('outputs where one is the start of the other', () => {
 	});
 });
 
-describe('a fixture the writer refuses', () => {
-	it('counts as agreement when every environment refuses it', () => {
+describe('a fixture that the writer refuses', () => {
+	it('counts as agreement when every environment refuses the fixture', () => {
 		const report = compareRuns(
 			runsOf(
 				resultsOf([refused('unparseable', 'YAMLParseError: no end')]),
@@ -230,7 +232,7 @@ describe('a fixture the writer refuses', () => {
 		expect(printed).toContain('#1 unparseable: YAMLParseError: no end');
 	});
 
-	it('is a divergence when only one environment refuses it', () => {
+	it('is a divergence when only one environment refuses the fixture', () => {
 		const report = compareRuns(
 			runsOf(
 				resultsOf([refused('unparseable', 'YAMLParseError: no end')]),
@@ -243,7 +245,7 @@ describe('a fixture the writer refuses', () => {
 	});
 });
 
-describe('results that cannot be compared as they stand', () => {
+describe('results that cannot be compared in their present form', () => {
 	it('refuses runs that started from different fixture text', () => {
 		const report = compareRuns(
 			runsOf(
@@ -274,7 +276,7 @@ describe('results that cannot be compared as they stand', () => {
 		expect(report.verdict).toBe('incomparable');
 	});
 
-	it('refuses a hash that is not the hash of the bytes beside it', () => {
+	it('refuses a hash that does not match the bytes beside the hash', () => {
 		const tampered = emitted('minimal', 'a');
 		const report = compareRuns(
 			runsOf(
@@ -289,7 +291,7 @@ describe('results that cannot be compared as they stand', () => {
 		expect(report.verdict).toBe('incomparable');
 	});
 
-	it('refuses output that is not base64 at all', () => {
+	it('refuses output that is not base64', () => {
 		const report = compareRuns(
 			runsOf(
 				resultsOf([emitted('minimal', 'a')]),
@@ -309,8 +311,8 @@ describe('results that cannot be compared as they stand', () => {
 	});
 });
 
-describe('a fixture written after the wait ran out', () => {
-	it('carries a caution into the row and a block of its own', () => {
+describe('a fixture that the probe wrote after the wait ran out', () => {
+	it('puts a caution in the fixture row and in a separate block', () => {
 		const report = compareRuns(
 			runsOf(
 				resultsOf([emitted('comments', 'a')]),
@@ -324,11 +326,11 @@ describe('a fixture written after the wait ran out', () => {
 			'! comments: #2 waited out the metadata timeout',
 		);
 		expect(printed).toContain(
-			'anything resting on that environment alone needs it to run the fixture again',
+			'any conclusion that rests only on that environment needs that environment to run the fixture again',
 		);
 	});
 
-	it('leaves agreement standing when nothing differs', () => {
+	it('keeps the agreement when nothing differs', () => {
 		const report = compareRuns(
 			runsOf(
 				resultsOf([emitted('comments', 'a')]),
@@ -338,9 +340,10 @@ describe('a fixture written after the wait ran out', () => {
 		expect(report.verdict).toBe('agree');
 	});
 
-	// The expensive wrong answer is a divergence that is really a stale
-	// read, so one that only a cautioned fixture shows is not a verdict.
-	it('withholds a divergence that only a cautioned fixture shows', () => {
+	// The costly wrong answer is a stale read that reads as a divergence.
+	// Therefore a difference that only a cautioned fixture shows is not a
+	// verdict.
+	it('does not report a divergence that only a cautioned fixture shows', () => {
 		const report = compareRuns(
 			runsOf(
 				resultsOf([emitted('comments', 'a')]),
@@ -354,11 +357,11 @@ describe('a fixture written after the wait ran out', () => {
 		const printed = formatReport(report);
 		expect(printed).toContain('the cautions and notes above say why');
 		expect(printed).toContain(
-			'the difference here rests on that environment alone and is unproven until it runs the fixture again',
+			'the difference here rests on that environment alone, and the difference is unproven until that environment runs the fixture again',
 		);
 	});
 
-	it('still reports a divergence that stands on its own', () => {
+	it('reports a divergence on a fixture that carries no caution', () => {
 		const report = compareRuns(
 			runsOf(
 				resultsOf([emitted('comments', 'a'), emitted('minimal', 'a')]),
@@ -369,9 +372,10 @@ describe('a fixture written after the wait ran out', () => {
 	});
 });
 
-describe('a caution on an environment a difference is not between', () => {
-	// Two environments that did not time out show the difference between
-	// them; a third that did says nothing about it either way.
+describe('a caution on an environment that is not in a difference', () => {
+	// Two environments without a timeout show the difference between them.
+	// A third environment with a timeout says nothing about that
+	// difference.
 	const report = compareRuns(
 		runsOf(
 			resultsOf([emitted('comments', 'a')]),
@@ -381,13 +385,13 @@ describe('a caution on an environment a difference is not between', () => {
 	);
 	const fixture = fixtureNamed(report, 'comments');
 
-	it('leaves the difference standing', () => {
+	it('keeps the difference as a divergence', () => {
 		expect(fixture.outcome).toBe('diverge');
 		expect(fixture.unproven).toBe(false);
 		expect(report.verdict).toBe('diverge');
 	});
 
-	it('groups the timed-out environment with the output it emitted', () => {
+	it('groups the environment that timed out by the output it emitted', () => {
 		expect(fixture.groups.map((group) => group.labels)).toEqual([
 			['#1', '#3'],
 			['#2'],
@@ -395,13 +399,13 @@ describe('a caution on an environment a difference is not between', () => {
 		expect(fixture.cautions).toEqual(['#3']);
 	});
 
-	it('still prints the caution, without calling the difference unproven', () => {
+	it('prints the caution, and does not call the difference unproven', () => {
 		const printed = formatReport(report);
 		expect(printed).toContain(
 			'! comments: #3 waited out the metadata timeout',
 		);
 		expect(printed).toContain(
-			'anything resting on that environment alone needs it to run the fixture again',
+			'any conclusion that rests only on that environment needs that environment to run the fixture again',
 		);
 		expect(printed).not.toContain('rests on that environment alone');
 		expect(printed).toContain('first differing byte at offset 0');
@@ -411,8 +415,8 @@ describe('a caution on an environment a difference is not between', () => {
 	});
 });
 
-describe('a difference with a timed-out environment on every side', () => {
-	it('is unproven when both outputs were written after a timeout', () => {
+describe('a difference where every side has an environment with a timeout', () => {
+	it('is unproven when the probe wrote both outputs after a timeout', () => {
 		const report = compareRuns(
 			runsOf(
 				resultsOf([stale('comments', 'a')]),
@@ -423,7 +427,7 @@ describe('a difference with a timed-out environment on every side', () => {
 		expect(report.verdict).toBe('incomparable');
 	});
 
-	it('is unproven when the only environment that emitted timed out', () => {
+	it('is unproven when the one environment that emitted bytes timed out', () => {
 		const report = compareRuns(
 			runsOf(
 				resultsOf([stale('non-mapping', 'a')]),
@@ -436,9 +440,10 @@ describe('a difference with a timed-out environment on every side', () => {
 		expect(report.verdict).toBe('incomparable');
 	});
 
-	// A refusal carries no wait, so it speaks; one unhurried environment
-	// that emitted is enough to make the refusal a real disagreement.
-	it('stands when an environment that did not time out also emitted', () => {
+	// A refusal has no wait, so a refusal always counts. One environment
+	// without a timeout that emitted bytes is enough to make the refusal a
+	// real disagreement.
+	it('stands when an environment without a timeout also emitted bytes', () => {
 		const report = compareRuns(
 			runsOf(
 				resultsOf([emitted('non-mapping', 'a')]),
@@ -463,7 +468,7 @@ describe('files with nothing in common', () => {
 		expect(printed).toContain('cannot be compared');
 	});
 
-	it('refuses files whose fixtures do not overlap', () => {
+	it('refuses files that have no fixture in common', () => {
 		const report = compareRuns(
 			runsOf(
 				resultsOf([emitted('minimal', 'a')]),
@@ -477,8 +482,8 @@ describe('files with nothing in common', () => {
 	});
 });
 
-describe('one run submitted twice', () => {
-	it('says so without failing the comparison', () => {
+describe('one run given two times', () => {
+	it('reports the repeat without a failure of the comparison', () => {
 		const twice = resultsOf([emitted('minimal', 'a')]);
 		const report = compareRuns(runsOf(twice, twice));
 		expect(report.warnings).toEqual([
@@ -501,8 +506,8 @@ describe('one run submitted twice', () => {
 	});
 });
 
-describe('a file that records one fixture twice', () => {
-	it('reads as an integrity failure rather than the last record', () => {
+describe('a file that records one fixture two times', () => {
+	it('reads as an integrity failure, and not as the last record', () => {
 		const report = compareRuns(
 			runsOf(
 				resultsOf([emitted('minimal', 'a')]),
@@ -519,7 +524,7 @@ describe('a file that records one fixture twice', () => {
 });
 
 describe('a single results file', () => {
-	it('says a comparison needs a second one', () => {
+	it('says that a comparison needs a second environment', () => {
 		const report = compareRuns(
 			runsOf(resultsOf([emitted('minimal', 'a')])),
 		);
@@ -536,7 +541,7 @@ describe('reading a results file', () => {
 		refused('unparseable', 'YAMLParseError'),
 	]);
 
-	it('reads back what the probe would have written', () => {
+	it('reads back the same results that the probe writes', () => {
 		expect(parseResults(JSON.stringify(results), 'a.json')).toEqual(
 			results,
 		);
@@ -545,12 +550,16 @@ describe('reading a results file', () => {
 	it.each([
 		['not JSON', 'this is not json', 'not JSON'],
 		['some other JSON file', '{"hello":"world"}', 'not a results file'],
-		['a list', '[]', 'the file is missing or not an object'],
+		[
+			'a list',
+			'[]',
+			'the file is missing, or the value at that place is not an object',
+		],
 	])('refuses %s', (_name, text, complaint) => {
 		expect(() => parseResults(text, 'a.json')).toThrow(complaint);
 	});
 
-	it('refuses an emission that does not say how its wait settled', () => {
+	it('refuses an emission that does not say how the wait settled', () => {
 		const record = { ...emitted('minimal', 'a') } as Record<
 			string,
 			unknown
@@ -558,11 +567,11 @@ describe('reading a results file', () => {
 		delete record.settledBy;
 		const missing = JSON.stringify({ ...results, perFixture: [record] });
 		expect(() => parseResults(missing, 'a.json')).toThrow(
-			'does not say whether its wait settled by event or by timeout',
+			'does not say whether the wait before the writer settled by event or by timeout',
 		);
 	});
 
-	it('names the field a truncated file is missing', () => {
+	it('names the field that a truncated file is missing', () => {
 		const missing = JSON.stringify({
 			...results,
 			platform: { isDesktop: true },
@@ -572,7 +581,7 @@ describe('reading a results file', () => {
 		);
 	});
 
-	it('names the file it could not read', () => {
+	it('names the file that it could not read', () => {
 		expect(() => parseResults('{', 'phone.json')).toThrow('phone.json');
 	});
 });

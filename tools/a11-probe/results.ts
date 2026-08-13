@@ -1,41 +1,46 @@
 /**
- * The results file: its shape, the name it takes, and how a thrown value
- * is written into it.
+ * The results file. This module gives the shape of the file, the name of
+ * the file, and the way a thrown value becomes text in the file.
  *
- * The probe writes this shape and the comparison script reads it, so both
- * sides are typed from here and neither can drift from the other without
- * the type check saying so. Nothing in this module touches a platform,
- * which is what lets the naming and the wording be tested directly.
+ * The probe writes this shape, and the comparison script reads this
+ * shape. Both sides take their types from this module. If the two sides
+ * drift apart, the type check reports the difference. This module calls
+ * no platform API. Therefore a test can check the file names and the
+ * error wording directly.
  */
 
-/** The one folder in a vault the probe writes into. */
+/** The one folder in a vault that the probe writes into. */
 export const PROBE_FOLDER = 'frontmatter-probe';
 
 /**
- * A results file's name read back: the date, the time, and the counter a
- * second run in the same second takes. This is the reading half of what
- * `resultsPath` below writes, and the two are pinned to each other by a
- * test that runs a written name back through this pattern.
+ * The pattern that reads the name of a results file back. The pattern
+ * finds the date, the time, and the counter that a second run in the same
+ * second uses. The function `resultsPath` below writes these names. A
+ * test sends a written name back through this pattern, and thus the
+ * pattern and the function stay together.
  */
 export const RESULTS_NAME =
 	/^emission-samples-(\d{8})-(\d{6})Z(?:-\d+)?\.json$/;
 
-/** What one environment emitted, for every fixture in the corpus. */
+/** What one environment emitted for each fixture in the corpus. */
 export interface ProbeResults {
 	readonly kind: 'frontmatter-emission-samples';
-	/** When the run finished, as an ISO 8601 instant. */
+	/** The time when the run finished, as an ISO 8601 instant. */
 	readonly timestamp: string;
-	/** The Obsidian version the run happened on, or `unknown`. */
+	/**
+	 * The version of Obsidian that the run used. The value is `unknown`
+	 * when the app gives no version.
+	 */
 	readonly obsidianVersion: string;
-	/** The plugin API version the run happened on. */
+	/** The version of the plugin API that the run used. */
 	readonly apiVersion: string;
 	readonly platform: ProbePlatform;
-	/** The mutation every fixture was put through. */
+	/** The change that the probe made to every fixture. */
 	readonly marker: ProbeMarker;
 	readonly perFixture: readonly FixtureResult[];
 }
 
-/** Which device the run happened on, in the terms the app reports. */
+/** The device that the run used, in the terms that the app reports. */
 export interface ProbePlatform {
 	readonly isDesktop: boolean;
 	readonly isMobile: boolean;
@@ -44,14 +49,18 @@ export interface ProbePlatform {
 	readonly isMacOS: boolean;
 	readonly isWin: boolean;
 	readonly isLinux: boolean;
-	/** The engine string, which carries the OS and the app build. */
+	/**
+	 * The user agent string of the browser engine. This string carries
+	 * the operating system and the build of the app.
+	 */
 	readonly userAgent: string;
 }
 
 /**
- * The frontmatter key and value written into every fixture. Fixed across
- * fixtures, runs, and devices: identical input everywhere is what makes
- * differing output mean something.
+ * The frontmatter key and the frontmatter value that the probe writes
+ * into every fixture. The key and the value stay the same for every
+ * fixture, every run, and every device. The input must be the same
+ * everywhere, because only then does output that differs have a meaning.
  */
 export interface ProbeMarker {
 	readonly key: string;
@@ -59,47 +68,59 @@ export interface ProbeMarker {
 }
 
 /**
- * How the wait for the app to read the note back ended before the writer
- * ran. An emission that waited the whole timeout out was written with the
- * app's view of the note possibly still stale, which is a reason to
- * distrust it rather than a reason to throw it away.
+ * How the wait ended. Before the writer runs, the probe waits for the app
+ * to read the note back. The value `event` means that the app reported
+ * the note. The value `timeout` means that the wait used all of its time.
+ * After a timeout, the view that the app held of the note was possibly
+ * still stale. The bytes that the probe recorded after a timeout are a
+ * reason to distrust the record, and not a reason to discard the record.
  */
 export type MetadataSettling = 'event' | 'timeout';
 
 export type FixtureResult = FixtureEmission | FixtureFailure;
 
-/** A fixture that went through the writer and came back out. */
+/** A fixture that the writer accepted, and that the probe read back. */
 export interface FixtureEmission {
 	readonly id: string;
-	/** SHA-256 of the fixture's text as the build embedded it. */
+	/**
+	 * The SHA-256 hash of the fixture text, as the build embedded the
+	 * text.
+	 */
 	readonly inputHash: string;
-	/** How the wait before the writer ran ended. */
+	/** How the wait ended. The wait came before the writer. */
 	readonly settledBy: MetadataSettling;
-	/** The bytes the file held afterwards, base64-encoded. */
+	/** The bytes that the file held after the writer ran, in base64. */
 	readonly outputBase64: string;
-	/** SHA-256 of those same bytes. */
+	/** The SHA-256 hash of those same bytes. */
 	readonly outputHash: string;
 }
 
-/** A fixture the writer refused, recorded rather than aborting the run. */
+/**
+ * A fixture that the writer refused. The probe records the refusal and
+ * continues the run.
+ */
 export interface FixtureFailure {
 	readonly id: string;
 	readonly inputHash: string;
 	readonly error: string;
 }
 
-/** How many names a run tries before giving up on an unused one. */
+/**
+ * How many names a run tries before the run stops the search for a name
+ * that no other run took.
+ */
 export const NAME_ATTEMPTS = 50;
 
-/** Whether this fixture's record carries emitted bytes. */
+/** True when the record of this fixture carries emitted bytes. */
 export function isEmission(result: FixtureResult): result is FixtureEmission {
 	return 'outputBase64' in result;
 }
 
 /**
- * The path a run started at this instant writes its results to, skipping
- * names another run has taken so that a second run in the same second
- * cannot overwrite the first. `RESULTS_NAME` above reads these back.
+ * The path where a run that started at this instant writes its results.
+ * The function steps past each name that another run already took.
+ * Thus a second run in the same second cannot overwrite the file of the
+ * first run. The pattern `RESULTS_NAME` above reads these names back.
  */
 export function resultsPath(
 	folder: string,
@@ -122,9 +143,11 @@ export function resultsPath(
 }
 
 /**
- * A thrown value, said in a way a notice can carry. A name worth reading
- * is kept — a parser says which parser refused — but the bare word Error
- * in front of its own message is noise on a phone screen.
+ * A thrown value as text that a notice can show. The function keeps an
+ * error name that tells the reader something: the name of a parser tells
+ * which parser refused the fixture. The function drops the bare name
+ * `Error`, because that name adds nothing in front of its own message on
+ * a phone screen.
  */
 export function describeError(error: unknown): string {
 	if (error instanceof Error) {

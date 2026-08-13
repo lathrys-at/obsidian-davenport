@@ -1,41 +1,51 @@
 /**
- * The calendar-query filter the mock understands: a component name, a
- * time range, and a UID property filter. Matching is lexical on the
- * normalized DTSTART and DTEND values — recurrence is not expanded and
- * TZID is not resolved, so a recurring event matches on its first
- * instance alone.
+ * The parts of a calendar-query filter that the mock understands: a
+ * component name, a time range, and a UID property filter. The mock
+ * compares the normalized DTSTART and DTEND values as text. The mock does
+ * not expand recurrence, and the mock does not resolve TZID. Thus a
+ * recurring event matches on the first instance only.
  *
- * Every other filter element is read as unsupported and named back to the
- * client rather than dropped, since a dropped element would widen the
- * result set with nothing to say so.
+ * The mock marks every other filter element as unsupported, and names
+ * that element back to the client. The mock does not drop the element,
+ * because a dropped element makes the result set larger and gives the
+ * client no sign of the cause.
  */
 
 import { normalizeStamp, readIcs } from './ics';
 import { CALDAV_NS, childElements, childNamed, isNamed } from './xml';
 import type { XmlDocument, XmlElement } from './xml';
 
-/** Whole-value comparison, cased as the collation asks. */
+/**
+ * A comparison of whole values. The collation tells the mock how to treat
+ * letter case.
+ */
 export type Collation = 'i;octet' | 'i;ascii-casemap';
 
 const COLLATIONS: readonly Collation[] = ['i;octet', 'i;ascii-casemap'];
 const DEFAULT_COLLATION: Collation = 'i;ascii-casemap';
 
-/** A filter element the mock does not implement, as the client wrote it. */
+/**
+ * A filter element that the mock does not implement. The fields keep the
+ * form that the client wrote.
+ */
 export interface UnsupportedFilter {
 	readonly local: string;
 	readonly name: string | null;
 }
 
 export interface CalendarFilter {
-	/** The innermost component the filter named, if it named one. */
+	/** The innermost component that the filter named, or null for none. */
 	readonly component: string | null;
 	readonly rangeStart: string | null;
 	readonly rangeEnd: string | null;
-	/** The UID a prop-filter text-match asked for. */
+	/** The UID that a prop-filter text-match asked for. */
 	readonly uidMatch: string | null;
 	readonly collation: Collation;
 	readonly unsupported: UnsupportedFilter | null;
-	/** A collation the mock cannot apply, refused by name. */
+	/**
+	 * A collation that the mock cannot apply. The refusal names that
+	 * collation.
+	 */
 	readonly unsupportedCollation: string | null;
 }
 
@@ -56,8 +66,8 @@ export function parseFilter(document: XmlDocument): CalendarFilter {
 	if (!outer) {
 		return EMPTY_FILTER;
 	}
-	// The outer comp-filter is always VCALENDAR; the component under test
-	// is the one nested inside it.
+	// The outer comp-filter is always VCALENDAR. The component that the
+	// filter selects is the comp-filter inside the outer one.
 	const inner = childNamed(outer, CALDAV_NS, 'comp-filter');
 	return inner ? readCompFilter(inner) : EMPTY_FILTER;
 }
@@ -115,9 +125,10 @@ function isUidFilter(element: XmlElement): boolean {
 }
 
 /**
- * The parts of a UID prop-filter beyond a plain text-match: an absence
- * test or a parameter filter changes what the filter selects, so neither
- * can be passed over.
+ * Finds the parts of a UID prop-filter that a plain text-match does not
+ * cover. An absence test changes what the filter selects, and a parameter
+ * filter changes what the filter selects. Thus the mock must not ignore
+ * either part.
  */
 function unsupportedWithin(propFilter: XmlElement): UnsupportedFilter | null {
 	for (const child of childElements(propFilter)) {
@@ -153,7 +164,10 @@ export function matchesFilter(ics: string, filter: CalendarFilter): boolean {
 	return matchesRange(facts.start, facts.end, filter);
 }
 
-/** Whole values rather than substrings, which is what a UID lookup wants. */
+/**
+ * Compares whole values and not parts of values, because a UID lookup
+ * needs a comparison of whole values.
+ */
 function textMatches(
 	value: string,
 	wanted: string,
@@ -179,14 +193,16 @@ function matchesRange(
 		filter.rangeStart === null ? null : normalizeStamp(filter.rangeStart);
 	const to =
 		filter.rangeEnd === null ? null : normalizeStamp(filter.rangeEnd);
-	// The range is half-open, so an event starting exactly at its end lies
-	// outside it and an event ending exactly at its start does too.
+	// The range is half-open. An event that starts at the end of the range
+	// is outside the range, and an event that ends at the start of the
+	// range is outside the range too.
 	if (to !== null && start >= to) {
 		return false;
 	}
 	if (from === null) {
 		return true;
 	}
-	// A zero-length event overlaps the instant it sits on.
+	// An event with zero length covers the instant where the event starts.
+	// Thus such an event is inside a range that starts at that instant.
 	return start === end ? end >= from : end > from;
 }

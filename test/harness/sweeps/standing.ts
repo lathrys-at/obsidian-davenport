@@ -1,7 +1,8 @@
 /**
- * The sweeps every run starts with. Standing assertions accrete with the
- * behavior they police, so this set grows as the engine does; what is here
- * is what the harness can already answer on its own evidence.
+ * The sweeps that every run starts with. A standing assertion arrives with
+ * the behavior that it guards, so this set grows as the engine grows. The
+ * sweeps here are the ones that the harness can already answer from its
+ * own evidence.
  */
 
 import {
@@ -12,9 +13,13 @@ import {
 import type { Sweep, SweepViolation } from './sweep';
 
 /**
- * Network discipline as the run experienced it. The lint rules keep a
- * direct fetch out of the source; this keeps one out of the run, and
- * catches code that puts a working fetch back after the poison went in.
+ * Checks the network discipline of the run. The harness replaces the
+ * global fetch with a function that throws, and that replacement is the
+ * poison. The lint rules keep a direct call to fetch out of the source,
+ * and this sweep keeps such a call out of the run. The sweep checks that
+ * the poison stayed in place for the whole run, and it reports every call
+ * that the poison refused. The sweep also catches code that put a working
+ * fetch back after the harness installed the poison.
  */
 const fetchPoisonActive: Sweep = {
 	name: 'fetch-poison-active',
@@ -37,14 +42,23 @@ const fetchPoisonActive: Sweep = {
 };
 
 /**
- * Credential material in anything the run produced. The run declares what
- * is sensitive and this looks for it everywhere, so a value that reaches
- * frontmatter, a record, a request line, a request body or header, a file
- * a sync channel carried to another device, or a log entry is found
- * wherever it landed — the walk crosses every surface the record holds,
- * so a surface added to the record is scanned without this being told. A
- * violation names the value's label and never the value: the report goes
- * to a terminal and a CI log like any other test failure.
+ * Looks for credential material in everything that the run produced. The
+ * run declares which values are sensitive, and this sweep looks for each
+ * of those values everywhere. The sweep finds a value that reached any of
+ * these places:
+ *
+ * - frontmatter;
+ * - a record;
+ * - a request line;
+ * - a request body or a request header;
+ * - a file that a sync channel carried to another device;
+ * - a log entry.
+ *
+ * The walk crosses every surface that the evidence record holds. Thus the
+ * sweep scans a surface that is added to the record, and nobody needs to
+ * tell the sweep about that surface. A violation names the label of the
+ * value and never the value itself, because the report goes to a terminal
+ * and to a CI log like any other test failure.
  */
 const secretsScan: Sweep = {
 	name: 'secrets-scan',
@@ -68,14 +82,23 @@ const secretsScan: Sweep = {
 };
 
 /**
- * Work the engine took on because it observed something remotely, rather
- * than because a user asked for it, talks to no server at all — not the
- * calendar server, not a feed, not anything a later surface adds, which is
- * why this walks the surface table rather than naming one. Nothing opens
- * such a stretch until the engine lands, so this passes on every run
- * today; it is registered anyway, because a registry that holds only the
- * assertions with a producer teaches suites to add the producer and the
- * assertion together, and the second half is the one that gets dropped.
+ * Sometimes the engine does work because it observed something remotely,
+ * and not because a user asked for the work. During that work the engine
+ * must speak to no server at all. The engine must not speak to any of
+ * these:
+ *
+ * - the calendar server;
+ * - a feed;
+ * - a server that a later surface adds.
+ *
+ * This sweep therefore walks the surface table, and it does not name one
+ * surface.
+ *
+ * No code opens such a stretch of a run until the engine lands, so this
+ * sweep passes on every run today. The registry holds the sweep anyway. A
+ * registry that holds only the assertions that have a producer teaches
+ * suites to add the producer and the assertion in one step, and the
+ * assertion is the half that suites drop.
  */
 const remoteObservedNoServerRequests: Sweep = {
 	name: 'remote-observed-no-server-requests',

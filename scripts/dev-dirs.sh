@@ -1,20 +1,24 @@
 #!/bin/sh
-# Resolve and create the shared dev-state layout under ~/.cache/<project>-dev
-# (docs/dev/process.md, "Filesystem state"). Prints VAR=path lines; eval the
-# output to use them in the current command:
+# This script makes the shared dev-state directories under
+# ~/.cache/<project>-dev, and the script prints absolute paths. The file
+# docs/dev/process.md gives the layout. Each line of the output has the form
+# NAME=path. To set the names as shell variables, use the output of the
+# script as the argument of eval. Run eval in the same command that uses the
+# paths:
 #
 #   eval "$(scripts/dev-dirs.sh --session 20260806-wave4 --agent 28-impl)"
 #
-# The project name comes from the base checkout's directory name even when run
-# inside a linked worktree, so every agent resolves the same root.
+# The project name is the directory name of the base checkout. The script
+# reads that same name when it runs inside a linked worktree. Thus every
+# agent gets the same root directory.
 set -eu
 
 session="" agent=""
 while [ $# -gt 0 ]; do
   case "$1" in
-    --session) session="${2:?$1 needs a value}"; shift 2 ;;
-    --agent)   agent="${2:?$1 needs a value}"; shift 2 ;;
-    *) echo "usage: $0 [--session ID] [--agent ID]" >&2; exit 2 ;;
+    --session) session="${2:?$1 needs an ID}"; shift 2 ;;
+    --agent)   agent="${2:?$1 needs an ID}"; shift 2 ;;
+    *) echo "unknown argument $1. usage: $0 [--session ID] [--agent ID]" >&2; exit 2 ;;
   esac
 done
 
