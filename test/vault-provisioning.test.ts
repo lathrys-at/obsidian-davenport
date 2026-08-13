@@ -385,7 +385,7 @@ describe('the naming that the script and the probe share', () => {
 });
 
 describe('the link that opens a vault again', () => {
-	// You must encode every value in the link, and this includes the
+	// The code must encode every value in the link, and this includes the
 	// separators. Obsidian finds the most specific vault that holds the path.
 	it('encodes the separators and the spaces in the path', () => {
 		expect(vaultUri('/Users/ren/my vaults/quiet-harbor')).toBe(
@@ -582,7 +582,7 @@ describe('the script as a process', () => {
 		expect(run(['-h']).out.trim()).toBe(HELP.trim());
 	});
 
-	// Each row goes through as it stands. A split of a row on its spaces
+	// Each row goes through as it stands. To split a row on its spaces
 	// would turn the row that carries a space into two arguments. Then the
 	// arity check would answer that row before the check read the name.
 	it.each([
@@ -684,7 +684,7 @@ describe('running against a vault that already holds work', () => {
 
 	// A second run can rewrite the two files of the probe and nothing else.
 	// Both halves of that rule matter. A write over the settings would throw
-	// away the edits of the owner. A clear of the plugin folder before the
+	// away the edits of the owner. To clear the plugin folder before the
 	// copy would take the data.json of the probe with it.
 	it('rewrites nothing that the owner put there', () => {
 		const path = reserve('holds-work');
@@ -778,7 +778,7 @@ describe('running against a vault that already holds work', () => {
 	});
 });
 
-describe('how the repository is wired for the script', () => {
+describe('the wiring between the repository and the script', () => {
 	const root = new URL('../', import.meta.url);
 	const read = (name: string): string =>
 		readFileSync(fileURLToPath(new URL(name, root)), 'utf8');

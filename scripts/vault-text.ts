@@ -84,7 +84,7 @@ export function formatOutcome(outcome: Outcome): string {
 
 /**
  * The link that opens a vault again. Obsidian finds the most specific vault
- * that contains the path. You must encode every value in the link, and this
+ * that contains the path. The code must encode every value in the link, and this
  * includes the separators.
  */
 export function vaultUri(absolutePath: string): string {
