@@ -21,12 +21,11 @@ draft and posts it. Subagents never post.
 PR bodies, design rulings, review distillations — posts without prior user
 approval. The lead tells the user in session about the embedded decisions, as a
 digest. The lead revises the posted text when the user gives
-feedback. Design reaches the user before the design hardens. Plans and
-the user must approve plans and
-decisions that touch the spec, as [Feature design](#feature-design)
-specifies. Mechanical text — for example
-status notes, hold comments, and CI chatter — posts under the template
-rules. Drafts can stay in `~/.cache/davenport-dev/drafts/` while the lead
+feedback. Design reaches the user before the design hardens. The user must
+approve plans and decisions that touch the spec, as
+[Feature design](#feature-design) specifies. The lead posts mechanical
+text — for example, status notes, hold comments, and CI chatter — under
+the template rules. Drafts can stay in `~/.cache/davenport-dev/drafts/` while the lead
 composes them.
 
 ## The writing process
@@ -43,7 +42,7 @@ order:
    template. Then follow the instructions that this template carries as
    comments.
 3. **Outline.** List what the text must contain. Make this list before
-   the drafting starts.
+   the draft.
 4. **Audience.** Name the intended reader. Read the audience card of that
    reader ([`docs/dev/audience/`](audience/)). Think about the state of mind
    of that reader. Ask why the reader reads the text, and what the reader
@@ -115,7 +114,7 @@ begins. This comment carries the substantive plan only, without the process
 notes. The issue then carries the why in its body and the agreed how in its
 comments. Implementation starts only after the lead posts the plan.
 
-Design is exploratory, and the lead directs it. The lead delegates research
+Design is exploratory, and the lead directs the design. The lead delegates research
 to subagents where this is useful. When the solution space is genuinely open,
 subagents sketch and elaborate alternative approaches in parallel. The lead
 asks the user to react to the emerging shape as the shape forms. Trade-offs
