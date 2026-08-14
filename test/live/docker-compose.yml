@@ -1,15 +1,17 @@
-# Self-hosted CalDAV servers for live verification runs, so the Radicale,
-# Baikal and Nextcloud columns need no account anywhere.
+# This compose file defines the self-hosted CalDAV servers for the live
+# verification runs. Therefore the Radicale, Baikal and Nextcloud
+# provider columns need no account anywhere.
 #
 #     docker compose -f test/live/docker-compose.yml up -d
 #     docker compose -f test/live/docker-compose.yml down -v
 #
-# Radicale answers on http://localhost:5232/, Baikal on
-# http://localhost:8801/dav.php/ and Nextcloud on
-# http://localhost:8802/remote.php/dav/, all as davenport/davenport. Those
-# credentials are throwaway and public by design. The port choice, the
-# rest of the rationale, and what depends on this file are in
-# test/live/README.md.
+# Radicale answers on http://localhost:5232/. Baikal answers on
+# http://localhost:8801/dav.php/. Nextcloud answers on
+# http://localhost:8802/remote.php/dav/. All three servers use davenport
+# as the user name and davenport as the password. These credentials are
+# throwaway credentials. These credentials are public on purpose.
+# test/live/README.md gives the reason for the port choice, the rest of
+# the rationale, and what depends on this file.
 
 services:
     radicale:
@@ -19,8 +21,11 @@ services:
         volumes:
             - ./radicale:/config:ro
             - radicale-data:/data
-        # The image's healthcheck fetches the root without credentials,
-        # which is a 401 once authentication is configured.
+        # The healthcheck of this image requests the root URL, and the
+        # healthcheck sends no credentials. The configuration in
+        # radicale/ turns authentication on. Radicale therefore answers
+        # that request with status 401. A 401 fails the healthcheck.
+        # This file therefore turns the healthcheck off.
         healthcheck:
             disable: true
 
@@ -37,9 +42,11 @@ services:
         image: nextcloud:34.0.2-apache
         ports:
             - '127.0.0.1:8802:80'
-        # The image installs itself on first boot, but only when the admin
-        # pair and a database setting are both present; SQLite is what
-        # keeps that database from needing a second container.
+        # The Nextcloud image installs the server on first boot. The
+        # image installs the server only when the environment supplies
+        # the admin user name, the admin password, and a database
+        # setting. The stack uses a SQLite database. The stack therefore
+        # needs no second container for a database.
         environment:
             SQLITE_DATABASE: nextcloud
             NEXTCLOUD_ADMIN_USER: davenport

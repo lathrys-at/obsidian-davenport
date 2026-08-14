@@ -57,14 +57,16 @@ jobs:
             - run: npm run probe:build
             - run: node scripts/scan-bundle.mjs tools/a11-probe/dist/main.js
 
-    # The single required check gating merges to main. Fails unless every
-    # job in needs succeeded; evaluating the whole needs context means a
-    # job added to needs is gated without editing the step.
+    # This job is the single required check that gates merges to main.
+    # The job passes only when every needed job has the result success.
+    # The needs context lists the needed jobs, and the step reads the
+    # full needs context. Therefore a new job in needs is also gated,
+    # and the step needs no edit.
     ci-ok:
         needs: [lint, typecheck, test, build]
         if: always()
         runs-on: ubuntu-latest
         steps:
-            - name: All required jobs succeeded
+            - name: Check that every needed job has the result success
               run: |
                   echo '${{ toJSON(needs) }}' | jq -e '(length > 0) and all(.[].result; . == "success")'

@@ -65,7 +65,7 @@ docker compose -f test/live/docker-compose.yml down -v
 Radicale answers on `http://localhost:5232/`. Baikal answers on
 `http://localhost:8801/dav.php/`. Nextcloud answers on
 `http://localhost:8802/remote.php/dav/`. All three servers use
-`davenport`/`davenport` as the username and the password. These credentials
+`davenport`/`davenport` as the user name and the password. These credentials
 are public on purpose. The reason is that the stack binds to loopback,
 holds only test data, and goes down together with its volumes. The values
 in `.env.example` already match this stack. Radicale keeps its upstream
@@ -116,7 +116,7 @@ the container job is such a job. This rule exists to prevent one thing: a
 wider job mapping that includes variables the job does not read.
 
 The `target` input selects the job. The `containers` job starts the compose
-stack. It waits for all three servers. It confirms that each server answers
+stack. It waits for all three servers. It makes sure that each server answers
 `OPTIONS` on its CalDAV root with a `DAV` header. It then tears the stack
 down. The `containers` job takes no secret, and it passes without one. The
 `credentials` job prints the providers that a dispatch can reach, and it
