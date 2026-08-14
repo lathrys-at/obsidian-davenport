@@ -1,26 +1,35 @@
 /**
  * Credentials for live verification runs against real CalDAV servers.
  *
- * Each provider is described by three environment variables —
- * `DAVENPORT_TEST_<PROVIDER>_URL`, `_USERNAME` and `_SECRET`. A provider
- * whose three variables are not all set is unavailable rather than an
- * error: a run covers whichever providers the environment supplies, and an
- * environment supplying none is a valid environment. Nothing here reads
- * the environment at import time, and nothing throws at import time.
+ * Three environment variables describe one provider:
+ * `DAVENPORT_TEST_<PROVIDER>_URL`, `DAVENPORT_TEST_<PROVIDER>_USERNAME`
+ * and `DAVENPORT_TEST_<PROVIDER>_SECRET`. A provider is unavailable when
+ * the environment does not set all three of these variables. A lookup
+ * reports an unavailable provider as a normal result, and does not throw.
+ * A run covers the providers that the environment supplies. An
+ * environment that supplies no provider is still a valid environment. No
+ * function in this module reads the environment at import, and no
+ * function in this module throws at import.
  *
- * An unavailable provider reports the names of the variables it wants and
- * never their contents; no function here writes to a log or puts a value
- * in an error message. Resolved credentials are a plain object holding the
- * secret as a plain string, so keeping it out of logs, errors and
- * artifacts is the caller's obligation from that point on.
+ * When a provider is unavailable, a lookup returns the names of the
+ * variables that the provider wants. A lookup never returns the contents
+ * of those variables. No function in this module writes to a log, and no
+ * function in this module puts the value of a variable in an error
+ * message. Resolved credentials are a plain object that holds the secret
+ * as a plain string. After this module returns that object, the caller
+ * must keep the secret out of logs, out of errors and out of artifacts.
  *
- * A variable holding only whitespace counts as unset — a secret mapped
- * from a store that does not have it arrives as the empty string. The
- * resolved `url` and `username` are trimmed, since surrounding whitespace
- * in either is an artifact of how the value was written down; the secret
- * is taken verbatim, because whitespace can be part of it. A lookup reads
- * own properties only, so nothing an environment record inherits can
- * supply a credential.
+ * A variable that holds only whitespace counts as unset. The reason is
+ * that a secret mapped from a store that does not hold the secret arrives
+ * as the empty string. A lookup trims the `url` and the `username` that
+ * it returns. Whitespace around either of these two values comes from how
+ * somebody wrote the value down, and is not part of the value. A lookup
+ * keeps the secret exactly as the environment gives it, because
+ * whitespace can be part of the secret.
+ *
+ * A lookup reads only the properties that an environment record holds
+ * itself. Therefore nothing that such a record inherits can supply a
+ * credential.
  */
 
 import process from 'node:process';
@@ -36,12 +45,15 @@ export const LIVE_PROVIDERS = [
 
 export type LiveProvider = (typeof LIVE_PROVIDERS)[number];
 
-/** The variables a lookup reads, injected so lookups stay pure. */
+/**
+ * The environment variables that a lookup reads. The caller injects this
+ * record, so that a lookup stays a pure function.
+ */
 export type CredentialEnvironment = Readonly<
 	Record<string, string | undefined>
 >;
 
-/** The environment variable names one provider is described by. */
+/** The names of the three environment variables of one provider. */
 export interface ProviderVariableNames {
 	readonly url: string;
 	readonly username: string;
@@ -57,10 +69,16 @@ export interface LiveCredentials {
 
 export type CredentialLookup =
 	| { readonly available: true; readonly credentials: LiveCredentials }
-	/** The names of the variables that were unset, never their contents. */
+	/**
+	 * The names of the variables that are not set. This member never
+	 * holds the value of a variable.
+	 */
 	| { readonly available: false; readonly missing: readonly string[] };
 
-/** The variable names for a provider, whether or not any of them are set. */
+/**
+ * The names of the three variables of a provider. This function returns
+ * the names whether the environment sets the variables or not.
+ */
 export function variableNames(provider: LiveProvider): ProviderVariableNames {
 	const prefix = `DAVENPORT_TEST_${provider.toUpperCase()}`;
 	return {
@@ -83,7 +101,10 @@ function read(
 		: undefined;
 }
 
-/** Credentials for one provider, or the names of what it is missing. */
+/**
+ * The credentials of one provider, or the names of the variables that the
+ * environment does not set.
+ */
 export function lookupCredentials(
 	provider: LiveProvider,
 	environment: CredentialEnvironment,
@@ -112,7 +133,10 @@ export function lookupCredentials(
 	};
 }
 
-/** The providers this environment can reach, in declaration order. */
+/**
+ * The providers that a run with this environment can reach. The order is
+ * the order of `LIVE_PROVIDERS`.
+ */
 export function availableProviders(
 	environment: CredentialEnvironment,
 ): readonly LiveProvider[] {
@@ -122,8 +146,10 @@ export function availableProviders(
 }
 
 /**
- * Credentials for a provider the caller has established it needs. The
- * error names the unset variables so the caller can set them.
+ * The credentials of one provider, for a caller that must have them. This
+ * function throws when the environment does not set all three variables.
+ * The error names the variables that are not set, so that the caller can
+ * set them.
  */
 export function requireCredentials(
 	provider: LiveProvider,
@@ -132,13 +158,13 @@ export function requireCredentials(
 	const lookup = lookupCredentials(provider, environment);
 	if (!lookup.available) {
 		throw new Error(
-			`No live credentials for ${provider}; unset: ${lookup.missing.join(', ')}`,
+			`The environment has no live credentials for ${provider}. Set these variables: ${lookup.missing.join(', ')}`,
 		);
 	}
 	return lookup.credentials;
 }
 
-/** The process environment, as the record the lookups take. */
+/** The process environment, in the record shape that a lookup takes. */
 export function processEnvironment(): CredentialEnvironment {
 	return process.env;
 }

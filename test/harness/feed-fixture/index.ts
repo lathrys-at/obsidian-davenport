@@ -1,6 +1,21 @@
 /**
- * The feed fixture: a scripted ICS feed server behind the transport port,
- * with the event specifications and per-poll edits its bodies are built from.
+ * The feed fixture. The fixture is an ICS feed server that runs in the test
+ * process. ICS is the file format that the iCalendar standard defines. A
+ * poll is one fetch of a feed.
+ *
+ * The fixture sits behind the transport port. The plugin makes every network
+ * call through that port. A test can therefore put the fixture in the place
+ * of the network.
+ *
+ * This file is the entry point of the fixture. The file collects four parts:
+ *
+ * 1. The server, and the script that states what the feed serves for each
+ *    poll.
+ * 2. The variants. A variant states what one poll of a feed serves.
+ * 3. The event specifications that the fixture builds a feed body from, and
+ *    the edits that a script applies to those events between two polls.
+ * 4. The functions that write iCalendar text, and the functions that measure
+ *    and encode that text in octets. An octet is one byte.
  */
 
 export type {

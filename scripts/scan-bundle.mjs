@@ -1,28 +1,49 @@
-// Fails when the bundled plugin contains a direct global fetch call —
-// bare, or through window/globalThis/self/global, dotted or bracketed, or
-// read off a holder with Reflect.get. All network I/O must flow through the
-// transport port, which the Obsidian adapter backs with requestUrl; a stray
-// fetch breaks on mobile, where CalDAV servers send no CORS headers. This is
-// a heuristic backstop over bundled output; the lint guards are the primary
-// enforcement.
+// The plugin must not call the global fetch function. Three guards hold
+// this rule. The lint selectors are the first guard, and they read the
+// source files. This script is the second guard, and it reads the built
+// bundle. The fetch poison is the third guard, and it works while the code
+// runs.
 //
-// Two shapes are past a scan over text and are left to the fetch poison,
-// which covers every spelling because it replaces the property itself: a key
-// held in a variable, which esbuild does not inline, and a holder that is
-// itself a call, since the holder here stops at the first comma or paren.
+// Every network request must go through the transport port, which the
+// Obsidian adapter backs with requestUrl. A call to fetch that gets past
+// the guards breaks on mobile, because CalDAV servers send no CORS headers.
 //
-// Scans main.js unless a path is given, so the same patterns can be run
-// against a bundle written anywhere.
+// The script fails when the bundle uses the global fetch function directly.
+// The script finds these forms:
+//
+//   - a bare call;
+//   - a call through window, globalThis, self, or global, with a dotted key
+//     or a bracketed key;
+//   - a read of the fetch property with Reflect.get.
+//
+// This script matches patterns over text, and it does not parse the code.
+// Therefore the lint selectors are the primary guard, and this script is
+// only a backup.
+//
+// Two forms get past this script, and the fetch poison covers both. The
+// poison replaces the fetch property itself, and therefore the poison covers
+// every form. The first form that gets past is a key that a variable holds,
+// because esbuild does not replace that variable with its value. The second
+// form that gets past is a holder that is itself a call, because the pattern
+// for the holder stops at the first comma or parenthesis.
+//
+// The script reads main.js. If you give a path as the first argument, the
+// script reads that file instead. Then the same patterns can run over a
+// bundle in any location.
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 const spellings = [
-	// A call to fetch, bare or through a global object.
+	// This pattern matches a call to fetch. The call is bare, or the call
+	// goes through a global object. The lookbehind is necessary. Without the
+	// lookbehind, this pattern also matches a property that is named fetch
+	// and a longer name that ends in fetch.
 	/(?<![.\w$])fetch\s*\(|(?:window|globalThis|self|global)\s*(?:\.\s*fetch|\[\s*['"]fetch['"]\s*\])\s*\(/g,
-	// Reflect.get(holder, 'fetch'), which names no property and so appears
-	// in none of the spellings above. The key is quoted or templated; the
-	// holder is anything but a further call, which keeps the match on one
-	// argument list.
+	// Reflect.get reads the fetch property without naming it, so the first
+	// pattern cannot find a Reflect.get read. This pattern accepts the key
+	// in single quotes, in double quotes, or in a template string. The part
+	// that matches the holder stops at the first comma or parenthesis, and
+	// therefore each match stays inside one argument list.
 	/Reflect\s*\.\s*get\s*\(\s*[^,()]*,\s*(?:'fetch'|"fetch"|`fetch`)\s*[,)]/g,
 ];
 
@@ -38,12 +59,12 @@ if (matches.length > 0) {
 		const start = Math.max(0, (match.index ?? 0) - 60);
 		const context = bundle.slice(start, (match.index ?? 0) + 60);
 		console.error(
-			`bundle scan: direct fetch at index ${String(match.index)}:`,
+			`bundle scan: direct fetch usage at index ${String(match.index)}:`,
 		);
 		console.error(`  …${context.replace(/\n/g, '\\n')}…`);
 	}
 	console.error(
-		`bundle scan: ${String(matches.length)} direct fetch call(s) found in ${target}`,
+		`bundle scan: the count of places with direct fetch usage is ${String(matches.length)}. The file ${target} does not pass. Send each network request through the transport port.`,
 	);
 	process.exit(1);
 }

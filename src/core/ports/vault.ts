@@ -1,13 +1,17 @@
 /**
- * Vault port: the engine's only view of note files and their metadata. The
- * deterministic test fake and the Obsidian adapter both implement it; core
- * code never imports platform APIs.
+ * The vault port gives the engine its only view of note files and of the
+ * metadata of those files. The fake that the tests use implements this
+ * port. The adapter for Obsidian implements this port too. The fake is
+ * deterministic, which means that the same operations always give the same
+ * result. Code in the core never imports a platform API.
  */
 
 /**
- * Creation is distinct from modification: file arrival matters in its own
- * right, because some sync tools deliver renames as delete-plus-create
- * pairs and a note can arrive before its record.
+ * A file event tells the engine what happened to one file. The event for a
+ * new file is separate from the event for a changed file. The arrival of a
+ * file is important on its own, for two reasons. Some sync tools do a
+ * rename as a delete and then a create. A note can also arrive before the
+ * record of that note arrives.
  */
 export type VaultFileEvent =
 	| { readonly kind: 'created'; readonly path: string }
@@ -23,23 +27,33 @@ export type Unsubscribe = () => void;
 
 export interface VaultPort {
 	read(path: string): Promise<string>;
-	/** Create or overwrite. Write-if-changed discipline is the caller's. */
+	/**
+	 * Creates the file, or replaces the content of a file that exists. The
+	 * method always writes. A caller that wants to write only after a
+	 * change must compare the content first.
+	 */
 	write(path: string, content: string): Promise<void>;
 	exists(path: string): Promise<boolean>;
 	rename(path: string, newPath: string): Promise<void>;
 	/**
-	 * Move to trash honoring the user's deleted-files preference — never a
-	 * permanent delete.
+	 * Moves the file to the trash. The method obeys the setting that the
+	 * user chose for deleted files. The method never deletes a file
+	 * permanently.
 	 */
 	trash(path: string): Promise<void>;
-	/** Parsed frontmatter, or null where absent or unparseable. */
+	/**
+	 * Reads the frontmatter of the note and returns the fields. The method
+	 * returns null when the note has no frontmatter, and also when the
+	 * frontmatter does not parse.
+	 */
 	frontmatter(
 		path: string,
 	): Promise<Readonly<Record<string, unknown>> | null>;
 	/**
-	 * Update frontmatter through the platform writer. Cross-device byte
-	 * determinism of the real writer is verified empirically, never assumed
-	 * by the fake.
+	 * Changes the frontmatter of the note through the writer of the
+	 * platform. A test measures whether the real writer makes the same
+	 * bytes on each device. The fake does not assume that the real writer
+	 * makes the same bytes.
 	 */
 	updateFrontmatter(
 		path: string,

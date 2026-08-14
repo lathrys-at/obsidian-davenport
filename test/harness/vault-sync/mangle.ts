@@ -1,35 +1,44 @@
 /**
- * Merge mangling: the damage a line-level automatic merge does to a file
- * that is not a document.
+ * A merge mangler, or merger, models a sync tool that merges two changes
+ * to one file, line by line and without a person. The two devices made
+ * those two changes with no knowledge of each other. Such a merge
+ * damages a file that is not a document.
  *
- * A tool that merges two concurrent edits line by line produces a file
- * whose every line came from somewhere real and whose contents as a whole
- * belong to no version anybody wrote. That is the failure records are
- * checked against, so the harness needs to produce it on demand and
- * produce the same one every time.
+ * Every line of the merged file comes from one of the two changes, so
+ * every line looks correct. The file as a whole holds a state that
+ * nobody wrote. This damaged file is the failure that the tests for
+ * records check against. Therefore the harness must make this file on
+ * demand, and must make the same file every time.
  *
- * The merger is a plain function, so the modeled merge below can be
- * swapped for one replaying merges captured from a real tool without
- * anything else in the channel changing. It is told which side is in
- * place and which is arriving rather than working it out: the channel
- * fixes those roles by the profile's winner rule, so two devices merging
- * one pair of edits hand the merger the same call and get the same file.
+ * A merger is a plain function. Therefore a merger that replays merges
+ * captured from a real tool can replace the modeled merge below, and
+ * nothing else in the channel changes. The channel tells the merger
+ * which side is in place and which side arrives, and the merger does not
+ * work this out. The winner rule of the profile fixes the two roles.
+ * Therefore two devices that merge one pair of changes make the same
+ * call and get the same file.
  */
 
 export interface MergeInputs {
 	readonly path: string;
-	/** Content both sides started from; null where they share none. */
+	/**
+	 * The content that both sides started from. Null when the two sides
+	 * share no such content.
+	 */
 	readonly base: string | null;
-	/** The side the merge treats as already in place. */
+	/** The content that the merge treats as the content in place. */
 	readonly local: string;
-	/** The side the merge treats as arriving. */
+	/** The content that the merge treats as the content that arrives. */
 	readonly incoming: string;
 }
 
-/** Merged content, or null where the tool would not merge at all. */
+/** The merged content, or null when the tool makes no merge at all. */
 export type MergeMangler = (inputs: MergeInputs) => string | null;
 
-/** What the merge emits for a line both sides changed away from the base. */
+/**
+ * What the merge writes for a line that both sides changed away from the
+ * base content.
+ */
 export type LineConflictRule = 'take-incoming' | 'take-local' | 'markers';
 
 export interface LineMergeOptions {
@@ -41,14 +50,19 @@ const MARKER_SPLIT = '=======';
 const MARKER_INCOMING = '>>>>>>> incoming';
 
 /**
- * A three-way merge that aligns the three versions by line number and
- * nothing else. A line only one side changed takes that side; a line both
- * sides changed follows the configured rule, which defaults to taking the
- * incoming side silently — the spelling that leaves no trace in the file.
+ * A three-way merge. The merge aligns the base content, the content in
+ * place, and the content that arrives by line number, and by nothing
+ * else.
  *
- * Without a base there is nothing to align against and the merge declines,
- * which is how a tool behaves when two devices create the same path
- * independently.
+ * A line that only one side changed comes from that side. A line that
+ * both sides changed follows the rule in the options. That rule takes
+ * the line that arrives by default, and writes no conflict marker into
+ * the file.
+ *
+ * The function returns null when the call gives no base content, because
+ * the merge then has nothing to align against. A real tool also makes no
+ * merge when two devices make the same path with no knowledge of each
+ * other, and the two sides then share no base content.
  */
 export function lineMergeMangler(options: LineMergeOptions = {}): MergeMangler {
 	const rule = options.onBothChanged ?? 'take-incoming';
@@ -91,7 +105,10 @@ export function lineMergeMangler(options: LineMergeOptions = {}): MergeMangler {
 	};
 }
 
-/** A merger that never merges; every divergence takes the profile's copy. */
+/**
+ * A merger that makes no merge. Every divergence then falls back to the
+ * conflict copy of the profile.
+ */
 export const declineMerge: MergeMangler = () => null;
 
 function push(lines: string[], line: string | null): void {

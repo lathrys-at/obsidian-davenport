@@ -1,19 +1,23 @@
 /**
- * What a standing assertion is: a named predicate over one run's evidence
- * that returns every violation it finds. An empty result is the assertion
- * holding.
+ * A sweep is a standing assertion about one run. A sweep has a name and a
+ * check function. The check function reads the evidence of the run and
+ * returns every violation that it finds. An empty result means that the
+ * run satisfies the assertion.
  *
- * A sweep reports rather than throws, so one run names every sweep that
- * failed and every position each one objected to, instead of stopping at
- * the first.
+ * A check function returns its violations and does not throw. Thus one run
+ * can name every sweep that failed, and every position that each failed
+ * sweep objected to. The run does not stop at the first failure.
  */
 
 import type { RunEvidence } from './evidence';
 
 export interface SweepViolation {
-	/** Where in the evidence the violation sits. */
+	/**
+	 * Where the violation is. The value is a path in the evidence, or a
+	 * phrase that names the position when no path fits.
+	 */
 	readonly where: string;
-	/** What is wrong there, in one line. */
+	/** What is wrong at that position, in one line. */
 	readonly detail: string;
 }
 
@@ -28,9 +32,11 @@ export interface SweepReport {
 }
 
 /**
- * The failure a run raises when a sweep does not hold. The message names
- * the run, every sweep that failed, and every violating position, so the
- * test that produced the evidence reads its own failure without a debugger.
+ * The error that a run throws when a sweep finds a violation. The message
+ * names the run. For each sweep that failed, the message also names the
+ * sweep and every position that the sweep objected to. Thus the test that
+ * produced the evidence shows the cause in its own failure message, and
+ * the reader needs no debugger.
  */
 export class SweepFailure extends Error {
 	readonly run: string;
@@ -48,7 +54,7 @@ export function describeReports(
 	run: string,
 	reports: readonly SweepReport[],
 ): string {
-	const header = `run ${JSON.stringify(run)} failed ${plural(reports.length, 'sweep')}`;
+	const header = `the run ${JSON.stringify(run)} failed ${plural(reports.length, 'sweep')}`;
 	const blocks = reports.map((report) =>
 		[
 			`  ${report.sweep} — ${plural(report.violations.length, 'violation')}`,

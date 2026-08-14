@@ -1,7 +1,8 @@
 /**
- * In-process CalDAV server for the engine suites. It stands where the
- * transport adapter would, so a run exercises the real request path with
- * no network and no ambient state.
+ * A CalDAV server that runs in the same process as the engine test
+ * suites. This server takes the place of the transport adapter. Thus a
+ * run uses the real request path, the run makes no network request, and
+ * the run uses no state from outside the run.
  */
 
 export { MockCalDavServer, type MockServerConfig } from './server';

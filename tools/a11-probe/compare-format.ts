@@ -1,8 +1,9 @@
 /**
  * The report as text.
  *
- * Plain ASCII and fixed columns, because this output is read on a terminal
- * and transcribed into the verification record by hand.
+ * The report uses plain ASCII and columns of a fixed width. The owner
+ * reads this output on a terminal, and copies this output into the
+ * verification record by hand.
  */
 
 import type { ComparisonReport, FixtureComparison } from './compare-core';
@@ -10,7 +11,7 @@ import type { ComparisonReport, FixtureComparison } from './compare-core';
 const SHORT_HASH = 8;
 const MIN_COLUMN = 18;
 
-/** The whole comparison, ready to print. */
+/** The whole comparison, as text that is ready to print. */
 export function formatReport(report: ComparisonReport): string {
 	const lines: string[] = ['frontmatter emission comparison', ''];
 	lines.push(...environments(report), '');
@@ -101,9 +102,11 @@ function summary(fixture: FixtureComparison, environments: number): string {
 }
 
 /**
- * The fixtures an environment may have written from a stale view of the
- * note. Set apart from the notes below and marked, because a difference
- * here reads as a divergence and is not one until it is seen again.
+ * The fixtures that an environment possibly wrote from a stale view of
+ * the note. This block stays apart from the notes below, and each row
+ * carries a mark. A difference in these fixtures looks like a divergence.
+ * The difference is a divergence only after a new run shows the
+ * difference again.
  */
 function cautionDetail(report: ComparisonReport): string[] {
 	const affected = report.fixtures.filter(
@@ -116,20 +119,21 @@ function cautionDetail(report: ComparisonReport): string[] {
 		'cautions',
 		...affected.map(
 			(fixture) =>
-				`  ! ${fixture.id}: ${fixture.cautions.join(',')} waited out the metadata timeout, so that output may have been written from a stale view of the note; ${rests(fixture)}`,
+				`  ! ${fixture.id}: ${fixture.cautions.join(',')} waited out the metadata timeout, so the probe possibly wrote that output from a stale view of the note; ${rests(fixture)}`,
 		),
 	];
 }
 
 /**
- * What the caution means for this fixture. A difference no unhurried pair
- * of environments shows between them is unproven; anywhere else the
- * caution is about the one environment's bytes, not about the fixture.
+ * The text that says what the caution means for this fixture. A
+ * difference that no pair of environments without a timeout shows between
+ * them is unproven. In every other condition, the caution is about the
+ * bytes of that one environment, and not about the fixture.
  */
 function rests(fixture: FixtureComparison): string {
 	return fixture.unproven
-		? 'the difference here rests on that environment alone and is unproven until it runs the fixture again'
-		: 'anything resting on that environment alone needs it to run the fixture again';
+		? 'the difference here rests on that environment alone, and the difference is unproven until that environment runs the fixture again'
+		: 'any conclusion that rests only on that environment needs that environment to run the fixture again';
 }
 
 function divergenceDetail(report: ComparisonReport): string[] {
@@ -188,14 +192,14 @@ function warnings(report: ComparisonReport): string[] {
 function verdict(report: ComparisonReport): string {
 	const across = `across ${String(report.environments.length)} environments`;
 	if (report.verdict === 'incomparable') {
-		return 'verdict: these runs cannot be compared as they stand; the cautions and notes above say why';
+		return 'verdict: these runs cannot be compared in their present form; the cautions and notes above say why';
 	}
 	if (report.verdict === 'diverge') {
 		const diverged = report.compared - report.agreed;
 		return `verdict: ${String(diverged)} of ${String(report.compared)} fixtures diverge ${across}; frontmatter emission is not byte-identical here`;
 	}
 	if (report.environments.length < 2) {
-		return `verdict: ${String(report.compared)} fixtures recorded from one environment; a comparison needs a second`;
+		return `verdict: ${String(report.compared)} fixtures recorded from one environment; a comparison needs a second environment`;
 	}
 	const refused = report.fixtures.filter(
 		(fixture) => fixture.outcome === 'error',

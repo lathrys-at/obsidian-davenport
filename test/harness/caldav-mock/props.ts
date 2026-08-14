@@ -1,8 +1,12 @@
 /**
- * WebDAV property emission, shared by PROPFIND and the REPORTs. A request
- * names properties; each target answers the ones it has in a 200 propstat
- * and lists the rest as 404, which is how a client tells an unsupported
- * property from an empty one.
+ * This module writes WebDAV properties into a response. The PROPFIND
+ * handler and the REPORT handlers both use this module. A request names
+ * the properties that the client wants. For each target, the mock puts
+ * the properties that the target has into a `propstat` block with status
+ * 200. The mock puts the names of the other properties into a second
+ * `propstat` block with status 404. The two blocks let a client see the
+ * difference between a property that the server does not support and a
+ * property that is empty.
  */
 
 import type { MockServerCapabilities } from './capabilities';
@@ -44,8 +48,11 @@ export interface PropContext {
 }
 
 /**
- * The three shapes a request for properties takes: the ones it names, the
- * names of everything the target carries, or everything with its value.
+ * A request for properties has three possible shapes. First, the request
+ * names the properties that the client wants. Second, the request asks
+ * for the names of all the properties that the target carries, and not
+ * for the values. Third, the request asks for all the properties with
+ * their values.
  */
 export type PropRequest =
 	| { readonly kind: 'allprop' }
@@ -98,7 +105,10 @@ export function supportedProps(target: PropTarget): readonly PropName[] {
 	return SUPPORTED_PROPS[target.kind];
 }
 
-/** Appends one `<response>` for a target, in the shape the request asked for. */
+/**
+ * Appends one `<response>` element for one target. The contents of the
+ * element follow what the request asks for.
+ */
 export function appendResponse(
 	out: XmlOutput,
 	parent: XmlElement,
@@ -135,8 +145,9 @@ export function appendResponse(
 		}
 		out.child(propstat, DAV_NS, 'status', 'HTTP/1.1 200 OK');
 	}
-	// A request for everything returns what exists; only a request that
-	// named a property gets told the property is not there.
+	// A request for all the properties gets only the properties that
+	// exist. The mock reports a missing property only when the request
+	// names that property.
 	if (requested.kind === 'named' && missing.length > 0) {
 		const propstat = out.child(response, DAV_NS, 'propstat');
 		const prop = out.child(propstat, DAV_NS, 'prop');

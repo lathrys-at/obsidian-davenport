@@ -1,8 +1,9 @@
 /**
- * Request bodies and event text for driving the mock. Requests are written
- * as the XML a client sends, deliberately with prefixes that vary between
- * fixtures, since prefix choice is the client's and the server may not
- * depend on it.
+ * Request bodies and event text that drive the mock server. Each request
+ * body is the XML that a client sends. The namespace prefixes are
+ * different from one fixture to the next. This difference is deliberate.
+ * The client chooses the prefixes, so the server must not depend on the
+ * prefixes.
  */
 
 import {
@@ -59,7 +60,11 @@ export function icsEvent(options: EventOptions): string {
 	return `${lines.join('\r\n')}\r\n`;
 }
 
-/** An eight-digit value is a DATE and carries the parameter saying so. */
+/**
+ * Writes a property that carries a date, or a date and a time. A value of
+ * eight digits is a DATE, and the property then also carries the
+ * parameter `VALUE=DATE` that states this.
+ */
 function stampProperty(name: string, value: string): string {
 	return /^\d{8}$/.test(value)
 		? `${name};VALUE=DATE:${value}`
@@ -67,9 +72,10 @@ function stampProperty(name: string, value: string): string {
 }
 
 /**
- * A PROPFIND naming properties. Namespaces beyond the three a CalDAV
- * client always declares are passed in, which is how a vendor property is
- * asked for.
+ * Builds a PROPFIND body that names the given properties. A CalDAV client
+ * always declares three namespaces, and this body declares them. The
+ * caller gives every other namespace in `namespaces`. A test asks in this
+ * way for a property that one server vendor defines.
  */
 export function propfindBody(
 	properties: readonly string[],
@@ -89,7 +95,10 @@ export function propfindBody(
 </d:propfind>`;
 }
 
-/** A PROPFIND asking which properties a target carries, values omitted. */
+/**
+ * Builds a PROPFIND body that asks which properties a target carries. The
+ * answer gives the names of the properties, and no values.
+ */
 export function propnameBody(): string {
 	return `<?xml version="1.0" encoding="utf-8" ?>
 <d:propfind xmlns:d="DAV:">
@@ -113,7 +122,7 @@ export interface QueryOptions {
 	readonly uid?: string;
 	readonly collation?: string;
 	readonly withData?: boolean;
-	/** Filter elements written out as a client would send them. */
+	/** Filter elements, written as a client sends them. */
 	readonly filters?: readonly string[];
 }
 
@@ -157,7 +166,10 @@ export function multigetBody(hrefs: readonly string[]): string {
 </C:calendar-multiget>`;
 }
 
-/** Text carried in a request body, so a value holding markup stays a value. */
+/**
+ * Escapes text for a request body. A value that holds markup then stays a
+ * value, and does not become part of the XML structure.
+ */
 function xmlText(value: string): string {
 	return value
 		.replace(/&/g, '&amp;')
@@ -215,7 +227,12 @@ export function syncTokenIn(body: string): string | null {
 	return token ? textOf(token) : null;
 }
 
-/** The local name of the precondition element in an error body. */
+/**
+ * Returns the name of the precondition element in an error body. The name
+ * is the key that `keyOf` builds. The key gives the namespace prefix when
+ * the mock knows the namespace, and the namespace URI when the mock does
+ * not know the namespace. A colon and the local name follow.
+ */
 export function errorConditionIn(body: string): string | null {
 	const document = parseXml(body);
 	const root = document?.documentElement;
@@ -226,7 +243,10 @@ export function errorConditionIn(body: string): string | null {
 	return first ? keyOf(first) : null;
 }
 
-/** The component names a supported-calendar-component-set advertises. */
+/**
+ * Returns the component names that a supported-calendar-component-set
+ * property advertises.
+ */
 export function componentSetIn(body: string): readonly string[] {
 	const document = parseXml(body);
 	const root = document?.documentElement;
@@ -242,7 +262,13 @@ export function hrefsIn(body: string): readonly string[] {
 	return readMultistatus(body).map((response) => response.href);
 }
 
-/** Namespace-qualified key, so `getetag` and a caldav prop never collide. */
+/**
+ * Builds a key for an element. The key gives the namespace prefix when the
+ * mock knows the namespace, and the namespace URI when the mock does not
+ * know the namespace. A colon and the local name of the element follow. A
+ * DAV property and a CalDAV property with the same local name therefore
+ * never share a key.
+ */
 export function keyOf(element: XmlElement): string {
 	const namespace = element.namespaceURI ?? '';
 	const prefix = PREFIX_BY_NAMESPACE.get(namespace) ?? namespace;

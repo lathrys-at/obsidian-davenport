@@ -1,8 +1,11 @@
 /**
- * REPORT: sync-collection, calendar-query, and calendar-multiget. Each
- * answers only on a calendar collection, and each refuses with the
- * precondition element its RFC names, so a client can tell an unsupported
- * feature from an empty result.
+ * This module answers the REPORT method. The module supports three
+ * reports: `sync-collection`, `calendar-query`, and `calendar-multiget`.
+ * Each report works only on a calendar collection. When the mock refuses
+ * a report, the mock names the precondition element that the RFC for that
+ * report defines. The named element lets a client see the difference
+ * between a feature that the server does not support and a result that
+ * is empty.
  */
 
 import { matchesFilter, parseFilter } from './filter';
@@ -49,7 +52,11 @@ export function reportKindOf(document: XmlDocument | null): ReportKind | null {
 	return null;
 }
 
-/** Empty text for an initial sync; null when the body is not a sync. */
+/**
+ * The sync token that the body of the request presents. The value is
+ * empty text for an initial sync, which presents no token. The value is
+ * null when the body is not a `sync-collection` report.
+ */
 export function presentedSyncToken(
 	document: XmlDocument | null,
 ): string | null {
@@ -71,8 +78,9 @@ export function handleReport(
 	if (kind === null || document === null) {
 		return plain(400);
 	}
-	// A multiget may also be aimed at one calendar object resource, where
-	// the hrefs it carries are read against the collection holding it.
+	// A client can also send a multiget to one calendar object resource.
+	// The mock then reads the hrefs in the request against the collection
+	// that holds that resource.
 	const collection =
 		route.kind === 'collection'
 			? route.collection
@@ -138,9 +146,11 @@ function syncCollection(
 }
 
 /**
- * The change set a client holding this token has not seen: one entry per
- * href with the latest outcome, and every current member for an initial
- * sync.
+ * The changes that a client has not seen. The `since` parameter is the
+ * counter from the token that the client holds. The result holds one
+ * entry for each href, and that entry gives the last outcome for the
+ * href. An initial sync presents no token, and the counter is then zero.
+ * The result then holds every current member of the collection.
  */
 function changesSince(
 	collection: CollectionState,
@@ -171,9 +181,10 @@ function calendarQuery(
 	if (filter.unsupportedCollation !== null) {
 		return preconditionError(403, CALDAV_NS, 'supported-collation');
 	}
-	// An element the mock cannot apply is named back rather than dropped,
-	// since dropping it answers a different question than the one asked
-	// and the answer looks like a complete one.
+	// The mock returns the name of a filter element that the mock cannot
+	// apply, and does not drop that element. A dropped element would
+	// answer a different question from the question that the client
+	// asked, and that wrong answer would still look complete.
 	const unsupported = filter.unsupported;
 	if (unsupported !== null) {
 		return preconditionError(
@@ -247,7 +258,11 @@ function calendarMultiget(
 	});
 }
 
-/** A found resource answers with its properties; a missing one with 404. */
+/**
+ * Appends one `<response>` element for one href. A resource that exists
+ * answers with its properties. A resource that is not there answers with
+ * status 404.
+ */
 function appendResource(
 	out: XmlOutput,
 	parent: XmlElement,
@@ -278,7 +293,10 @@ function appendResource(
 	);
 }
 
-/** Hrefs arrive as paths or as absolute URLs; both name the same resource. */
+/**
+ * The path part of an href. An href arrives as a path or as an absolute
+ * URL, and the two forms name the same resource.
+ */
 function pathOf(href: string): string {
 	if (!href.includes('://')) {
 		return href;

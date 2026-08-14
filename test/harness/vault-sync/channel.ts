@@ -1,22 +1,27 @@
 /**
- * The vault-sync channel: N simulated devices exchanging file changes
- * under a script the test writes.
+ * The vault-sync channel simulates two or more devices. The devices
+ * exchange file changes, and the test writes the script that moves those
+ * changes.
  *
- * Nothing moves on its own. A change made on one device becomes a pending
- * delivery to every peer and stays pending until the test delivers it, so
- * order is whatever the script says: hold one path and deliver the rest,
- * deliver two paths in a stated order, deliver to one peer and leave
- * another behind. Latency is the clock time a test lets pass between
- * making a change and delivering it; the modification times the channel
- * records carry that skew.
+ * Nothing moves on its own. A change on one device becomes a delivery to
+ * each other device. Each delivery waits until the test delivers it.
+ * Thus the script sets the order. A script can do these things:
  *
- * Every delivery carries the version of the path it changes, so a device
- * that is merely behind catches up whichever order the deliveries reach
- * it in, and only edits made without knowledge of each other come out as
- * conflicts.
+ * - hold one path and deliver the other paths;
+ * - deliver two paths in a stated order;
+ * - deliver to one device and leave another device behind.
  *
- * The same script run twice leaves every device holding the same bytes,
- * with the same deliveries landing the same way.
+ * Latency is the clock time that a test lets pass between the change and
+ * the delivery of that change. The modification times that the channel
+ * records hold that difference.
+ *
+ * Every delivery carries the version of the path that the delivery
+ * changes. Therefore a device that is only behind catches up in any
+ * order of arrival. Two edits become a conflict only when neither device
+ * knew about the edit of the other device.
+ *
+ * A second run of the same script gives the same result. Every device
+ * holds the same bytes, and the same deliveries land in the same way.
  */
 
 import type { ControlledClock } from '../clock';
@@ -34,24 +39,34 @@ import type {
 } from './types';
 
 export interface VaultSyncChannelOptions {
-	/** Device ids, in the order fan-out enqueues to them. */
+	/**
+	 * The ids of the devices. When a change goes out to the other
+	 * devices, the channel makes the deliveries in this order.
+	 */
 	readonly devices: readonly DeviceId[];
 	readonly clock: ControlledClock;
 	readonly profile?: SyncToolProfile;
 	/**
-	 * Merger for profiles that merge, overriding the profile's own. The
-	 * profile's merger stands in where this is omitted, and the modeled
-	 * line merge where the profile carries none.
+	 * The merger for a profile that merges. This merger replaces the
+	 * merger of the profile. If you omit this merger, the channel uses
+	 * the merger of the profile. If the profile carries no merger, the
+	 * channel uses the modeled line merge.
 	 */
 	readonly merger?: MergeMangler;
-	/** Files every device starts with. Seeding delivers nothing. */
+	/** The files that every device starts with. A seed delivers nothing. */
 	readonly seed?: Readonly<Record<string, string>>;
 }
 
-/** Releases a hold; calling it more than once does nothing further. */
+/**
+ * Releases a hold. A second call and each later call do nothing more.
+ */
 export type ReleaseHold = () => void;
 
-/** The two files whose arrival order is the flight-skew script. */
+/**
+ * The two files of a flight-skew script. Flight skew is the delay
+ * between the arrival of a record and the arrival of the note of that
+ * record. The script states which of the two files arrives first.
+ */
 export interface FlightSkew {
 	readonly record: string;
 	readonly note: string;
@@ -71,7 +86,9 @@ export class VaultSyncChannel {
 
 	constructor(options: VaultSyncChannelOptions) {
 		if (options.devices.length < 2) {
-			throw new Error('vault-sync channel: needs at least two devices');
+			throw new Error(
+				'vault-sync channel: the channel needs at least two devices',
+			);
 		}
 		this.clock = options.clock;
 		this.profile = options.profile ?? DEFAULT_SYNC_PROFILE;
@@ -79,7 +96,9 @@ export class VaultSyncChannel {
 			options.merger ?? this.profile.merger ?? lineMergeMangler();
 		for (const id of options.devices) {
 			if (this.byId.has(id)) {
-				throw new Error(`vault-sync channel: duplicate device ${id}`);
+				throw new Error(
+					`vault-sync channel: the options give a duplicate device ${id}; give each device a different id`,
+				);
 			}
 			const device = new SyncDevice(
 				id,
@@ -98,31 +117,40 @@ export class VaultSyncChannel {
 		return this.order;
 	}
 
-	/** Every delivery that has landed, in the order it landed. */
+	/** Every delivery that landed, in the order in which it landed. */
 	get log(): readonly LandedDelivery[] {
 		return this.landed;
 	}
 
-	/** The device with this id, or an error naming the ids there are. */
+	/**
+	 * The device with this id. If the channel holds no device with this
+	 * id, the method throws an error that names the ids that the channel
+	 * holds.
+	 */
 	device(id: DeviceId): SyncDevice {
 		const device = this.byId.get(id);
 		if (device === undefined) {
 			const known = [...this.byId.keys()].join(', ');
 			throw new Error(
-				`vault-sync channel: no device ${id}; channel holds ${known}`,
+				`vault-sync channel: there is no device ${id}; the channel holds ${known}`,
 			);
 		}
 		return device;
 	}
 
-	/** Deliveries waiting, held or not, in the order they were captured. */
+	/**
+	 * The deliveries that wait, held or not, in the order in which the
+	 * channel captured them.
+	 */
 	pending(selector?: DeliverySelector): readonly Delivery[] {
 		return this.queue.filter((delivery) => matches(delivery, selector));
 	}
 
 	/**
-	 * Keeps matching deliveries — pending and later — out of every
-	 * delivery call until the returned function releases them.
+	 * Keeps the deliveries that match the selector out of every delivery
+	 * call. The hold covers the deliveries that wait now, and also the
+	 * deliveries that come later. The hold stays until the returned
+	 * function releases these deliveries.
 	 */
 	hold(selector: DeliverySelector): ReleaseHold {
 		const rule: DeliverySelector = { ...selector };
@@ -138,10 +166,12 @@ export class VaultSyncChannel {
 	}
 
 	/**
-	 * Delivers matching unheld deliveries in the order they were captured.
-	 * A landing originates nothing, save for a conflict copy under a
-	 * profile that propagates them: that one is captured behind the
-	 * deliveries this call chose and stays pending.
+	 * Delivers each delivery that matches the selector and that no hold
+	 * stops. The order is the order of capture. A landing makes no new
+	 * delivery, with one exception: a profile that propagates its
+	 * conflict copies makes a delivery for the conflict copy. The channel
+	 * captures that copy after the deliveries that this call chose, and
+	 * that copy stays pending.
 	 */
 	async deliver(selector?: DeliverySelector): Promise<LandedDelivery[]> {
 		const chosen = this.queue.filter(
@@ -161,8 +191,8 @@ export class VaultSyncChannel {
 	}
 
 	/**
-	 * Delivers one selector at a time, so the arrival order is the order
-	 * the selectors are written in rather than the order of capture.
+	 * Delivers one selector at a time. Thus the order of arrival is the
+	 * order of the selectors, and not the order of capture.
 	 */
 	async deliverInOrder(
 		selectors: readonly DeliverySelector[],
@@ -174,27 +204,32 @@ export class VaultSyncChannel {
 		return results;
 	}
 
-	/** The record arrives first and its note follows. */
+	/** The record arrives first. The note of that record arrives second. */
 	recordBeforeNote(skew: FlightSkew): Promise<LandedDelivery[]> {
 		return this.deliverPathsInOrder([skew.record, skew.note], skew.to);
 	}
 
-	/** The note arrives first and its record follows. */
+	/** The note arrives first. The record of that note arrives second. */
 	noteBeforeRecord(skew: FlightSkew): Promise<LandedDelivery[]> {
 		return this.deliverPathsInOrder([skew.note, skew.record], skew.to);
 	}
 
 	/**
-	 * Whether every device holds the same bytes. This is reachable through
-	 * a conflict: the profile's winner rule reads the same from both
-	 * sides, so every device resolving one divergence keeps the same
-	 * content at the path and writes the same losing content to the same
-	 * copy name, whether or not the profile propagates its copies. It
-	 * stays false while a divergence is only half delivered, since the
-	 * device that has not seen the other side has made no copy yet, and
-	 * under a copy pattern that numbers its copies rather than naming
-	 * them, where two devices meeting the same collisions in different
-	 * orders number the same content differently.
+	 * True when every device holds the same bytes.
+	 *
+	 * The devices reach that state after a conflict too. The winner rule
+	 * of the profile reads the same way on both sides. Therefore each
+	 * device that resolves one conflict keeps the same content at the
+	 * path, and writes the same losing content to a copy with the same
+	 * name. This holds whether or not the profile propagates its copies.
+	 *
+	 * The result stays false in two conditions:
+	 *
+	 * - The channel delivered only one side of a conflict. The device
+	 *   that did not see the other side made no copy yet.
+	 * - The copy pattern gives the copies numbers and not names, and two
+	 *   devices met the same collisions in a different order. Those two
+	 *   devices then give the same content a different number.
 	 */
 	converged(): boolean {
 		const first = this.order[0]?.snapshot();
@@ -212,7 +247,7 @@ export class VaultSyncChannel {
 			const landed = await this.deliver(selector);
 			if (landed.length === 0) {
 				throw new Error(
-					`vault-sync channel: nothing pending for ${path}`,
+					`vault-sync channel: the channel has nothing pending for ${path}`,
 				);
 			}
 			results.push(...landed);

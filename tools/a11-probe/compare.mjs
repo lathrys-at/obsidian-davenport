@@ -1,15 +1,21 @@
 /**
- * Compares results files the probe wrote, one per environment.
+ * This script compares the results files that the probe wrote. Each
+ * environment gives one results file.
  *
  *     node tools/a11-probe/compare.mjs <results.json> [<results.json> ...]
  *
- * Prints the per-fixture matrix, the detail of anything that diverged, and
- * a verdict line. The exit status is 0 when every fixture agreed, 1 when
- * any of them diverged, and 2 when the files cannot be compared at all —
- * unreadable, not results files, or written from different corpora.
+ * The script prints one row for each fixture. Then the script prints the
+ * detail of each fixture that diverged. The last line is the verdict.
  *
- * Reading and printing live here; the comparison itself is in
- * `compare-core.ts`, which is where its tests point.
+ * The exit status is 0 when every fixture agreed. The exit status is 1
+ * when any fixture diverged. The exit status is 2 when the script cannot
+ * compare the files at all. The script cannot compare files that it
+ * cannot read, files that are not results files, and files that came
+ * from different corpora.
+ *
+ * This file reads the files and prints the report. The comparison itself
+ * is in `compare-core.ts`. The tests for the comparison point at that
+ * module.
  */
 
 import { readFileSync } from 'node:fs';
@@ -52,7 +58,11 @@ if (report.verdict === 'incomparable') {
 	process.exit(EXIT_UNUSABLE);
 }
 
-/** The results file at this path, or an exit saying what is wrong with it. */
+/**
+ * The results file at this path, read and parsed. When the file is
+ * unusable, the function prints what is wrong with the file and stops the
+ * script.
+ */
 function read(path) {
 	let text;
 	try {

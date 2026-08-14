@@ -1,12 +1,17 @@
 /**
- * GET, PUT, and DELETE on calendar resources, with the conditional
- * headers the push path depends on. Whether the preconditions are
- * enforced is a per-run capability: a server that ignores them accepts
- * every write, which is the case the engine has to be legible about.
+ * This module answers GET, PUT, and DELETE on calendar resources. The
+ * handlers read the conditional headers `If-Match` and `If-None-Match`.
+ * The push path depends on those headers. The push path is the code that
+ * sends local changes to the server. Each run selects whether the mock
+ * enforces the preconditions in those headers. A server that does not
+ * enforce the preconditions accepts every write. A reader must still be
+ * able to follow what the engine does against such a server.
  *
- * A write that succeeds and touches attendees on either side is entered in
- * the scheduling record. A refused write is not: nothing left the server,
- * so nothing would have been mailed.
+ * The mock enters a write in the scheduling record when the write
+ * succeeds and the resource has attendees before the write or after the
+ * write. The mock does not enter a write that it refused. A refused write
+ * changes nothing on the server, and a real server therefore sends no
+ * mail.
  */
 
 import type { MockServerCapabilities } from './capabilities';
@@ -54,8 +59,8 @@ export function handlePut(
 	context: WriteContext,
 ): MockResponse {
 	if (route.kind !== 'resource' && route.kind !== 'absent-resource') {
-		// A write under a collection that is not there is a conflict, not a
-		// missing resource: the parent has to exist first.
+		// A write below a collection that does not exist is a conflict, and
+		// not a missing resource. The parent collection must exist first.
 		return plain(route.kind === 'unknown' ? 409 : 405);
 	}
 	if (!body.includes('BEGIN:VCALENDAR')) {
@@ -117,9 +122,10 @@ export function handleDelete(
 }
 
 /**
- * Null when the write may proceed. `If-None-Match` guards creation and
- * `If-Match` guards update; each is only consulted where this run's
- * server enforces it.
+ * Checks the conditional headers of a write. The result is null when the
+ * write can continue. `If-None-Match` guards the creation of a resource.
+ * `If-Match` guards the update of a resource. The mock reads a header
+ * only when the server of this run enforces that header.
  */
 function checkPreconditions(
 	currentEtag: string | null,
@@ -141,9 +147,9 @@ function checkPreconditions(
 }
 
 /**
- * The `If-Match` half on its own, for the write paths that have no
- * creation to guard. A resource that is not there fails the header
- * however it is spelled, since there is no ETag for it to have named.
+ * Checks `If-Match` alone, for the write paths that create nothing. A
+ * resource that is not there fails the header in every form, because
+ * that resource has no ETag for the header to name.
  */
 export function checkIfMatch(
 	currentEtag: string | null,
@@ -164,11 +170,12 @@ export function checkIfMatch(
 }
 
 /**
- * Whether a conditional header's tag list names this ETag; either header
- * may carry a list, and any member matching is a match. `If-Match`
- * compares strongly, so a weak tag never matches it however it is spelled;
- * `If-None-Match` compares weakly, where the marker is dropped from both
- * sides before comparison.
+ * Tells if the tag list of a conditional header names the current ETag.
+ * Each of the two headers can carry a list of tags, and one tag that
+ * matches makes the whole list match. `If-Match` uses a strong
+ * comparison, so a weak tag never matches, in any form. `If-None-Match`
+ * uses a weak comparison: the mock removes the `W/` marker from both
+ * tags before it compares them.
  */
 function matchesEtag(
 	header: string,

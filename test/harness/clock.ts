@@ -1,35 +1,54 @@
 /**
- * Controlled clock: the harness's only source of time. Time moves when a
- * test moves it and never on its own, and no real timer is created.
+ * The controlled clock is the only source of time in the harness. Time
+ * moves when a test moves it, and never on its own. The clock creates no
+ * real timer.
  *
- * Timers fire during `advance`, earliest due instant first; timers due at
- * the same instant fire in the order they were scheduled. A repeating
- * timer is rescheduled at the moment it fires, so it sorts behind anything
- * already waiting on the instant it lands on. Inside a callback `now()`
- * reads the timer's due instant, so a timer scheduled from a callback
- * counts from there, and one that comes due before the end of the advance
- * fires in the same advance. When the last due timer has run, time lands
- * exactly on the advance target.
+ * Each timer has a due instant: the time at which the clock must call the
+ * callback of that timer. To fire a timer is to make that call, and one
+ * firing is one such call. A one-shot timer fires one time. A repeating
+ * timer fires again and again, one time in each period.
  *
- * A callback that throws propagates out of `advance` with time left at
- * that timer's due instant and every remaining timer still pending; a
- * repeating timer that throws stays scheduled for its next period.
+ * The `advance` method fires the timers that come due. The clock fires
+ * the timer with the earliest due instant first. When two timers have the
+ * same due instant, the clock fires them in the order in which the caller
+ * scheduled them. The clock gives a repeating timer its next due instant
+ * at the moment when that repeating timer fires. The repeating timer
+ * therefore fires after every timer that already waits on the instant
+ * that the repeat lands on.
+ *
+ * Inside a callback, `now()` gives the due instant of the timer that
+ * fires. A timer that a callback schedules therefore counts its delay
+ * from that due instant. When this new timer comes due before the end of
+ * the advance, the new timer fires in the same advance. After the last
+ * due timer fires, time stops exactly on the target of the advance.
+ *
+ * A callback that throws sends the error out of `advance`. Time stays at
+ * the due instant of the timer that threw, and every other timer stays
+ * pending. A repeating timer that throws keeps its place in the schedule
+ * for its next period.
  */
 
 import type { CancelTimer, Clock } from '../../src/core/ports/clock';
 
-/** Epoch milliseconds a clock reads when the caller names no start. */
+/**
+ * The time that a clock reads when the caller gives no start value. The
+ * value is in milliseconds since the Unix epoch.
+ */
 export const DEFAULT_START_TIME = Date.UTC(2026, 0, 1);
 
 const DEFAULT_MAX_FIRINGS_PER_ADVANCE = 100_000;
 
 export interface ControlledClockOptions {
-	/** Epoch milliseconds the clock reads before the first advance. */
+	/**
+	 * The time that the clock reads before the first advance. The value
+	 * is in milliseconds since the Unix epoch.
+	 */
 	readonly start?: number;
 	/**
-	 * Firings one `advance` may run before it throws. The cap turns a
-	 * timer that reschedules itself without end into a failure rather
-	 * than a hang.
+	 * The largest number of timer firings that one `advance` allows. The
+	 * advance throws when it goes above this number. Without the limit, a
+	 * timer that schedules itself again without end makes a test hang.
+	 * With the limit, that timer makes the test fail.
 	 */
 	readonly maxFiringsPerAdvance?: number;
 }
@@ -37,9 +56,12 @@ export interface ControlledClockOptions {
 interface ScheduledTimer {
 	readonly id: number;
 	readonly fn: () => void;
-	/** Null for a one-shot timer. */
+	/** The period in milliseconds. The value is null for a one-shot timer. */
 	readonly period: number | null;
-	/** The instant the timer was scheduled from; repeats count from here. */
+	/**
+	 * The instant at which the caller scheduled the timer. Each repeat
+	 * counts its delay from this instant.
+	 */
 	readonly origin: number;
 	iteration: number;
 	due: number;
@@ -60,7 +82,7 @@ export class ControlledClock implements Clock {
 			options.maxFiringsPerAdvance ?? DEFAULT_MAX_FIRINGS_PER_ADVANCE;
 		if (!Number.isFinite(start)) {
 			throw new RangeError(
-				`controlled clock: start must be a finite instant, got ${String(start)}`,
+				`controlled clock: start must be a finite number of milliseconds, got ${String(start)}`,
 			);
 		}
 		if (!Number.isInteger(cap) || cap < 1) {
@@ -72,7 +94,10 @@ export class ControlledClock implements Clock {
 		this.maxFiringsPerAdvance = cap;
 	}
 
-	/** Timers waiting to fire, one-shot and repeating alike. */
+	/**
+	 * The number of timers that wait to fire. The count includes the
+	 * one-shot timers and the repeating timers.
+	 */
 	get pendingTimerCount(): number {
 		return this.timers.size;
 	}
@@ -92,17 +117,20 @@ export class ControlledClock implements Clock {
 	}
 
 	/**
-	 * Moves time forward by `ms`, firing every timer that comes due along
-	 * the way. Cancelling a timer from a callback keeps it from firing in
-	 * this advance. Advancing from inside a timer callback throws: a nested
-	 * advance would let the outer one snap time backwards over timers the
-	 * inner one already fired.
+	 * Moves time forward by `ms` milliseconds, and fires every timer that
+	 * comes due in that period. When a callback cancels a timer, that
+	 * timer does not fire in this advance.
+	 *
+	 * A call to `advance` from inside a timer callback throws. Such a
+	 * call would put a second advance inside the first advance. The first
+	 * advance would then move time backwards over the timers that the
+	 * second advance already fired.
 	 */
 	advance(ms: number): void {
 		assertDuration(ms, 'advance');
 		if (this.advancing) {
 			throw new Error(
-				'controlled clock: advance called from inside a timer callback',
+				'controlled clock: advance cannot run inside a timer callback. Call advance from the test body.',
 			);
 		}
 		this.advancing = true;
@@ -117,7 +145,7 @@ export class ControlledClock implements Clock {
 				fired += 1;
 				if (fired > this.maxFiringsPerAdvance) {
 					throw new Error(
-						`controlled clock: more than ${String(this.maxFiringsPerAdvance)} timer firings in one advance`,
+						`controlled clock: one advance made more than ${String(this.maxFiringsPerAdvance)} timer firings. Look for a timer that schedules itself again without end.`,
 					);
 				}
 				this.time = timer.due;

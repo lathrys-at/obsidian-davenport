@@ -44,7 +44,7 @@ function feed() {
 	});
 }
 
-/** A registry holding one sweep, so a test states exactly what runs. */
+/** A registry that holds one sweep, so a test states which sweep runs. */
 function only(sweep: Sweep): SweepRegistry {
 	return new SweepRegistry([sweep]);
 }
@@ -55,14 +55,14 @@ function options(patch: Partial<SimulationOptions> = {}): SimulationOptions {
 	return { name: 'a run', registry: only(inert), ...patch };
 }
 
-describe('simulation runs', () => {
-	it('returns what the body returned', async () => {
+describe('a simulation run', () => {
+	it('returns the value that the body returned', async () => {
 		await expect(runSimulation(options(), () => 'done')).resolves.toBe(
 			'done',
 		);
 	});
 
-	it('gathers the surfaces the run was built with', async () => {
+	it('gathers what each surface of the run recorded', async () => {
 		const caldav = server();
 		const feeds = feed();
 		const vault = new FakeVault({ 'Events/one.md': 'seeded' });
@@ -102,7 +102,7 @@ describe('simulation runs', () => {
 		);
 	});
 
-	it('records the scheduling writes the mock server logged', async () => {
+	it('records the scheduling writes that the mock server logged', async () => {
 		const caldav = server();
 		await runSimulation(options({ caldav }), async (run) => {
 			await caldav.request({
@@ -122,7 +122,7 @@ describe('simulation runs', () => {
 		});
 	});
 
-	it('gathers the deliveries the sync channel landed', async () => {
+	it('gathers the deliveries that the sync channel landed', async () => {
 		const channel = new VaultSyncChannel({
 			devices: ['laptop', 'phone'],
 			clock: new ControlledClock(),
@@ -140,7 +140,7 @@ describe('simulation runs', () => {
 		});
 	});
 
-	it('stops listening to the vault once the run is over', async () => {
+	it('stops listening to the vault after the run ends', async () => {
 		const vault = new FakeVault();
 		let seen = 0;
 		await runSimulation(options({ vault }), async (run) => {
@@ -151,7 +151,7 @@ describe('simulation runs', () => {
 		expect(seen).toBe(1);
 	});
 
-	it('keeps the bytes a change left, not the ones that replaced them', async () => {
+	it('keeps the bytes that each change left, and not the bytes that a later write put there', async () => {
 		const vault = new FakeVault();
 		await runSimulation(options({ vault }), async (run) => {
 			await vault.write('a.md', 'first');
@@ -176,7 +176,7 @@ describe('simulation runs', () => {
 		});
 	});
 
-	it('attributes requests to the stretch that issued them', async () => {
+	it('attributes each request to the stretch that issued it', async () => {
 		const caldav = server();
 		await runSimulation(options({ caldav }), async (run) => {
 			await caldav.request({
@@ -199,7 +199,7 @@ describe('simulation runs', () => {
 		});
 	});
 
-	it('counts a feed poll inside the stretch too', async () => {
+	it('counts a feed poll inside the stretch, and not only a calendar request', async () => {
 		const feeds = feed();
 		const failure = await runSimulation(
 			{ name: 'a run', feed: feeds },
@@ -217,7 +217,7 @@ describe('simulation runs', () => {
 		);
 	});
 
-	it('closes the stretch even when the work inside it throws', async () => {
+	it('closes the stretch even when the work inside the stretch throws', async () => {
 		const caldav = server();
 		await runSimulation(options({ caldav }), async (run) => {
 			await expect(
@@ -230,7 +230,7 @@ describe('simulation runs', () => {
 	});
 });
 
-describe('sweep failures', () => {
+describe('a sweep failure', () => {
 	const objector: Sweep = {
 		name: 'objector',
 		check: (evidence) => [
@@ -241,7 +241,7 @@ describe('sweep failures', () => {
 		],
 	};
 
-	it('fails the owning test naming the sweep and the evidence', async () => {
+	it('fails the test that owns the run, and names the sweep and the evidence', async () => {
 		const failure = await runSimulation(
 			options({ registry: only(objector) }),
 			() => undefined,
@@ -254,7 +254,7 @@ describe('sweep failures', () => {
 		expect((failure as SweepFailure).reports).toHaveLength(1);
 	});
 
-	it('lets the body error through untouched, sweeping nothing', async () => {
+	it('lets the error from the body through unchanged, and runs no sweep', async () => {
 		let checked = false;
 		const watching: Sweep = {
 			name: 'watching',
@@ -271,7 +271,7 @@ describe('sweep failures', () => {
 		expect(checked).toBe(false);
 	});
 
-	it('catches a registered value that reached a note', async () => {
+	it('finds a registered sensitive value that reached a note', async () => {
 		const vault = new FakeVault();
 		const failure = await runSimulation(
 			{ name: 'a run', vault },
@@ -290,7 +290,7 @@ describe('sweep failures', () => {
 		expect((failure as SweepFailure).message).not.toContain(PASSWORD);
 	});
 
-	it('catches a registered value in a note the run then removed', async () => {
+	it('finds a registered sensitive value in a note that the run then removed', async () => {
 		const vault = new FakeVault();
 		const failure = await runSimulation(
 			{ name: 'a run', vault },
@@ -305,7 +305,7 @@ describe('sweep failures', () => {
 		);
 	});
 
-	it('catches a registered value a later write redacted', async () => {
+	it('finds a registered sensitive value that a later write replaced', async () => {
 		const vault = new FakeVault();
 		const failure = await runSimulation(
 			{ name: 'a run', vault },
@@ -320,7 +320,7 @@ describe('sweep failures', () => {
 		);
 	});
 
-	it('catches a registered value that only a request body carried', async () => {
+	it('finds a registered sensitive value that only a request body carried', async () => {
 		const caldav = server();
 		const failure = await runSimulation(
 			{ name: 'a run', caldav },
@@ -344,7 +344,7 @@ describe('sweep failures', () => {
 		expect((failure as SweepFailure).message).not.toContain(PASSWORD);
 	});
 
-	it('catches a registered value that only an Authorization header carried', async () => {
+	it('finds a registered sensitive value that only an Authorization header carried', async () => {
 		const caldav = server();
 		const failure = await runSimulation(
 			{ name: 'a run', caldav },
@@ -365,7 +365,7 @@ describe('sweep failures', () => {
 		);
 	});
 
-	it('catches a registered value the sync channel carried to a peer', async () => {
+	it('finds a registered sensitive value that the sync channel carried to another device', async () => {
 		const channel = new VaultSyncChannel({
 			devices: ['laptop', 'phone'],
 			clock: new ControlledClock(),
@@ -383,7 +383,7 @@ describe('sweep failures', () => {
 		);
 	});
 
-	it('takes sensitive values declared at the start too', async () => {
+	it('takes the sensitive values that the options declare at the start, and not only the values that the body registers', async () => {
 		const vault = new FakeVault({ 'Events/one.md': PASSWORD });
 		await expect(
 			runSimulation(

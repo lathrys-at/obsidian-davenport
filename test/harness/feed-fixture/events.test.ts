@@ -27,7 +27,7 @@ const holiday: FeedEventSpec = {
 };
 
 describe('feed event specifications', () => {
-	it('places timed and all-day instants on their properties', () => {
+	it('puts a timed instant and an all-day instant on a property', () => {
 		expect(instantLine('DTSTART', meeting.start)).toBe(
 			'DTSTART:20260810T120000Z',
 		);
@@ -38,7 +38,7 @@ describe('feed event specifications', () => {
 });
 
 describe('decade-spanning corpus', () => {
-	it('spans the years either side of the reference time', () => {
+	it('spans the years before and after the reference time', () => {
 		const corpus = decadeSpanningCorpus({
 			referenceTime: REFERENCE_TIME,
 			yearsBefore: 5,
@@ -56,7 +56,7 @@ describe('decade-spanning corpus', () => {
 		]);
 	});
 
-	it('gives every event a distinct handle and UID', () => {
+	it('gives each event its own handle and its own UID', () => {
 		const corpus = decadeSpanningCorpus({ referenceTime: REFERENCE_TIME });
 		expect(new Set(corpus.map((event) => event.id)).size).toBe(
 			corpus.length,
@@ -66,14 +66,14 @@ describe('decade-spanning corpus', () => {
 		);
 	});
 
-	it('generates the same corpus for the same reference time', () => {
+	it('generates the same corpus from the same options', () => {
 		const options = { referenceTime: REFERENCE_TIME, perYear: 3 };
 		expect(decadeSpanningCorpus(options)).toEqual(
 			decadeSpanningCorpus(options),
 		);
 	});
 
-	it('refuses a corpus it cannot generate', () => {
+	it('throws when the options ask for no events or negative years', () => {
 		expect(() =>
 			decadeSpanningCorpus({ referenceTime: REFERENCE_TIME, perYear: 0 }),
 		).toThrow(/at least one event/);
@@ -82,11 +82,11 @@ describe('decade-spanning corpus', () => {
 				referenceTime: REFERENCE_TIME,
 				yearsAfter: -1,
 			}),
-		).toThrow(/negative years/);
+		).toThrow(/negative number of years/);
 	});
 });
 
-describe('per-poll deltas', () => {
+describe('deltas between polls', () => {
 	const base = [meeting, holiday];
 
 	it('adds an event', () => {
@@ -109,7 +109,7 @@ describe('per-poll deltas', () => {
 		).toEqual([meeting]);
 	});
 
-	it('modifies declared fields and leaves the rest alone', () => {
+	it('modifies the declared fields and leaves the others unchanged', () => {
 		const [modified] = applyFeedDeltas(base, [
 			{
 				kind: 'modify',
@@ -124,7 +124,7 @@ describe('per-poll deltas', () => {
 		});
 	});
 
-	it('reschedules an event, preserving its duration', () => {
+	it('reschedules an event and keeps its duration', () => {
 		const [moved] = applyFeedDeltas(base, [
 			{
 				kind: 'reschedule',
@@ -136,7 +136,7 @@ describe('per-poll deltas', () => {
 		expect(moved?.end?.epochMs).toBe(REFERENCE_TIME + 25 * HOUR_MS);
 	});
 
-	it('reschedules to an explicit end when one is given', () => {
+	it('reschedules to the end time that the delta gives', () => {
 		const [moved] = applyFeedDeltas(base, [
 			{
 				kind: 'reschedule',
@@ -148,7 +148,7 @@ describe('per-poll deltas', () => {
 		expect(moved?.end?.epochMs).toBe(REFERENCE_TIME + 3 * HOUR_MS);
 	});
 
-	it('leaves an event with no end without one', () => {
+	it('reschedules an event with no end time and adds no end time', () => {
 		const [moved] = applyFeedDeltas(
 			[holiday],
 			[
@@ -163,7 +163,7 @@ describe('per-poll deltas', () => {
 		expect(moved?.start).toEqual(allDayOn(Date.UTC(2026, 11, 26)));
 	});
 
-	it('throws when a delta misses its target', () => {
+	it('throws when a delta names an absent event or adds a duplicate', () => {
 		expect(() =>
 			applyFeedDeltas(base, [{ kind: 'remove', id: 'absent' }]),
 		).toThrow(/carries no event absent/);

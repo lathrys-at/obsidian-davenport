@@ -1,61 +1,91 @@
 /**
- * Event field model: the validated form of the frontmatter vocabulary.
- * Raw-frontmatter parsing and validation produce these types. Machine sync
- * state — etags, hrefs, hashes, base snapshots — never appears in
- * frontmatter; it lives in records.
+ * Event field model. A note declares an event in its frontmatter, which is
+ * the YAML block at the top of the note. The types in this file hold the
+ * same set of fields, in the form that the plugin uses after it parses the
+ * raw frontmatter and validates the result.
+ *
+ * The machine keeps sync state of its own: etags, hrefs, hashes, and base
+ * snapshots. This sync state never appears in the frontmatter. The sync
+ * state lives in records.
  */
 
 /**
- * ISO 8601 date-time text. An explicit offset wins; otherwise the note's
- * timezone, then the calendar's default, resolve it — times are never
- * silently read as device-local.
+ * A date and a time, written as ISO 8601 text. Three sources can give the
+ * offset from UTC. An offset inside the text wins. If the text has no
+ * offset, the timezone of the note applies. If the note has no timezone,
+ * the default timezone of the calendar applies. The plugin never uses the
+ * local timezone of the device as a silent fallback.
  */
 export type IsoDateTime = string;
 
-/** ISO 8601 calendar date (`YYYY-MM-DD`). */
+/** A calendar date, written as ISO 8601 text (`YYYY-MM-DD`). */
 export type IsoDate = string;
 
-/** Duration shorthand, e.g. `30m`, `1h30m`. */
+/** A length of time in short form, for example `30m` or `1h30m`. */
 export type DurationText = string;
 
-/** IANA timezone name, e.g. `Europe/London`. */
+/**
+ * The name of a timezone in the IANA database, for example
+ * `Europe/London`.
+ */
 export type TimezoneName = string;
 
 /**
- * Lifecycle intent: `draft` is local planning, `ready` signals push.
- * Liveness is deliberately not a frontmatter value — a note is live when a
- * live record resolves for its identity.
+ * The lifecycle intent of a note. The value `draft` means that the user
+ * still plans the event inside the vault. The value `ready` is the signal
+ * from the user that the plugin can push the event to the server.
+ *
+ * The frontmatter has no key that states whether the event is live. This
+ * absence is deliberate. A note is live when the plugin resolves a live
+ * record for the identity of that note.
  */
 export type EventState = 'draft' | 'ready';
 
 /**
- * iCalendar event STATUS — a synced property describing the event. Kept
- * disjoint from {@link EventState} in key, vocabulary, and code
- * identifiers: lifecycle state is a local signal that drives creation, and
- * blurring the two turns a description of an event into a server write.
+ * The STATUS property of an iCalendar event. This property describes the
+ * event, and the plugin syncs the property with the server.
+ *
+ * This type stays separate from {@link EventState} in three ways: the
+ * frontmatter key, the set of permitted values, and the identifiers in the
+ * code. {@link EventState} is a local signal, and that signal drives the
+ * creation of an event. If the two types blur together, a value that only
+ * describes an event becomes a write to the server.
  */
 export type EventStatus = 'tentative' | 'confirmed' | 'cancelled';
 
-/** RSVP intent; writing it is a confirm-gated server action. */
+/**
+ * The RSVP answer of the user to an invitation. The plugin writes this
+ * answer to the server. Before each write, the plugin asks the user to
+ * confirm that write.
+ */
 export type RsvpResponse = 'accepted' | 'declined' | 'tentative';
 
-/** iCalendar CLASS. */
+/** The CLASS property of an iCalendar event. */
 export type EventClass = 'public' | 'private' | 'confidential';
 
-/** iCalendar TRANSP; blocks default to `opaque`. */
+/**
+ * The TRANSP property of an iCalendar event. An item of type `block` is
+ * `opaque` by default.
+ */
 export type Transparency = 'opaque' | 'transparent';
 
 /**
- * `event` is a fixed-time commitment (VEVENT); `task` maps to VTODO;
- * `block` is a VEVENT claiming time for the task it links via `task`.
+ * The kind of item that a note declares. An item of type `event` is a
+ * commitment at a fixed time, and it becomes a VEVENT. An item of type
+ * `task` becomes a VTODO. An item of type `block` also becomes a VEVENT: a
+ * block claims time for a task, and the `task` field of the block names
+ * that task.
  */
 export type ItemType = 'event' | 'task' | 'block';
 
 /**
- * Timed and all-day shapes are mutually exclusive: a note carrying both
- * `date` and `start` fails validation naming both keys, and plugin writes
- * are shape-exclusive — switching shape removes the departing shape's keys
- * in the same write.
+ * A schedule has one of two shapes: the timed shape or the all-day shape.
+ * A note can use one shape only. If a note carries both the `date` key and
+ * the `start` key, validation fails and names both keys.
+ *
+ * The plugin keeps the same rule when it writes. If the shape of a note
+ * changes, the same write removes the keys of the shape that the note
+ * leaves.
  */
 export type Schedule = TimedSchedule | AllDaySchedule;
 
@@ -63,18 +93,23 @@ export interface TimedSchedule {
 	readonly kind: 'timed';
 	readonly start: IsoDateTime;
 	/**
-	 * At most one of `end` or `duration`; both present fails validation
-	 * naming both keys. Pushing requires one of them, but a start-only
-	 * draft is legitimate.
+	 * A timed schedule carries `end`, or `duration`, or neither of these
+	 * two keys. A timed schedule never carries both keys. If a note
+	 * carries both keys, validation fails and names both keys. The plugin
+	 * pushes the event only when the schedule carries `end` or `duration`.
+	 * A draft can carry a start, and no `end`, and no `duration`. Such a
+	 * draft is still correct.
 	 */
 	readonly end?: IsoDateTime;
 	readonly duration?: DurationText;
 }
 
 /**
- * All-day shape. `endDate` is inclusive; the serializer converts to
- * iCalendar's exclusive `DTEND` — users think inclusively, and the
- * exclusive end is the standard off-by-one-day bug.
+ * The all-day shape of a schedule. The `endDate` field is inclusive: the
+ * event covers that day. iCalendar uses an exclusive `DTEND`, which names
+ * the day after the event, so the serializer converts the value. Users
+ * think of the last day as part of the event, and the exclusive end is the
+ * usual cause of an off-by-one-day error.
  */
 export interface AllDaySchedule {
 	readonly kind: 'all-day';
@@ -83,36 +118,58 @@ export interface AllDaySchedule {
 }
 
 /**
- * Declared event fields, post-validation. Sync touches only declared
- * fields; anything not modeled here survives round trips untouched via the
- * record's base ICS.
+ * The event fields that a note declares, after validation. Sync touches
+ * these fields only. An iCalendar property that this type does not model
+ * stays unchanged through a round trip, because the base ICS of the record
+ * holds that property.
  */
 export interface EventFields {
 	readonly summary?: string;
 	/**
-	 * Friendly calendar name, resolved through the registry. Never copied
-	 * into records — records exclude it structurally.
+	 * The name of the calendar that the user sees. The plugin resolves
+	 * this name through the registry. A record never holds this name: the
+	 * type of the record fields excludes this field.
 	 */
 	readonly calendar?: string;
 	readonly schedule?: Schedule;
 	readonly timezone?: TimezoneName;
-	/** RFC 5545 RRULE text; one note or record represents the series. */
+	/**
+	 * The RRULE text of RFC 5545. One note, or one record, represents the
+	 * complete series.
+	 */
 	readonly rrule?: string;
 	readonly type: ItemType;
-	/** Block-only: wikilink to the task note this block serves. */
+	/**
+	 * A wikilink to the task note that this block serves. Only an item of
+	 * type `block` uses this field.
+	 */
 	readonly task?: string;
 	readonly due?: IsoDateTime;
 	readonly completed?: IsoDateTime;
 	readonly priority?: number;
 	readonly rsvp?: RsvpResponse;
-	/** Pushed as DESCRIPTION; one-way, render-on-push. */
+	/**
+	 * The plugin renders this text at push time, then pushes the result as
+	 * the DESCRIPTION property. The text moves one way only, from the note
+	 * to the server.
+	 */
 	readonly description?: string;
-	/** Vault wikilinks or external URLs, pushed as ATTACH. */
+	/**
+	 * Each item in this list is a wikilink into the vault, or an external
+	 * URL. The plugin pushes each item as an ATTACH property.
+	 */
 	readonly attachments?: readonly string[];
-	/** Reminder offset, e.g. `-15m`, serialized as VALARM. */
+	/**
+	 * The time of a reminder, as an offset from the start, for example
+	 * `-15m`. The serializer writes this reminder as a VALARM.
+	 */
 	readonly alarm?: string;
 	readonly location?: string;
-	/** Mapped to CATEGORIES; the Obsidian-tags mapping is prefix-scoped. */
+	/**
+	 * The plugin maps these values to the CATEGORIES property. The plugin
+	 * maps Obsidian tags to categories too, but only the tags that start
+	 * with the prefix for this mapping.
+	 */
 	readonly categories?: readonly string[];
 	readonly class?: EventClass;
 	readonly transp?: Transparency;

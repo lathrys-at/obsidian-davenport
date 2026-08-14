@@ -1,52 +1,69 @@
 /**
- * Landing a delivery on a device.
+ * How a delivery lands on a device.
  *
- * A delivery carries the version its path had on the origin, and the
- * destination compares it against the version it holds for that path. A
- * delivery whose version covers the destination's applies: the
- * destination has seen nothing the origin missed, so it fast-forwards
- * however far behind it is, and a change relayed through a third device
- * lands the same way whatever order the deliveries arrive in. A delivery
- * the destination's version already covers is old news and nothing is
- * written. Only when neither version covers the other were the two edits
- * made without knowledge of each other, and then the profile decides what
- * becomes of the side that does not take the path: discarded, moved aside
- * into a conflict copy, or merged into the other, with the content the
- * origin replaced as the merge base.
+ * A delivery carries the version that its path had on the origin. The
+ * destination compares that version against the version that the
+ * destination holds for the same path. Three results are possible.
  *
- * Which of the two contents takes the path is the profile's winner rule,
- * read from the stamps the two sides carry rather than from which one
- * happens to be local. Both devices in a divergence hold the same pair of
- * stamps, so they pick the same winner and end up agreeing on the path's
- * bytes; the loser goes to a conflict copy named after the device that
- * wrote it, which both devices also name alike, or is discarded where the
- * profile makes no copies. A merging profile is handed the two sides in
- * that same fixed order — the winner as the arriving side — so every
- * device merging one pair produces one file. Convergence through a
- * conflict is therefore real rather than a swap of contents, and a device
- * meeting three or more concurrent edits ranks them the same however they
- * arrive — except where a copy pattern numbers its copies rather than
- * naming them, since two devices meeting the same collisions in different
- * orders number them differently.
+ * First, the version of the delivery covers the version of the
+ * destination. The destination then holds no change that the origin
+ * missed, so the destination applies the change, however far behind the
+ * destination is. A change that comes through a third device lands the
+ * same way, in any order of arrival.
  *
- * A merge that declines falls back to the conflict copy, and a profile
- * with no copy pattern falls back to keeping the winner alone, so every
- * divergence has an outcome. A divergent deletion and a divergent edit of
- * a path the destination deleted are the same question asked from two
- * sides, and the profile answers both alike: under overwrite the deletion
- * wins, and under any profile that copies or merges the edit survives — a
- * tool that makes copies has no reason to destroy the one edit it would
- * be copying. Resolving either way leaves the destination knowing what
- * the origin knew, so the two devices converge whichever delivery lands
+ * Second, the version of the destination already covers the version of
+ * the delivery. The delivery then brings nothing new, and the
+ * destination writes nothing.
+ *
+ * Third, neither version covers the other version. The two devices then
+ * made their edits with no knowledge of each other. The profile decides
+ * what becomes of the side that does not take the path. The profile
+ * discards that side, or moves that side aside into a conflict copy, or
+ * merges that side into the other side. A merge uses the content that
+ * the origin replaced as its base.
+ *
+ * The winner rule of the profile decides which of the two contents takes
+ * the path. The rule reads the stamps that the two sides carry, and the
+ * rule does not read which side is the local side. Both devices in a
+ * divergence hold the same pair of stamps, so both devices pick the same
+ * winner, and both devices hold the same bytes at the path. The losing
+ * content goes into a conflict copy, and the copy carries the name of
+ * the device that wrote that content. Both devices give the copy the
+ * same name. A profile that makes no copies discards the losing content
+ * instead.
+ *
+ * A profile that merges gets the two sides in that same fixed order.
+ * That profile gets the winner as the side that arrives. Therefore every
+ * device that merges one pair makes one file. The devices really
+ * do converge through a conflict, and they do not swap contents. A
+ * device that meets three or more concurrent edits ranks those edits in
+ * the same order, in any order of arrival. One case is different: a copy
+ * pattern that numbers its copies instead of naming them. Two devices
+ * that meet the same collisions in a different order then give the
+ * copies different numbers.
+ *
+ * Every divergence has an outcome, because each step falls back to the
+ * next step. A profile that merges falls back to the conflict copy when
+ * the merger makes no merge. A profile with no copy pattern falls back
+ * to keeping the winner alone.
+ *
+ * A divergent deletion, and a divergent edit of a path that the
+ * destination deleted, are one question from two sides. The profile
+ * answers both the same way. Under `overwrite` the deletion wins. Under
+ * every profile that copies or merges, the edit comes back: a tool that
+ * makes copies has no reason to destroy the one edit that it would copy.
+ * Both answers leave the destination with the knowledge that the origin
+ * had. Therefore the two devices converge whichever delivery lands
  * first.
  *
- * Whether a conflict copy reaches the other devices is a per-tool fact
- * the profile carries. It decides what a device that never sees one side
- * of a divergence ends up with, since one that sees both makes the copy
- * itself. A copy that travels is terminal by construction: landing one
- * writes the file where the destination has the path free and drops it
- * where it does not, so a copy is never resolved against a local edit and
- * can never produce another copy.
+ * The profile carries one more fact for each tool: does a conflict copy
+ * reach the other devices? A device that sees both sides of a divergence
+ * makes the copy itself. Therefore this fact decides only what a device
+ * gets when that device never sees one of the two sides. A conflict copy
+ * travels one time only. A landing writes the copy where the destination
+ * has the path free, and drops the copy where the path is not free. Thus
+ * a device never resolves a copy against a local edit, and a copy never
+ * makes another copy.
  */
 
 import type { ControlledClock } from '../clock';
@@ -74,7 +91,7 @@ import {
 
 type RenameChange = Extract<DeliveryChange, { kind: 'rename' }>;
 
-/** Sends a conflict copy a landing made on to the destination's peers. */
+/** Sends a conflict copy that a landing made, to the other devices. */
 export type PropagateCopy = (copy: CapturedChange) => void;
 
 export interface ApplyContext {
@@ -165,10 +182,11 @@ async function applyUpsert(
 }
 
 /**
- * A divergent edit of a path the destination deleted. There is no local
- * content to copy or merge, so the profile's answer is the one it gives a
- * divergent deletion read from the other side: the deletion wins under
- * overwrite, and the edit comes back under anything else.
+ * Lands a divergent edit of a path that the destination deleted. The
+ * destination holds no local content to copy or to merge. A divergent
+ * deletion asks the same question from the other side, so the profile
+ * gives the same answer in both cases. Under `overwrite` the deletion
+ * wins. Under every other profile the edit comes back.
  */
 async function resolveAbsent(
 	context: ApplyContext,
@@ -272,8 +290,9 @@ async function resolveDivergence(
 }
 
 /**
- * A conflict copy that travelled. It is written where the destination has
- * the path free and dropped where it does not, so it resolves nothing and
+ * Lands a conflict copy that travelled from another device. The function
+ * writes the copy where the destination has the path free, and drops the
+ * copy where the path is not free. Thus the copy resolves nothing, and
  * makes no copy of its own.
  */
 async function applyConflictCopy(
@@ -372,10 +391,11 @@ async function applyRename(
 }
 
 /**
- * The first conflict-copy path this device has free, named after the side
- * that lost. Patterns carrying no counter render one candidate, so a
- * collision numbers the name instead, from two, the same number a counted
- * pattern's second copy carries.
+ * The first conflict-copy path that this device has free. The name comes
+ * from the side that lost. A pattern with no `{counter}` gives one
+ * candidate name only. On a collision the function adds a number to that
+ * one name instead. The number starts at 2, which is also the number
+ * that the first copy of a counted pattern carries.
  */
 function freeConflictPath(
 	device: SyncDevice,
@@ -406,7 +426,7 @@ function freeConflictPath(
 		}
 	}
 	throw new Error(
-		`vault-sync channel: no free conflict-copy path for ${path} on ${device.id}`,
+		`vault-sync channel: there is no free conflict-copy path for ${path} on device ${device.id}; let the script make fewer conflict copies of this path`,
 	);
 }
 
@@ -419,16 +439,20 @@ function numbered(path: string, counter: number): string {
 	return `${path.slice(0, dot)} ${String(counter)}${path.slice(dot)}`;
 }
 
-/** Who wrote the content a delivery carries, and when they wrote it. */
+/**
+ * Who wrote the content that a delivery carries, and when they wrote
+ * that content.
+ */
 function deliveryStamp(delivery: Delivery): ContentStamp {
 	return { author: delivery.from, at: delivery.modifiedAt };
 }
 
 /**
- * The stamp on the content the destination holds. A file planted straight
- * into the vault carries none, so it counts as this device's own, written
- * at whatever time the device has recorded for it or at the landing
- * instant.
+ * The stamp on the content that the destination holds. A file that a
+ * suite planted in the vault carries no stamp. Such a file counts as the
+ * content of this device. Its time is the time that the device recorded
+ * for the file, or the time of the landing when the device recorded no
+ * time.
  */
 function localStamp(
 	device: SyncDevice,
@@ -443,7 +467,7 @@ function localStamp(
 	);
 }
 
-/** Records that this device has now seen everything the delivery had. */
+/** Records that this device knows every change that the delivery knew. */
 function noteSeen(
 	device: SyncDevice,
 	path: string,

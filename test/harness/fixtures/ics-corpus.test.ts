@@ -19,7 +19,11 @@ import { ICS_LINE_OCTET_LIMIT, octetLength } from '../ics-octets';
 const BEGIN = 'BEGIN:';
 const END = 'END:';
 
-/** A line that must appear in a fixture for its category tag to be honest. */
+/**
+ * For each category, the pattern of a line that a fixture must contain. A
+ * fixture that claims a category must contain a line that the pattern of
+ * that category matches. Without such a line, the category is wrong.
+ */
 const CATEGORY_MARKER: Record<IcsCategory, RegExp> = {
 	'vendor-x-properties': /^X-/im,
 	'foreign-alarms': /^BEGIN:VALARM$/m,
@@ -48,19 +52,19 @@ function nestingErrors(logical: readonly string[]): string[] {
 }
 
 describe('ICS corpus index', () => {
-	it('enumerates every fixture file exactly once', () => {
+	it('lists every fixture file one time', () => {
 		const indexed = icsCorpus().map((fixture) => fixture.id);
 		expect([...indexed].sort()).toEqual(icsFixtureNamesOnDisk());
 		expect(new Set(indexed).size).toBe(indexed.length);
 	});
 
-	it('leaves no category without a fixture', () => {
+	it('gives every category at least one fixture', () => {
 		for (const category of ICS_CATEGORIES) {
 			expect(icsFixturesFor(category)).not.toHaveLength(0);
 		}
 	});
 
-	it('tags and summarises every fixture', () => {
+	it('gives every fixture distinct categories, a summary and a matching path', () => {
 		for (const fixture of icsCorpus()) {
 			expect(new Set(fixture.categories).size).toBe(
 				fixture.categories.length,
@@ -70,33 +74,39 @@ describe('ICS corpus index', () => {
 		}
 	});
 
-	it('looks a fixture up by its id', () => {
+	it('finds a fixture by its id', () => {
 		const fixture = icsFixture('fold-at-75-octets');
 		expect(fixture.id).toBe('fold-at-75-octets');
 		expect(fixture.content.length).toBeGreaterThan(0);
 	});
 
-	it('names the fixture it cannot find', () => {
+	it('names the fixture that it cannot find', () => {
 		expect(() => icsFixture('absent')).toThrow(/absent/);
 	});
 });
 
 describe('ICS corpus files', () => {
-	// The line reader takes any ending, so this asks the octets directly:
-	// every CR is followed by an LF and every LF is preceded by a CR.
+	// The line reader accepts any line ending. It would therefore hide a
+	// wrong ending here, so this test examines the text directly: every CR
+	// must have an LF after it, and every LF must have a CR before it.
 	it.each(icsCorpus())('$id ends every line with CRLF', (fixture) => {
 		expect(fixture.content).not.toHaveLength(0);
 		expect(fixture.content.endsWith('\r\n')).toBe(true);
 		expect(fixture.content).not.toMatch(/\r(?!\n)|(?<!\r)\n/);
 	});
 
-	it.each(icsCorpus())('$id folds within the octet limit', (fixture) => {
-		for (const line of icsPhysicalLines(fixture.content)) {
-			expect(octetLength(line)).toBeLessThanOrEqual(ICS_LINE_OCTET_LIMIT);
-		}
-	});
+	it.each(icsCorpus())(
+		'$id keeps every physical line within the octet limit',
+		(fixture) => {
+			for (const line of icsPhysicalLines(fixture.content)) {
+				expect(octetLength(line)).toBeLessThanOrEqual(
+					ICS_LINE_OCTET_LIMIT,
+				);
+			}
+		},
+	);
 
-	it.each(icsCorpus())('$id holds one calendar object', (fixture) => {
+	it.each(icsCorpus())('$id holds exactly one calendar object', (fixture) => {
 		const logical = icsLogicalLines(icsPhysicalLines(fixture.content));
 		expect(logical[0]).toBe('BEGIN:VCALENDAR');
 		expect(logical[logical.length - 1]).toBe('END:VCALENDAR');
@@ -110,14 +120,19 @@ describe('ICS corpus files', () => {
 		).toHaveLength(1);
 	});
 
-	it.each(icsCorpus())('$id unfolds into properties', (fixture) => {
-		for (const line of icsLogicalLines(icsPhysicalLines(fixture.content))) {
-			expect(line).toMatch(/^[A-Za-z0-9-]+[;:]/);
-		}
-	});
+	it.each(icsCorpus())(
+		'$id unfolds into lines that each start with a property name',
+		(fixture) => {
+			for (const line of icsLogicalLines(
+				icsPhysicalLines(fixture.content),
+			)) {
+				expect(line).toMatch(/^[A-Za-z0-9-]+[;:]/);
+			}
+		},
+	);
 
 	it.each(icsCorpus())(
-		'$id carries the marks it is tagged with',
+		'$id carries a line for every category that it claims',
 		(fixture) => {
 			for (const category of fixture.categories) {
 				expect(fixture.content).toMatch(CATEGORY_MARKER[category]);
@@ -131,12 +146,12 @@ describe('ICS corpus coverage', () => {
 		icsPhysicalLines(fixture.content),
 	);
 
-	it('reaches the octet limit exactly', () => {
+	it('holds a line of exactly the octet limit', () => {
 		const widest = Math.max(...allLines.map(octetLength));
 		expect(widest).toBe(ICS_LINE_OCTET_LIMIT);
 	});
 
-	it('keeps the dedicated fold fixture at the limit itself', () => {
+	it('gives the fold fixture at least two lines of exactly the octet limit', () => {
 		const lines = icsPhysicalLines(icsFixture('fold-at-75-octets').content);
 		const atLimit = lines.filter(
 			(line) => octetLength(line) === ICS_LINE_OCTET_LIMIT,
@@ -144,12 +159,12 @@ describe('ICS corpus coverage', () => {
 		expect(atLimit.length).toBeGreaterThanOrEqual(2);
 	});
 
-	it('carries characters wider than one octet', () => {
+	it('carries characters that need more than one octet', () => {
 		const wide = allLines.filter((line) => octetLength(line) > line.length);
 		expect(wide).not.toHaveLength(0);
 	});
 
-	it('folds with a tab as well as with a space', () => {
+	it('folds with a tab and also with a space', () => {
 		const continuations = allLines.filter(isFoldedContinuation);
 		expect(
 			continuations.filter((line) => line.startsWith('\t')),
@@ -161,14 +176,14 @@ describe('ICS corpus coverage', () => {
 });
 
 describe('ICS corpus sampling', () => {
-	it('draws fixtures that belong to the corpus', () => {
+	it('draws only fixtures that belong to the corpus', () => {
 		const drawn = fc.sample(icsFixtureArbitrary(), 25);
 		for (const fixture of drawn) {
 			expect(icsCorpus()).toContain(fixture);
 		}
 	});
 
-	it('draws fixtures of the category asked for', () => {
+	it('draws only fixtures that carry the given category', () => {
 		for (const category of ICS_CATEGORIES) {
 			for (const fixture of fc.sample(
 				icsFixtureArbitrary(category),
@@ -182,7 +197,7 @@ describe('ICS corpus sampling', () => {
 
 describe('ICS corpus octet-limit fixtures', () => {
 	it.each([['fold-at-75-octets'], ['fold-splits-multibyte-run']])(
-		'%s carries a line at the limit itself',
+		'%s holds a line of exactly the octet limit',
 		(id) => {
 			const lines = icsPhysicalLines(icsFixture(id).content);
 			const widest = Math.max(...lines.map(octetLength));

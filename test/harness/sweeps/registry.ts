@@ -1,19 +1,23 @@
 /**
- * Where sweeps are collected and evaluated. A run reads the registry at
- * the moment it ends, so a suite that registers a sweep of its own gets it
- * evaluated over the same evidence as the standing set.
+ * This module collects the sweeps and evaluates them. A run reads the
+ * registry at the moment that the run ends. Thus a suite can register a
+ * sweep of its own, and the harness evaluates that sweep over the same
+ * evidence as the standing set.
  *
- * The default registry is module state, which vitest gives each test file
- * a fresh copy of. `reset` returns it to the standing set regardless: the
- * setup file calls it before every test, so a registration cannot reach
- * the next test whether or not module state was reused. A suite that wants
- * a registration to survive that reset registers it in its own `beforeEach`,
- * which runs after the setup file's.
+ * The default registry is module state, and vitest gives each test file a
+ * fresh copy of that state. `reset` puts the registry back to the standing
+ * set in all conditions: the setup file calls `reset` before every test,
+ * so a registration cannot reach the next test. This is true whether
+ * vitest reused the module state or not. A suite that wants a registration
+ * to survive that reset registers the sweep in its own `beforeEach`,
+ * because the `beforeEach` of the suite runs after the `beforeEach` of the
+ * setup file.
  *
- * `beforeEach` and not `beforeAll`: the reset runs between the two, so a
- * `beforeAll` registration is gone by the time the first test reads it,
- * and under a shared module registry it is also the one place a
- * registration from another file is still visible.
+ * Use `beforeEach` and not `beforeAll`. The reset runs after `beforeAll`
+ * and before the first test, so a registration made in `beforeAll` is gone
+ * when the first test reads the registry. `beforeAll` has a second
+ * problem. When vitest reuses the module state, `beforeAll` is the one
+ * place where a registration from another file is still visible.
  */
 
 import type { RunEvidence } from './evidence';
@@ -29,19 +33,20 @@ export class SweepRegistry {
 		this.current = [...baseline];
 	}
 
-	/** Sweeps in registration order, the standing set first. */
+	/** The sweeps in registration order. The standing set comes first. */
 	get registered(): readonly Sweep[] {
 		return this.current;
 	}
 
 	/**
-	 * A name is the handle a failure is read by, so two sweeps may not
-	 * share one.
+	 * Adds a sweep to the registry. A reader finds a failure by the name of
+	 * the sweep, so two sweeps must not have the same name. This method
+	 * throws an error when the name is already in the registry.
 	 */
 	register(sweep: Sweep): void {
 		if (this.current.some((held) => held.name === sweep.name)) {
 			throw new Error(
-				`sweep registry: ${sweep.name} is already registered`,
+				`sweep registry: the name ${sweep.name} is already registered. Give the new sweep a different name.`,
 			);
 		}
 		this.current.push(sweep);
@@ -52,11 +57,12 @@ export class SweepRegistry {
 	}
 
 	/**
-	 * Every sweep that found something, in registration order. A sweep that
-	 * throws is reported as having found its own failure rather than being
-	 * allowed out: an error escaping here would fail the test with nothing
-	 * naming which sweep produced it, which is the one failure shape the
-	 * reporting exists to prevent.
+	 * Returns one report for each sweep that found a violation, in
+	 * registration order. A sweep that throws an error does not let the
+	 * error out: this method reports the error as a violation of that
+	 * sweep. An error that escaped from here would fail the test, but the
+	 * failure would not name the sweep that caused it. That kind of failure
+	 * is the only kind that the reports exist to prevent.
 	 */
 	evaluate(evidence: RunEvidence): readonly SweepReport[] {
 		const reports: SweepReport[] = [];
@@ -68,7 +74,7 @@ export class SweepRegistry {
 				violations = [
 					{
 						where: 'the sweep itself',
-						detail: `threw ${error instanceof Error ? error.message : String(error)}`,
+						detail: `the check threw an error: ${error instanceof Error ? error.message : String(error)}`,
 					},
 				];
 			}
@@ -80,7 +86,7 @@ export class SweepRegistry {
 	}
 }
 
-/** The registry a run evaluates when it is handed no other. */
+/** The registry that a run evaluates when the caller gives no other. */
 export const sweeps = new SweepRegistry(STANDING_SWEEPS);
 
 export function registerSweep(sweep: Sweep): void {

@@ -3,7 +3,7 @@ import type { CancelTimer } from '../../src/core/ports/clock';
 import { ControlledClock, DEFAULT_START_TIME } from './clock';
 
 describe('controlled clock time', () => {
-	it('starts where it was told and moves only when advanced', () => {
+	it('starts at the given time or at the default time, and moves only when a test advances the clock', () => {
 		const clock = new ControlledClock({ start: 1_000 });
 		expect(clock.now()).toBe(1_000);
 		clock.advance(250);
@@ -11,7 +11,7 @@ describe('controlled clock time', () => {
 		expect(new ControlledClock().now()).toBe(DEFAULT_START_TIME);
 	});
 
-	it('refuses a start and durations it cannot order', () => {
+	it('throws when the start value, the maxFiringsPerAdvance value, or a duration is out of range', () => {
 		expect(() => new ControlledClock({ start: Number.NaN })).toThrow(
 			RangeError,
 		);
@@ -20,7 +20,7 @@ describe('controlled clock time', () => {
 		);
 		const clock = new ControlledClock({ start: 0 });
 		const noop = (): void => {
-			/* never runs */
+			/* Every call below throws, so this callback never runs. */
 		};
 		expect(() => clock.after(-1, noop)).toThrow(RangeError);
 		expect(() => clock.after(Number.POSITIVE_INFINITY, noop)).toThrow(
@@ -46,7 +46,7 @@ describe('controlled clock time', () => {
 });
 
 describe('controlled clock firing order', () => {
-	it('fires one-shot timers at their due instant, earliest first', () => {
+	it('fires each one-shot timer at its due instant, and fires the earliest timer first', () => {
 		const clock = new ControlledClock({ start: 0 });
 		const log: string[] = [];
 		clock.after(30, () => log.push(`late@${String(clock.now())}`));
@@ -57,7 +57,7 @@ describe('controlled clock firing order', () => {
 		expect(clock.pendingTimerCount).toBe(0);
 	});
 
-	it('breaks a tie on due instant by scheduling order', () => {
+	it('fires timers with the same due instant in the order in which the test scheduled them', () => {
 		const clock = new ControlledClock({ start: 0 });
 		const log: string[] = [];
 		clock.after(10, () => log.push('first'));
@@ -67,7 +67,7 @@ describe('controlled clock firing order', () => {
 		expect(log).toEqual(['first', 'second', 'third']);
 	});
 
-	it('repeats on a fixed grid without drift', () => {
+	it('fires a repeating timer at each multiple of its period, with no drift', () => {
 		const clock = new ControlledClock({ start: 0 });
 		const log: number[] = [];
 		clock.every(10, () => log.push(clock.now()));
@@ -77,7 +77,7 @@ describe('controlled clock firing order', () => {
 		expect(clock.pendingTimerCount).toBe(1);
 	});
 
-	it('interleaves repeats with one-shots, rescheduling on each firing', () => {
+	it('mixes a repeating timer with one-shot timers, and reschedules the repeat at each firing', () => {
 		const clock = new ControlledClock({ start: 0 });
 		const log: string[] = [];
 		clock.every(10, () => log.push(`every@${String(clock.now())}`));
@@ -95,7 +95,7 @@ describe('controlled clock firing order', () => {
 		]);
 	});
 
-	it('fires a timer scheduled from a callback when it comes due in the same advance', () => {
+	it('fires a timer that a callback schedules, when the new timer comes due in the same advance', () => {
 		const clock = new ControlledClock({ start: 0 });
 		const log: string[] = [];
 		clock.after(10, () => {
@@ -107,7 +107,7 @@ describe('controlled clock firing order', () => {
 		expect(clock.pendingTimerCount).toBe(1);
 	});
 
-	it('fires a zero-delay timer on the next advance, not before', () => {
+	it('fires a timer with zero delay on the next advance, and not before that advance', () => {
 		const clock = new ControlledClock({ start: 0 });
 		const log: string[] = [];
 		clock.after(0, () => log.push('now'));
@@ -118,7 +118,7 @@ describe('controlled clock firing order', () => {
 });
 
 describe('controlled clock cancellation', () => {
-	it('keeps a cancelled timer from firing, one-shot or repeating', () => {
+	it('stops a cancelled timer from firing, for a one-shot timer and for a repeating timer', () => {
 		const clock = new ControlledClock({ start: 0 });
 		const log: string[] = [];
 		const cancelOnce = clock.after(10, () => log.push('once'));
@@ -131,7 +131,7 @@ describe('controlled clock cancellation', () => {
 		expect(clock.pendingTimerCount).toBe(0);
 	});
 
-	it('drops a timer cancelled from a callback during the same advance', () => {
+	it('drops a timer that a callback cancels during the same advance', () => {
 		const clock = new ControlledClock({ start: 0 });
 		const log: string[] = [];
 		let cancelLater: CancelTimer | null = null;
@@ -144,7 +144,7 @@ describe('controlled clock cancellation', () => {
 		expect(clock.pendingTimerCount).toBe(0);
 	});
 
-	it('ignores a repeated cancel and a cancel after firing', () => {
+	it('ignores a second cancel, and a cancel that comes after the timer fires', () => {
 		const clock = new ControlledClock({ start: 0 });
 		const cancelTwice = clock.after(10, () => undefined);
 		cancelTwice();
@@ -157,7 +157,7 @@ describe('controlled clock cancellation', () => {
 });
 
 describe('controlled clock failure', () => {
-	it('leaves time at the failing timer and the rest pending', () => {
+	it('leaves time at the timer that threw, and leaves every other timer pending', () => {
 		const clock = new ControlledClock({ start: 0 });
 		const log: string[] = [];
 		clock.every(10, () => {
@@ -176,7 +176,7 @@ describe('controlled clock failure', () => {
 		expect(log).toEqual(['every@10', 'after', 'every@20']);
 	});
 
-	it('caps the firings one advance may run', () => {
+	it('throws when one advance makes more firings than the cap allows', () => {
 		const clock = new ControlledClock({
 			start: 0,
 			maxFiringsPerAdvance: 5,
@@ -191,8 +191,8 @@ describe('controlled clock failure', () => {
 	});
 });
 
-describe('re-entrancy', () => {
-	it('refuses advance from inside a callback and stays usable', () => {
+describe('controlled clock advance inside a callback', () => {
+	it('throws when a callback calls advance, and the clock still works after that', () => {
 		const clock = new ControlledClock({ start: 0 });
 		let inner: unknown;
 		clock.after(10, () => {

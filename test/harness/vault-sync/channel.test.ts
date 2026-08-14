@@ -41,8 +41,8 @@ function outcomes(landed: readonly LandedDelivery[]): string[] {
 	return landed.map((entry) => entry.outcome);
 }
 
-describe('vault-sync fan-out', () => {
-	it('makes one pending delivery per peer and none for the origin', async () => {
+describe('vault-sync sending a change to every peer', () => {
+	it('makes one waiting delivery for each peer and none for the origin device', async () => {
 		const { channel } = channelOf(['a', 'b', 'c']);
 		await channel.device('a').write(NOTE, 'one');
 		expect(channel.pending().map((delivery) => delivery.to)).toEqual([
@@ -54,7 +54,7 @@ describe('vault-sync fan-out', () => {
 		expect(await channel.device('c').read(NOTE)).toBe('one');
 	});
 
-	it('delivers to one peer and leaves the other pending', async () => {
+	it('delivers to one named peer and keeps the delivery to the other peer waiting', async () => {
 		const { channel } = channelOf(['a', 'b', 'c']);
 		await channel.device('a').write(NOTE, 'one');
 		await channel.deliver({ to: 'b' });
@@ -65,7 +65,7 @@ describe('vault-sync fan-out', () => {
 		expect(channel.converged()).toBe(true);
 	});
 
-	it('applies a delivery without originating one back', async () => {
+	it('applies a delivery and starts no delivery back to the origin device', async () => {
 		const { channel } = channelOf(['a', 'b']);
 		await channel.device('a').write(NOTE, 'one');
 		await channel.deliver();
@@ -73,8 +73,8 @@ describe('vault-sync fan-out', () => {
 	});
 });
 
-describe('vault-sync delivery scripting', () => {
-	it('holds a path back and delivers it once released', async () => {
+describe('vault-sync delivery under a script the test writes', () => {
+	it('holds the deliveries for one path back until the test releases the hold', async () => {
 		const { channel } = channelOf(['a', 'b']);
 		const release = channel.hold({ path: RECORD });
 		await channel.device('a').write(RECORD, 'record');
@@ -86,7 +86,7 @@ describe('vault-sync delivery scripting', () => {
 		expect(channel.device('b').paths()).toEqual([NOTE, RECORD]);
 	});
 
-	it('keeps a held delivery back even when a script names it', async () => {
+	it('keeps a held delivery back even when the test asks for that path by name', async () => {
 		const { channel } = channelOf(['a', 'b']);
 		channel.hold({ path: RECORD });
 		await channel.device('a').write(RECORD, 'record');
@@ -97,7 +97,7 @@ describe('vault-sync delivery scripting', () => {
 		]);
 	});
 
-	it('delivers in the scripted order rather than the captured one', async () => {
+	it('delivers in the order the test lists and not in the order the changes were made', async () => {
 		const { channel } = channelOf(['a', 'b']);
 		const events = recordEvents(channel.device('b'));
 		await channel.device('a').write(NOTE, 'note');
@@ -106,7 +106,7 @@ describe('vault-sync delivery scripting', () => {
 		expect(events.map((event) => event.path)).toEqual([RECORD, NOTE]);
 	});
 
-	it('spells both flight-skew orders', async () => {
+	it('delivers the record first or the note first, as each of the two call names states', async () => {
 		for (const [spelling, expected] of [
 			['recordBeforeNote', [RECORD, NOTE]],
 			['noteBeforeRecord', [NOTE, RECORD]],
@@ -120,7 +120,7 @@ describe('vault-sync delivery scripting', () => {
 		}
 	});
 
-	it('refuses a flight-skew script with nothing in flight', async () => {
+	it('refuses an order script when one of the two paths has no delivery waiting', async () => {
 		const { channel } = channelOf(['a', 'b']);
 		await channel.device('a').write(NOTE, 'note');
 		await expect(
@@ -128,7 +128,7 @@ describe('vault-sync delivery scripting', () => {
 		).rejects.toThrow(/nothing pending for records\/abc123\.md/);
 	});
 
-	it('aims a flight-skew script at one peer', async () => {
+	it('delivers the two paths to one named peer and leaves the other peer waiting', async () => {
 		const { channel } = channelOf(['a', 'b', 'c']);
 		await channel.device('a').write(NOTE, 'note');
 		await channel.device('a').write(RECORD, 'record');
@@ -138,8 +138,8 @@ describe('vault-sync delivery scripting', () => {
 	});
 });
 
-describe('vault-sync clean application', () => {
-	it('fast-forwards a change built on what the destination holds', async () => {
+describe('vault-sync deliveries that apply without a conflict', () => {
+	it('applies a change that was built on the content the destination already holds', async () => {
 		const { channel } = channelOf(['a', 'b']);
 		await channel.device('a').write(NOTE, 'one');
 		const first = await channel.deliver();
@@ -155,7 +155,7 @@ describe('vault-sync clean application', () => {
 		expect(channel.converged()).toBe(true);
 	});
 
-	it('names a delivery the destination already holds as converged', async () => {
+	it('calls a delivery converged when the destination already holds the same content', async () => {
 		const { channel } = channelOf(['a', 'b']);
 		await channel.device('a').write(NOTE, 'one');
 		await channel.deliver();
@@ -163,7 +163,7 @@ describe('vault-sync clean application', () => {
 		expect(outcomes(await channel.deliver())).toEqual(['converged']);
 	});
 
-	it('deletes a file the destination has not touched', async () => {
+	it('deletes a file that the destination has not changed and keeps no modification time for the file', async () => {
 		const { channel } = channelOf(['a', 'b'], undefined, { [NOTE]: 'one' });
 		await channel.device('a').trash(NOTE);
 		const [landed] = await channel.deliver();
@@ -174,8 +174,8 @@ describe('vault-sync clean application', () => {
 	});
 });
 
-describe('vault-sync rename delivery', () => {
-	it('delivers a rename whole', async () => {
+describe('vault-sync delivering a rename', () => {
+	it('delivers a rename as one move where the profile keeps renames whole', async () => {
 		const { channel } = channelOf(
 			['a', 'b'],
 			syncToolProfile('obsidian-sync'),
@@ -190,7 +190,7 @@ describe('vault-sync rename delivery', () => {
 		expect(channel.device('b').paths()).toEqual(['new.md']);
 	});
 
-	it('delivers a rename as a deletion and a creation', async () => {
+	it('delivers a rename as a deletion and then a creation where the profile splits renames', async () => {
 		const { channel } = channelOf(
 			['a', 'b'],
 			syncToolProfile('syncthing'),
@@ -209,7 +209,7 @@ describe('vault-sync rename delivery', () => {
 		expect(await channel.device('b').read('new.md')).toBe('one');
 	});
 
-	it('names a rename it could not move a locally edited source', async () => {
+	it('calls a rename duplicated when the destination has edited the file that the rename moves', async () => {
 		for (const id of ['obsidian-sync', 'syncthing']) {
 			const { channel } = channelOf(['a', 'b'], syncToolProfile(id), {
 				'old.md': 'one',
@@ -224,7 +224,7 @@ describe('vault-sync rename delivery', () => {
 		}
 	});
 
-	it('creates the target where the source never reached the destination', async () => {
+	it('creates the new path where the destination never received the old file', async () => {
 		const { channel } = channelOf(
 			['a', 'b'],
 			syncToolProfile('obsidian-sync'),
@@ -241,7 +241,7 @@ describe('vault-sync rename delivery', () => {
 });
 
 describe('vault-sync modification times', () => {
-	it('keeps the origin time where the profile preserves it', async () => {
+	it('keeps the modification time of the origin device where the profile preserves times', async () => {
 		const { channel, clock } = channelOf(
 			['a', 'b'],
 			syncToolProfile('syncthing'),
@@ -253,7 +253,7 @@ describe('vault-sync modification times', () => {
 		expect(channel.device('b').modifiedAt(NOTE)).toBe(DEFAULT_START_TIME);
 	});
 
-	it('stamps the arrival time where the profile does not', async () => {
+	it('stamps the arrival time on the destination where the profile does not preserve times', async () => {
 		const { channel, clock } = channelOf(
 			['a', 'b'],
 			syncToolProfile('icloud-drive'),
@@ -268,10 +268,10 @@ describe('vault-sync modification times', () => {
 	});
 });
 
-describe('vault-sync planted files', () => {
+describe('vault-sync files planted straight into a vault', () => {
 	const PLANTED = 'planted by the suite';
 
-	it('covers a file planted with no version of its own', async () => {
+	it('overwrites a planted file that carries no version of its own', async () => {
 		const { channel } = channelOf(['a', 'b'], syncToolProfile('syncthing'));
 		await channel.device('b').vault.write(RECORD, PLANTED);
 		await channel.device('a').write(RECORD, 'from a');
@@ -282,7 +282,7 @@ describe('vault-sync planted files', () => {
 		expect(channel.pending()).toEqual([]);
 	});
 
-	it('stands a plant against a delivery once its version is recorded', async () => {
+	it('makes a conflict copy where the test records a version for the planted file', async () => {
 		const { channel } = channelOf(['a', 'b'], syncToolProfile('syncthing'));
 		const b = channel.device('b');
 		await b.vault.write(RECORD, PLANTED);
@@ -295,7 +295,7 @@ describe('vault-sync planted files', () => {
 });
 
 describe('vault-sync channel setup', () => {
-	it('refuses a channel that cannot deliver anything', () => {
+	it('refuses a channel with fewer than two devices, and a channel with a repeated device id', () => {
 		const clock = new ControlledClock();
 		expect(() => new VaultSyncChannel({ devices: ['a'], clock })).toThrow(
 			/at least two devices/,
@@ -305,19 +305,19 @@ describe('vault-sync channel setup', () => {
 		).toThrow(/duplicate device a/);
 	});
 
-	it('names the devices it holds when asked for one it does not', () => {
+	it('names the devices the channel holds when the test asks for a device that is not there', () => {
 		const { channel } = channelOf(['a', 'b']);
 		expect(() => channel.device('c')).toThrow(/channel holds a, b/);
 	});
 
-	it('seeds every device alike without delivering anything', () => {
+	it('gives every device the same seed files and makes no delivery', () => {
 		const { channel } = channelOf(['a', 'b'], undefined, { [NOTE]: 'one' });
 		expect(channel.converged()).toBe(true);
 		expect(channel.pending()).toEqual([]);
 		expect(channel.device('b').modifiedAt(NOTE)).toBe(DEFAULT_START_TIME);
 	});
 
-	it('carries a profile for every tool the corpus names', () => {
+	it('returns each profile in the corpus when the test asks for that profile by id', () => {
 		for (const profile of SYNC_TOOL_PROFILES) {
 			expect(syncToolProfile(profile.id)).toBe(profile);
 		}

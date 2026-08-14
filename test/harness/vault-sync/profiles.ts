@@ -1,59 +1,78 @@
 /**
- * Per-tool sync profiles: how one sync tool names conflict copies, which
- * side of a divergence it keeps, what it does with the other side, how it
- * merges, whether its conflict copies reach the other devices, how it
- * delivers a rename, and whether it keeps modification times.
+ * A sync profile holds the behavior of one sync tool. Each profile
+ * answers seven questions about that tool:
  *
- * The entries below are placeholders — plausible shapes to test against,
- * not observed behavior. Each value is replaced by the fact recorded
- * against the real tool without the profile interface changing, so suites
- * written now keep working when the corpus becomes real. That is why
- * every fact a recording will carry has a slot here even where the
- * placeholder for it is the channel's own default.
+ * - How does the tool name a conflict copy?
+ * - Which side of a divergence does the tool keep at the path?
+ * - What does the tool do with the other side?
+ * - How does the tool merge?
+ * - Do the conflict copies of the tool reach the other devices?
+ * - How does the tool deliver a rename?
+ * - Does the tool keep the modification time of a file?
+ *
+ * The entries below are placeholders. Each value is a shape that a real
+ * tool could have, and not behavior that somebody observed. The fact
+ * recorded against the real tool replaces each value, and the profile
+ * interface stays the same. Thus a suite written now still works when
+ * the corpus holds real behavior. For this reason every fact that a
+ * recording will carry has a member here, even where the placeholder for
+ * that fact is the default of the channel.
  */
 
 import type { MergeMangler } from './mangle';
 import type { ContentStamp, DeviceId } from './types';
 
-/** What a tool does with the side of a divergence it does not keep. */
+/**
+ * What a tool does with the side of a divergence that the tool does not
+ * keep at the path.
+ */
 export type DivergentDelivery = 'overwrite' | 'conflict-copy' | 'merge';
 
 /**
- * Which side of a divergence a tool keeps at the path. `newest` is the
- * one every tool in the corpus models: the more recently written content
- * wins wherever the two are ranked, so every device picks the same
- * winner and they agree on the path's bytes. `incoming` and `local` are
- * the one-sided rules, which leave two devices holding each other's
- * content.
+ * Which side of a divergence a tool keeps at the path.
+ *
+ * Every tool in the corpus models `newest`. This rule ranks the two
+ * contents by the time that somebody wrote each content, and the later
+ * content wins. Both devices rank the same pair in the same order, so
+ * both devices keep the same content, and both devices hold the same
+ * bytes at the path.
+ *
+ * The rules `incoming` and `local` are one-sided, and read no stamp.
+ * Under `incoming` each of the two devices takes the content that the
+ * other device wrote. Under `local` each device keeps its own content.
+ * Neither rule makes the two devices hold the same bytes.
  */
 export type DivergenceWinner = 'newest' | 'incoming' | 'local';
 
-/** Whether a rename arrives whole or as a deletion and a creation. */
+/** How a rename arrives: whole, or as a deletion and a creation. */
 export type RenameDelivery = 'rename' | 'delete-and-create';
 
 export interface SyncToolProfile {
 	readonly id: string;
 	/**
-	 * Filename pattern for the copy holding the losing side's content, or
-	 * null for a tool that makes no copies. Placeholders are `{dir}`,
-	 * `{stem}`, `{ext}`, `{device}`, `{timestamp}`, and `{counter}`.
+	 * The filename pattern for the copy that holds the content of the
+	 * losing side. Null for a tool that makes no copies. The pattern can
+	 * hold these placeholders: `{dir}`, `{stem}`, `{ext}`, `{device}`,
+	 * `{timestamp}`, and `{counter}`.
 	 */
 	readonly conflictCopyPattern: string | null;
 	readonly divergenceWinner: DivergenceWinner;
 	readonly divergentDelivery: DivergentDelivery;
 	/**
-	 * How this tool merges, for a profile that merges. A merger passed to
-	 * the channel wins over it, and the modeled line merge stands in where
-	 * neither is given, so the merge recorded against a real tool lands
-	 * here without any call site changing.
+	 * How this tool merges, for a profile that merges. A merger in the
+	 * options of the channel replaces this merger. The modeled line merge
+	 * stands in when the options and the profile give no merger. Thus the
+	 * merge recorded against a real tool comes here, and no call site
+	 * changes.
 	 */
 	readonly merger?: MergeMangler;
 	/**
-	 * Whether a conflict copy reaches the tool's other devices. False
-	 * leaves the copy on the device that made it, which is the placeholder
-	 * every entry below carries. Either way a device that sees both sides
-	 * of a divergence makes the copy itself, so this decides what reaches
-	 * a device that never sees one of them.
+	 * True when a conflict copy reaches the other devices of the tool.
+	 * False leaves the copy on the device that made the copy, and every
+	 * entry below carries false as its placeholder. Under either value a
+	 * device that sees both sides of a divergence makes the copy itself.
+	 * Therefore this member decides only what a device gets when that
+	 * device never sees one of the two sides.
 	 */
 	readonly propagateConflictCopies: boolean;
 	readonly renameDelivery: RenameDelivery;
@@ -100,7 +119,7 @@ export const SYNC_TOOL_PROFILES: readonly SyncToolProfile[] = [
 	},
 ];
 
-/** The profile a channel uses when the caller names none. */
+/** The profile that a channel uses when the caller names no profile. */
 export const DEFAULT_SYNC_PROFILE: SyncToolProfile = {
 	id: 'default',
 	conflictCopyPattern: '{dir}{stem} (conflict {counter}){ext}',
@@ -111,7 +130,10 @@ export const DEFAULT_SYNC_PROFILE: SyncToolProfile = {
 	preserveModificationTimes: false,
 };
 
-/** The profile with this id, or an error naming the ids there are. */
+/**
+ * The profile with this id. Throws an error that names the known ids
+ * when the corpus holds no profile with this id.
+ */
 export function syncToolProfile(id: string): SyncToolProfile {
 	const found = SYNC_TOOL_PROFILES.find((profile) => profile.id === id);
 	if (found === undefined) {
@@ -119,18 +141,19 @@ export function syncToolProfile(id: string): SyncToolProfile {
 			', ',
 		);
 		throw new Error(
-			`sync tool profile: no profile ${id}; corpus holds ${known}`,
+			`sync tool profile: there is no profile ${id}; the corpus holds ${known}`,
 		);
 	}
 	return found;
 }
 
 /**
- * Whether the delivery's content takes the path. `newest` ranks the two
- * sides by the time each was written and breaks a tie on the author's id,
- * the earlier id winning. Both devices in a divergence hold the same two
- * stamps and so reach the same answer from opposite sides, which is what
- * lets them agree on the path and put the same content in the copy.
+ * True when the content of the delivery takes the path. The rule
+ * `newest` ranks the two sides by the time that somebody wrote each
+ * side, and gives a tie to the earlier author id. Both devices in a
+ * divergence hold the same pair of stamps, so both devices get the same
+ * answer from opposite sides. For this reason the two devices agree on
+ * the content at the path, and put the same content in the copy.
  */
 export function incomingWins(
 	rule: DivergenceWinner,
@@ -150,30 +173,35 @@ export function incomingWins(
 }
 
 export interface ConflictCopyContext {
-	/** The path whose losing content is being moved aside. */
+	/** The path whose losing content the channel moves aside. */
 	readonly path: string;
 	/**
-	 * The device that wrote the content being moved aside. Every device
-	 * resolving one divergence names the copy after the same loser, so the
-	 * copy is one file with one name across the vault rather than a
-	 * different one on each device.
+	 * The device that wrote the content that the channel moves aside.
+	 * Every device that resolves one divergence names the copy after the
+	 * same losing device. Thus the copy is one file with one name across
+	 * the vault, and not a different file on each device.
 	 */
 	readonly device: DeviceId;
 	/**
-	 * The modification time of the content being moved aside, which is
-	 * what a tool names its copies after and what the copy itself keeps.
+	 * The modification time of the content that the channel moves aside.
+	 * A tool names its copies after this time, and the copy keeps this
+	 * time.
 	 */
 	readonly at: number;
-	/** Fills `{counter}`; the first attempt uses 2, as tools number from. */
+	/**
+	 * Fills `{counter}`. The first try uses 2, because a tool numbers its
+	 * copies from 2.
+	 */
 	readonly counter: number;
 }
 
 const PLACEHOLDER = /\{(\w+)\}/g;
 
 /**
- * Fills a conflict-copy pattern. An unknown placeholder is an error rather
- * than a literal, so a typo in a corpus entry fails where it is written
- * instead of producing a filename nothing matches.
+ * Fills a conflict-copy pattern. An unknown placeholder throws an error,
+ * and the function does not keep the placeholder as literal text. Thus a
+ * typo in a corpus entry fails at the entry, and does not make a filename
+ * that nothing matches.
  */
 export function renderConflictPath(
 	pattern: string,
@@ -196,15 +224,15 @@ export function renderConflictPath(
 				return String(context.counter);
 			default:
 				throw new Error(
-					`sync tool profile: unknown placeholder {${name}} in pattern ${pattern}`,
+					`sync tool profile: unknown placeholder {${name}} in pattern ${pattern}; use {dir}, {stem}, {ext}, {device}, {timestamp}, or {counter}`,
 				);
 		}
 	});
 }
 
 /**
- * `YYYYMMDD-HHmmss` in UTC. Fixed width and zone so a pattern renders the
- * same wherever the suite runs.
+ * The time as `YYYYMMDD-HHmmss` in UTC. The width and the time zone are
+ * fixed, so a pattern gives the same text wherever the suite runs.
  */
 export function formatTimestamp(at: number): string {
 	const iso = new Date(at).toISOString();
@@ -212,10 +240,10 @@ export function formatTimestamp(at: number): string {
 }
 
 interface PathParts {
-	/** Directory including its trailing slash; empty at the vault root. */
+	/** The directory with its trailing slash. Empty at the vault root. */
 	readonly dir: string;
 	readonly stem: string;
-	/** Extension including its leading dot; empty where there is none. */
+	/** The extension with its leading dot. Empty when the name has none. */
 	readonly ext: string;
 }
 

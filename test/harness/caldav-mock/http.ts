@@ -1,12 +1,13 @@
 /**
- * Translation between the transport port's shapes and the server's. The
- * port hands over a URL, headers, and a body that may be text or octets;
- * it expects back a status, headers, and both text and octets of the same
- * response.
+ * Changes data between the shapes of the transport port and the shapes of
+ * the server. The port gives a URL, headers, and a body that is text or
+ * octets. The port expects back a status, headers, and both the text and
+ * the octets of the same response.
  *
- * The octets counted here are an HTTP body's and not an iCalendar line's —
- * a multistatus and an error page cross this module too — so the encoder
- * and its decoder are this module's own.
+ * The octets that this module counts are the octets of an HTTP body, and
+ * not the octets of an iCalendar line. A multistatus document and an
+ * error page also pass through this module. Thus this module holds its
+ * own encoder and its own decoder.
  */
 
 import type { HttpResponse } from '../../../src/core/ports/transport';
@@ -17,7 +18,10 @@ const decoder = new TextDecoder();
 
 export type HeaderReader = (name: string) => string | null;
 
-/** Header names are case-insensitive; clients spell them as they please. */
+/**
+ * Reads a header by name and ignores the letter case, because a client
+ * can write a header name in any letter case.
+ */
 export function headerReader(
 	headers: Readonly<Record<string, string>> | undefined,
 ): HeaderReader {
@@ -29,14 +33,18 @@ export function headerReader(
 }
 
 /**
- * The headers a request carried, keyed by their lowercased names. Nothing
- * is filtered out and nothing is redacted: the log exists to be asserted
- * against and swept, and a credential the sweeps cannot see is one they
- * cannot report. `Authorization` is therefore here like any other header,
- * and a request that states its content type through the port's own member
- * rather than a header is recorded as having sent the header. A request
- * that does both is recorded with the header, which is what a server would
- * have read.
+ * Returns the headers that a request carried, with the header names in
+ * lower case. This function removes no header and hides no value. The
+ * reason: tests assert on this log and sweeps search this log, and a
+ * sweep cannot report a credential that the sweep cannot see. Therefore
+ * the `Authorization` header is here in the same way as every other
+ * header.
+ *
+ * A request can give its content type through the `contentType` member of
+ * the port instead of a header. This function records that content type
+ * as a header. If a request gives the member and the header, this
+ * function keeps the value from the header, because a server reads the
+ * header.
  */
 export function headerEntries(
 	headers: Readonly<Record<string, string>> | undefined,
@@ -59,7 +67,10 @@ export function bodyText(body: string | ArrayBuffer | undefined): string {
 	return typeof body === 'string' ? body : decoder.decode(body);
 }
 
-/** Null when the request names a different server, which answers nothing. */
+/**
+ * Returns the path of the request URL, or null when the URL names a
+ * different server. The mock answers no request for a different server.
+ */
 export function pathOf(url: string, origin: string): string | null {
 	let parsed: URL;
 	try {
@@ -70,7 +81,10 @@ export function pathOf(url: string, origin: string): string | null {
 	return parsed.origin === new URL(origin).origin ? parsed.pathname : null;
 }
 
-/** The query the request carries; empty for a URL that will not parse. */
+/**
+ * Returns the query that the request carries. The query is empty when the
+ * URL does not parse.
+ */
 export function queryOf(url: string, origin: string): URLSearchParams {
 	try {
 		return new URL(url, origin).searchParams;
@@ -80,8 +94,10 @@ export function queryOf(url: string, origin: string): URLSearchParams {
 }
 
 /**
- * A truncated response keeps its status and headers: the failure is in the
- * body, and cutting octets mid-character is part of what it does.
+ * Builds the response that the transport port receives. A response that
+ * this function truncates keeps its status and its headers, because the
+ * failure is in the body only. The cut can fall in the middle of a
+ * character, and this result is part of the truncation.
  */
 export function toHttpResponse(
 	response: MockResponse,

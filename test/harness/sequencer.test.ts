@@ -6,7 +6,7 @@ function spec(moduleId: string, project = 'root'): TestSpecification {
 	return { moduleId, project: { name: project } } as TestSpecification;
 }
 
-/** A sequencer that knows nothing but the sequencing half of the config. */
+/** Makes a sequencer whose config holds only the sequence settings. */
 function sequencer(sequence: {
 	shuffle: boolean;
 	seed?: number;
@@ -30,7 +30,7 @@ function rotate(
 	return [...files.slice(by), ...files.slice(0, by)];
 }
 
-/** The same files, handed over in orders a crawl could plausibly differ by. */
+/** The same files, in several orders that a directory crawl can produce. */
 const crawlOrders: TestSpecification[][] = [
 	[...crawled],
 	[...crawled].reverse(),
@@ -51,18 +51,18 @@ const canonical = [
 	'/repo/test/smoke.test.ts',
 ];
 
-describe('the canonical order', () => {
-	it('orders the files it is handed by module id', () => {
+describe('the sort before the shuffle', () => {
+	it('puts the given files in order of module id', () => {
 		expect(ids(sortByModuleId(crawled))).toEqual(canonical);
 	});
 
-	it('leaves the array it was handed alone', () => {
+	it('does not change the array that the caller gives', () => {
 		const handed = [...crawled];
 		sortByModuleId(handed);
 		expect(ids(handed)).toEqual(ids(crawled));
 	});
 
-	it('orders by project name before module id', () => {
+	it('sorts by project name first and by module id second', () => {
 		const mixed = [
 			spec('/repo/a.test.ts', 'second'),
 			spec('/repo/z.test.ts', 'first'),
@@ -79,12 +79,13 @@ describe('the canonical order', () => {
 		]);
 	});
 
-	// A collating comparator puts these four in a different order: it sorts
-	// capitals among the lowercase letters rather than ahead of them, and
-	// looks past the hyphen instead of ranking it below every letter. The
-	// order below is the code-unit one, which is the same under every locale
-	// a run might pick up.
-	it('orders by code unit, out of reach of the ambient locale', () => {
+	// The expected order below looks wrong, but the order is correct. A
+	// locale-aware comparator puts these four files in a different order: it
+	// puts the capital letters among the lowercase letters and not before
+	// them, and it ignores the hyphen instead of ranking the hyphen below
+	// every letter. The order below is the order of the UTF-16 code units,
+	// and that order does not change with the locale of the machine.
+	it('sorts by UTF-16 code unit, and no locale changes the order', () => {
 		const collated = [
 			spec('/repo/test/feedback.test.ts'),
 			spec('/repo/test/Feed.test.ts'),
@@ -101,7 +102,7 @@ describe('the canonical order', () => {
 });
 
 describe('the file sequencer', () => {
-	it('gives one seed one order however the crawl returned the files', async () => {
+	it('gives the same order for one seed, for every crawl order', async () => {
 		const orders = await Promise.all(
 			crawlOrders.map(async (files) =>
 				ids(
@@ -115,7 +116,7 @@ describe('the file sequencer', () => {
 		expect(new Set(orders.map((order) => order.join('|'))).size).toBe(1);
 	});
 
-	it('gives two seeds two orders', async () => {
+	it('gives a different order for a different seed', async () => {
 		const atSeven = ids(
 			await sequencer({ shuffle: true, seed: 7 }).sort([...crawled]),
 		);
@@ -125,7 +126,7 @@ describe('the file sequencer', () => {
 		expect(atSeven).not.toEqual(atEight);
 	});
 
-	it('shuffles, rather than handing back the order it sorted', async () => {
+	it('shuffles the files and does not return the sorted order', async () => {
 		const shuffled = ids(
 			await sequencer({ shuffle: true, seed: 7 }).sort([...crawled]),
 		);
@@ -133,19 +134,19 @@ describe('the file sequencer', () => {
 		expect([...shuffled].sort()).toEqual(canonical);
 	});
 
-	it('hands back the sorted order when shuffling is off', async () => {
+	it('returns the sorted order when shuffling is off and no seed is set', async () => {
 		const ordered = await sequencer({ shuffle: false }).sort([...crawled]);
 		expect(ids(ordered)).toEqual(canonical);
 	});
 
-	it('stays on the sorted order with shuffling off and a seed given', async () => {
+	it('returns the sorted order when shuffling is off and a seed is set', async () => {
 		const ordered = await sequencer({ shuffle: false, seed: 7 }).sort([
 			...crawled,
 		]);
 		expect(ids(ordered)).toEqual(canonical);
 	});
 
-	it('leaves the array it was handed alone', async () => {
+	it('does not change the array that the caller gives', async () => {
 		const handed = [...crawled];
 		await sequencer({ shuffle: true, seed: 7 }).sort(handed);
 		expect(ids(handed)).toEqual(ids(crawled));

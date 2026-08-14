@@ -93,7 +93,7 @@ describe('capability: WebDAV-Sync support', () => {
 		expect(report.status).toBe(207);
 	});
 
-	it('withholds the token and refuses the report when unsupported', async () => {
+	it('omits the token and refuses the report when unsupported', async () => {
 		const mock = server({ syncCollection: 'unsupported' });
 		const props = await collectionProps(mock, ['d:sync-token']);
 		expect(readMultistatus(props.text)[0]?.missing).toContain(
@@ -108,7 +108,7 @@ describe('capability: WebDAV-Sync support', () => {
 		expect(errorConditionIn(report.text)).toBe('d:supported-report');
 	});
 
-	it('rejects a token it issued once told to', async () => {
+	it('refuses a token that it issued after the test turns on rejectSyncToken', async () => {
 		const mock = server();
 		const initial = await mock.request({
 			url: mock.collectionUrl('alice', 'work'),
@@ -126,8 +126,8 @@ describe('capability: WebDAV-Sync support', () => {
 		expect(rejected.status).toBe(403);
 		expect(errorConditionIn(rejected.text)).toBe('d:valid-sync-token');
 
-		// An initial sync carries no token, so it is still answerable and is
-		// the fallback a client drops to.
+		// The first sync carries no token, so the server can still answer
+		// the request. A client falls back to a sync without a token.
 		const restart = await mock.request({
 			url: mock.collectionUrl('alice', 'work'),
 			method: 'REPORT',
@@ -138,7 +138,7 @@ describe('capability: WebDAV-Sync support', () => {
 });
 
 describe('capability: CTag behavior', () => {
-	it('advertises a CTag that moves with every write', async () => {
+	it('advertises a CTag that changes with every write', async () => {
 		const mock = server();
 		const before = mock.collectionCtag('alice', 'work');
 		mock.seedResource('alice', 'work', 'two.ics', icsEvent({ uid: 'two' }));
@@ -148,14 +148,14 @@ describe('capability: CTag behavior', () => {
 		expect(after).not.toBe(before);
 	});
 
-	it('omits the CTag when absent', async () => {
+	it('omits the CTag when the ctag capability is absent', async () => {
 		const mock = server({ ctag: 'absent' });
 		expect(mock.collectionCtag('alice', 'work')).toBeNull();
 		const props = await collectionProps(mock, ['cs:getctag']);
 		expect(readMultistatus(props.text)[0]?.missing).toContain('cs:getctag');
 	});
 
-	it('holds the CTag still across a write when frozen', async () => {
+	it('keeps the CTag the same across a write when the ctag capability is frozen', async () => {
 		const mock = server({ ctag: 'frozen' });
 		const before = readMultistatus(
 			(await collectionProps(mock, ['cs:getctag'])).text,
@@ -170,7 +170,7 @@ describe('capability: CTag behavior', () => {
 });
 
 describe('capability: precondition enforcement', () => {
-	it('refuses a stale If-Match when enforcing', async () => {
+	it('refuses an If-Match that names an old ETag when the server enforces it', async () => {
 		const mock = server();
 		const response = await mock.request({
 			url: mock.resourceUrl('alice', 'work', 'one.ics'),
@@ -181,7 +181,7 @@ describe('capability: precondition enforcement', () => {
 		expect(response.status).toBe(412);
 	});
 
-	it('accepts a stale If-Match when not enforcing', async () => {
+	it('accepts an If-Match that names an old ETag when the server does not enforce it', async () => {
 		const mock = server({ enforceIfMatch: false });
 		const response = await mock.request({
 			url: mock.resourceUrl('alice', 'work', 'one.ics'),
@@ -195,7 +195,7 @@ describe('capability: precondition enforcement', () => {
 		);
 	});
 
-	it('refuses If-None-Match on an existing resource when enforcing', async () => {
+	it('refuses If-None-Match on a resource that exists when the server enforces it', async () => {
 		const mock = server();
 		const response = await mock.request({
 			url: mock.resourceUrl('alice', 'work', 'one.ics'),
@@ -206,7 +206,7 @@ describe('capability: precondition enforcement', () => {
 		expect(response.status).toBe(412);
 	});
 
-	it('accepts If-None-Match on an existing resource when not enforcing', async () => {
+	it('accepts If-None-Match on a resource that exists when the server does not enforce it', async () => {
 		const mock = server({ enforceIfNoneMatch: false });
 		const response = await mock.request({
 			url: mock.resourceUrl('alice', 'work', 'one.ics'),
@@ -217,7 +217,7 @@ describe('capability: precondition enforcement', () => {
 		expect(response.status).toBe(204);
 	});
 
-	it('never matches a weak tag against If-Match', async () => {
+	it('never matches a weak ETag against If-Match', async () => {
 		const mock = server();
 		const current = mock.resourceEtag('alice', 'work', 'one.ics') ?? '';
 		const weak = await mock.request({
@@ -237,7 +237,7 @@ describe('capability: precondition enforcement', () => {
 		expect(strong.status).toBe(204);
 	});
 
-	it('honors an If-None-Match carrying entity tags', async () => {
+	it('applies an If-None-Match that names entity tags', async () => {
 		const mock = server();
 		const current = mock.resourceEtag('alice', 'work', 'one.ics') ?? '';
 		const refused = await mock.request({
@@ -257,7 +257,7 @@ describe('capability: precondition enforcement', () => {
 		expect(allowed.status).toBe(204);
 	});
 
-	it('refuses a DELETE whose If-Match no longer matches', async () => {
+	it('refuses a DELETE whose If-Match names an old ETag', async () => {
 		const mock = server();
 		const response = await mock.request({
 			url: mock.resourceUrl('alice', 'work', 'one.ics'),
@@ -270,14 +270,14 @@ describe('capability: precondition enforcement', () => {
 });
 
 describe('capability: ETag stability', () => {
-	it('reports the same ETag across fetches when stable', async () => {
+	it('reports the same ETag for each read when the etags capability is stable', async () => {
 		const mock = server();
 		const first = await get(mock);
 		const second = await get(mock);
 		expect(first.headers.ETag).toBe(second.headers.ETag);
 	});
 
-	it('mints a new ETag on every fetch when unstable', async () => {
+	it('makes a new ETag for each read when the etags capability is per-fetch', async () => {
 		const mock = server({ etags: 'per-fetch' });
 		const first = await get(mock);
 		const second = await get(mock);
@@ -286,12 +286,12 @@ describe('capability: ETag stability', () => {
 });
 
 describe('capability: response body stability', () => {
-	it('returns the stored octets when byte-stable', async () => {
+	it('returns the stored octets when the getBodies capability is byte-stable', async () => {
 		const mock = server();
 		expect((await get(mock)).text).toBe(EVENT);
 	});
 
-	it('returns a reformatted body when re-serializing', async () => {
+	it('formats the body again when the getBodies capability is re-serialized', async () => {
 		const mock = server({ getBodies: 're-serialized' });
 		const lowercased = EVENT.replace('SUMMARY:', 'summary:');
 		mock.seedResource('alice', 'work', 'one.ics', lowercased);
@@ -300,7 +300,7 @@ describe('capability: response body stability', () => {
 		expect(fetched.text).toBe(EVENT);
 	});
 
-	it('refolds a long line and leaves its content intact', async () => {
+	it('folds a long line again and keeps the content of the line', async () => {
 		const mock = server({ getBodies: 're-serialized' });
 		const summary = 'é'.repeat(60);
 		mock.seedResource(
@@ -319,7 +319,7 @@ describe('capability: response body stability', () => {
 });
 
 describe('determinism', () => {
-	it('answers the same sequence with the same bytes on a fresh server', async () => {
+	it('answers one request sequence with the same bytes on each new server', async () => {
 		const play = async (mock: MockCalDavServer): Promise<string[]> => {
 			const out: string[] = [];
 			out.push(
@@ -361,7 +361,7 @@ describe('capability: calendar-query UID filter', () => {
 		]);
 	});
 
-	it('names the filter unsupported rather than returning nothing', async () => {
+	it('says that it does not support the filter, and does not return an empty answer', async () => {
 		const mock = server({ calendarQueryUidFilter: false });
 		const response = await mock.request({
 			url: mock.collectionUrl('alice', 'work'),
@@ -383,7 +383,7 @@ describe('capability: calendar-query UID filter', () => {
 	});
 });
 
-describe('calendar-query: filters the mock does not implement', () => {
+describe('calendar-query: the filters that the mock does not implement', () => {
 	const query = async (
 		filters: readonly string[],
 	): Promise<{ status: number; condition: string | null }> => {
@@ -399,7 +399,7 @@ describe('calendar-query: filters the mock does not implement', () => {
 		};
 	};
 
-	it('refuses each of them by name rather than over-matching', async () => {
+	it('refuses each filter by name instead of ignoring it and matching every resource', async () => {
 		expect(
 			await query([
 				'<C:prop-filter name="SUMMARY"><C:text-match>nope</C:text-match></C:prop-filter>',
@@ -421,7 +421,7 @@ describe('calendar-query: filters the mock does not implement', () => {
 		});
 	});
 
-	it('names the element it could not apply', async () => {
+	it('names the element that it could not apply', async () => {
 		const mock = server();
 		const response = await mock.request({
 			url: mock.collectionUrl('alice', 'work'),
@@ -437,7 +437,7 @@ describe('calendar-query: filters the mock does not implement', () => {
 		expect(named?.getAttribute('name')).toBe('SUMMARY');
 	});
 
-	it('refuses a UID filter it cannot compare the way it was asked', async () => {
+	it('refuses a UID filter when it cannot use the collation that the request names', async () => {
 		const mock = server();
 		const response = await mock.request({
 			url: mock.collectionUrl('alice', 'work'),
@@ -451,7 +451,7 @@ describe('calendar-query: filters the mock does not implement', () => {
 		expect(errorConditionIn(response.text)).toBe('c:supported-collation');
 	});
 
-	it('compares a UID without regard to case when asked to', async () => {
+	it('ignores the case of a UID when the request asks for the ascii-casemap collation', async () => {
 		const mock = server();
 		const response = await mock.request({
 			url: mock.collectionUrl('alice', 'work'),
@@ -468,7 +468,7 @@ describe('calendar-query: filters the mock does not implement', () => {
 });
 
 describe('capability: managed attachments', () => {
-	it('advertises neither the property nor the compliance class when off', async () => {
+	it('does not advertise the property or the compliance class when the capability is off', async () => {
 		const mock = server();
 		const props = await mock.request({
 			url: mock.homeUrl('alice'),
@@ -488,7 +488,7 @@ describe('capability: managed attachments', () => {
 		);
 	});
 
-	it('advertises both when on', async () => {
+	it('advertises the property and the compliance class when the capability is on', async () => {
 		const mock = server({ managedAttachments: true });
 		const props = await mock.request({
 			url: mock.homeUrl('alice'),
@@ -532,7 +532,7 @@ describe('capability: managed attachments', () => {
 		expect(fetched.headers['Content-Type']).toBe('text/plain');
 	});
 
-	it('removes an attachment it minted and refuses one it did not', async () => {
+	it('removes an attachment that it made and refuses an attachment that it did not make', async () => {
 		const mock = server({ managedAttachments: true });
 		await addAttachment(mock, 'agenda text');
 
@@ -557,14 +557,14 @@ describe('capability: managed attachments', () => {
 		).toBe(404);
 	});
 
-	it('serves no attachment operation at all when off', async () => {
+	it('serves no attachment operation at all when the capability is off', async () => {
 		const mock = server();
 		const response = await addAttachment(mock, 'agenda text');
 		expect(response.status).toBe(405);
 		expect(mock.resourceIcs('alice', 'work', 'one.ics')).toBe(EVENT);
 	});
 
-	it('refuses a POST whose If-Match names a stale ETag', async () => {
+	it('refuses a POST whose If-Match names an old ETag', async () => {
 		const mock = server({ managedAttachments: true });
 		const stored = mock.resourceIcs('alice', 'work', 'one.ics');
 		const refused = await mock.request({
@@ -599,7 +599,7 @@ describe('capability: managed attachments', () => {
 		expect(accepted.status).toBe(201);
 	});
 
-	it('ignores a stale If-Match on a server that enforces none', async () => {
+	it('ignores an old ETag in If-Match on a server that enforces no precondition', async () => {
 		const mock = server({
 			managedAttachments: true,
 			enforceIfMatch: false,
@@ -616,7 +616,7 @@ describe('capability: managed attachments', () => {
 		expect(accepted.status).toBe(201);
 	});
 
-	it('takes the attachments of a resource away with the resource', async () => {
+	it('removes the attachments of a resource together with the resource', async () => {
 		const mock = server({ managedAttachments: true });
 		await addAttachment(mock, 'agenda text');
 		const deleted = await mock.request({
@@ -630,7 +630,7 @@ describe('capability: managed attachments', () => {
 		).toBe(404);
 	});
 
-	it('takes them away for a removal made out of band too', async () => {
+	it('removes the attachments when a test removes the resource without a request', async () => {
 		const mock = server({ managedAttachments: true });
 		await addAttachment(mock, 'agenda text');
 		expect(mock.removeResource('alice', 'work', 'one.ics')).toBe(true);
@@ -662,7 +662,7 @@ describe('capability: managed attachments', () => {
 		expect(stored).not.toContain('FILENAME');
 	});
 
-	it('leaves the bytes alone when a write only drops the property', async () => {
+	it('keeps the attachment bytes when a write only drops the ATTACH property', async () => {
 		const mock = server({ managedAttachments: true });
 		await addAttachment(mock, 'agenda text');
 		const rewritten = await mock.request({
@@ -680,7 +680,7 @@ describe('capability: managed attachments', () => {
 		).toBe(200);
 	});
 
-	it('puts a stored attachment out of reach while the capability is off', async () => {
+	it('serves no stored attachment while the capability is off', async () => {
 		const mock = server({ managedAttachments: true });
 		await addAttachment(mock, 'agenda text');
 		mock.configure({ managedAttachments: false });
@@ -699,7 +699,7 @@ describe('capability: managed attachments', () => {
 });
 
 describe('capability: fault injection', () => {
-	it('answers a matching request with the injected status the stated number of times', async () => {
+	it('answers a matching request with the given status for the given number of times', async () => {
 		const mock = server({
 			faults: [{ kind: 'status', method: 'PUT', status: 503, times: 2 }],
 		});
@@ -718,14 +718,14 @@ describe('capability: fault injection', () => {
 		expect(attempts).toStrictEqual([503, 503, 204]);
 	});
 
-	it('leaves other requests alone', async () => {
+	it('answers a request that matches no fault in the usual way', async () => {
 		const mock = server({
 			faults: [{ kind: 'status', pathContains: '/chores/', status: 500 }],
 		});
 		expect((await get(mock)).text).toBe(EVENT);
 	});
 
-	it('spends its budget only on requests it would have answered', async () => {
+	it('counts a request against the fault only when the server would have answered it', async () => {
 		const mock = server({
 			redirects: { '/.well-known/caldav': { location: '/principals/' } },
 			faults: [{ kind: 'status', status: 503, times: 1 }],
@@ -759,7 +759,7 @@ describe('capability: fault injection', () => {
 });
 
 describe('capability: discovery redirects', () => {
-	it('answers an injected hop with a redirect the client must follow', async () => {
+	it('answers a configured path with a redirect that the client must follow', async () => {
 		const mock = server({
 			redirects: {
 				'/.well-known/caldav': {
@@ -777,7 +777,7 @@ describe('capability: discovery redirects', () => {
 		expect(response.headers.Location).toBe(mock.principalUrl('alice'));
 	});
 
-	it('serves nothing at the well-known path without a redirect', async () => {
+	it('serves nothing at the well-known path when no redirect is configured', async () => {
 		const mock = server();
 		const response = await mock.request({
 			url: mock.wellKnownUrl,

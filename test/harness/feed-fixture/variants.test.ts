@@ -46,15 +46,18 @@ const standup: FeedEventSpec = {
 	start: timedAt(REFERENCE_TIME + HOUR_MS),
 };
 
-/** An event the generator serves with no UID line at all. */
+/**
+ * An event that declares no UID. The fixture serves this event with no UID
+ * line.
+ */
 const anonymous: FeedEventSpec = {
 	id: 'anonymous',
 	summary: 'Anonymous',
 	start: timedAt(REFERENCE_TIME + 2 * HOUR_MS),
 };
 
-describe('generated calendar bodies', () => {
-	it('serves a complete calendar carrying every event', () => {
+describe('calendar bodies that the fixture generates', () => {
+	it('serves a complete calendar that contains every event', () => {
 		const text = bodyText(events([meeting, standup]), 1);
 		expect(text.startsWith('BEGIN:VCALENDAR\r\n')).toBe(true);
 		expect(text.endsWith('END:VCALENDAR\r\n')).toBe(true);
@@ -64,7 +67,7 @@ describe('generated calendar bodies', () => {
 		expect(text).toContain('DTEND:20260810T130000Z');
 	});
 
-	it('folds and CRLF-terminates what it generates', () => {
+	it('folds long lines and ends every line with CRLF', () => {
 		const wordy: FeedEventSpec = {
 			...meeting,
 			summary: 'Quarterly planning '.repeat(12),
@@ -84,12 +87,12 @@ describe('generated calendar bodies', () => {
 		expect(text).not.toContain('BEGIN:VEVENT');
 	});
 
-	it('omits the UID line for an event declaring no UID', () => {
+	it('serves no UID line for an event that declares no UID', () => {
 		const text = bodyText(events([anonymous, standup]), 1);
 		expect(linesMatching(text, 'UID:')).toEqual(['UID:standup@feed.test']);
 	});
 
-	it('serves one UID twice when two events declare it', () => {
+	it('serves one UID twice when two events declare the same UID', () => {
 		const twin: FeedEventSpec = {
 			...standup,
 			id: 'twin',
@@ -103,10 +106,10 @@ describe('generated calendar bodies', () => {
 	});
 });
 
-describe('per-fetch misbehavior', () => {
+describe('feeds that misbehave from one poll to the next', () => {
 	const feed = events([meeting, standup], { dtstampChurn: true });
 
-	it('churns DTSTAMP across polls and holds everything else', () => {
+	it('writes a new DTSTAMP each poll and changes nothing else', () => {
 		const first = bodyText(feed, 1);
 		const second = bodyText(feed, 2);
 		expect(linesMatching(first, 'DTSTAMP:')).toEqual([
@@ -122,12 +125,12 @@ describe('per-fetch misbehavior', () => {
 		expect(withoutStamps(second)).toBe(withoutStamps(first));
 	});
 
-	it('holds DTSTAMP still when the feed does not churn', () => {
+	it('serves the same body each poll when DTSTAMP does not change', () => {
 		const steady = events([meeting, standup]);
 		expect(bodyText(steady, 7)).toBe(bodyText(steady, 1));
 	});
 
-	it('re-mints UIDs per poll, leaving no trace of the declared UID', () => {
+	it('mints new UIDs each poll, and serves no declared UID', () => {
 		const reminting = events([meeting, standup], { uidReminting: true });
 		const first = linesMatching(bodyText(reminting, 1), 'UID:');
 		const second = linesMatching(bodyText(reminting, 2), 'UID:');
@@ -139,7 +142,7 @@ describe('per-fetch misbehavior', () => {
 		expect(linesMatching(bodyText(reminting, 1), 'UID:')).toEqual(first);
 	});
 
-	it('mints one UID for two events declaring one, poll after poll', () => {
+	it('mints one UID for two events that declare one UID, each poll', () => {
 		const twin: FeedEventSpec = {
 			...standup,
 			id: 'twin',
@@ -161,7 +164,7 @@ describe('per-fetch misbehavior', () => {
 		}
 	});
 
-	it('leaves a UID-less event UID-less under re-minting', () => {
+	it('mints no UID for an event that declares no UID', () => {
 		const text = bodyText(events([anonymous], { uidReminting: true }), 3);
 		expect(linesMatching(text, 'UID:')).toHaveLength(0);
 	});
@@ -170,7 +173,7 @@ describe('per-fetch misbehavior', () => {
 describe('bodies that are not a calendar', () => {
 	const feed = events([meeting, standup]);
 
-	it('cuts a truncated body mid-file, as a prefix of the whole', () => {
+	it('serves the first half of the whole body, and cuts off the end', () => {
 		const whole = renderVariant(feed, context(1)).bytes;
 		const cut = renderVariant(truncated(feed), context(1)).bytes;
 		expect(cut.byteLength).toBe(Math.floor(whole.byteLength / 2));
@@ -178,7 +181,7 @@ describe('bodies that are not a calendar', () => {
 		expect(decoder.decode(cut)).not.toContain('END:VCALENDAR');
 	});
 
-	it('serves byte-stable truncated bodies for the same poll', () => {
+	it('serves the same octets for a truncated body at the same poll', () => {
 		const at = truncated(feed, keepOctets(120));
 		expect([...renderVariant(at, context(4)).bytes]).toEqual([
 			...renderVariant(at, context(4)).bytes,
@@ -186,7 +189,7 @@ describe('bodies that are not a calendar', () => {
 		expect(renderVariant(at, context(4)).bytes.byteLength).toBe(120);
 	});
 
-	it('clamps a cut past the end of the body', () => {
+	it('holds the cut point between zero and the length of the body', () => {
 		const whole = renderVariant(feed, context(1)).bytes;
 		const past = renderVariant(
 			truncated(feed, keepOctets(whole.byteLength * 4)),
@@ -199,7 +202,7 @@ describe('bodies that are not a calendar', () => {
 		).toBe(0);
 	});
 
-	it('serves a login wall as HTML under a 200, byte-stable', () => {
+	it('serves the same login-wall HTML, with status 200, each poll', () => {
 		const wall = renderVariant(loginWall(), context(1));
 		expect(wall.status).toBe(200);
 		expect(wall.headers['content-type']).toBe('text/html; charset=utf-8');
@@ -210,7 +213,7 @@ describe('bodies that are not a calendar', () => {
 		expect(decoder.decode(wall.bytes)).not.toContain('BEGIN:VCALENDAR');
 	});
 
-	it('passes raw bytes through untouched', () => {
+	it('serves raw bytes with no change', () => {
 		const bytes = Uint8Array.from([0x42, 0x00, 0xff, 0xfe, 0x0a]);
 		const served = renderVariant(
 			raw(bytes, {
@@ -224,7 +227,7 @@ describe('bodies that are not a calendar', () => {
 		expect(served.headers['content-type']).toBe('application/octet-stream');
 	});
 
-	it('passes raw text through as the calendar it claims to be', () => {
+	it('serves raw text with no change, and labels the body a calendar', () => {
 		const stored = 'BEGIN:VCALENDAR\r\nVERSION:2.0\r\nEND:VCALENDAR\r\n';
 		const served = renderVariant(raw(stored), context(1));
 		expect(decoder.decode(served.bytes)).toBe(stored);

@@ -1,13 +1,16 @@
 /**
- * In-memory vault fake. Files live in a map, every operation settles
- * without yielding to the event loop, and each mutating operation
- * delivers exactly one file event to every subscriber before its promise
- * settles, in the order the operations ran.
+ * This class is a fake of the vault, and it keeps the files in memory.
+ * The files live in a map. Every operation settles without a yield to
+ * the event loop. Each operation that changes a file delivers exactly
+ * one file event to every subscriber, before the promise of that
+ * operation settles. The events come in the order in which the
+ * operations ran.
  *
- * The guarantee is determinism: the same sequence of operations against a
- * fresh fake always leaves the same files holding the same bytes and emits
- * the same events. It is not a claim that a real Obsidian vault produces
- * those bytes; that equivalence is measured against real installations.
+ * The fake gives one guarantee: the fake is deterministic. The same
+ * sequence of operations against a fresh fake always leaves the same
+ * files with the same bytes, and always emits the same events. The fake
+ * does not claim that a real Obsidian vault writes those bytes. Runs
+ * against real installations measure that equivalence.
  */
 
 import type {
@@ -23,7 +26,10 @@ export class FakeVault implements VaultPort {
 	private readonly files = new Map<string, string>();
 	private readonly handlers = new Set<FileEventHandler>();
 
-	/** Seeds the vault. Seeding is setup, not an operation: no events. */
+	/**
+	 * Seeds the vault with the given files. A seed is setup and not an
+	 * operation. Therefore the constructor emits no event.
+	 */
 	constructor(initialFiles: Readonly<Record<string, string>> = {}) {
 		for (const [path, content] of Object.entries(initialFiles)) {
 			this.files.set(assertPath(path), content);
@@ -35,8 +41,12 @@ export class FakeVault implements VaultPort {
 	}
 
 	/**
-	 * Creates or overwrites. A first write emits `created` and every later
-	 * write emits `modified`, whether or not the bytes changed.
+	 * Creates the file, or writes over a file that is already there. A
+	 * write to a path that the vault does not hold emits `created`. A
+	 * write to a path that the vault already holds emits `modified`,
+	 * whether or not the bytes changed. The constructor puts the given
+	 * files into the vault. Therefore the first write to a path that the
+	 * constructor supplied emits `modified`.
 	 */
 	write(path: string, content: string): Promise<void> {
 		return settle(() => {
@@ -60,10 +70,14 @@ export class FakeVault implements VaultPort {
 			const content = this.requireFile(path);
 			assertPath(newPath);
 			if (newPath === path) {
-				throw new Error(`fake vault: rename to the same path: ${path}`);
+				throw new Error(
+					`fake vault: the new path is the same path as the old path: ${path}`,
+				);
 			}
 			if (this.files.has(newPath)) {
-				throw new Error(`fake vault: rename target exists: ${newPath}`);
+				throw new Error(
+					`fake vault: the rename target exists: ${newPath}`,
+				);
 			}
 			this.files.delete(path);
 			this.files.set(newPath, content);
@@ -72,8 +86,9 @@ export class FakeVault implements VaultPort {
 	}
 
 	/**
-	 * Removes the file from the vault and emits `deleted`. The fake models
-	 * what the vault shows, not where the bytes go.
+	 * Removes the file from the vault. The operation emits `deleted`. The
+	 * fake models what the vault shows. The fake does not model where the
+	 * bytes go.
 	 */
 	trash(path: string): Promise<void> {
 		return settle(() => {
@@ -93,9 +108,11 @@ export class FakeVault implements VaultPort {
 	}
 
 	/**
-	 * Rewrites the block through the deterministic writer and emits
-	 * `modified`, whether or not the update changed anything. A note whose
-	 * block does not read as a mapping is refused and left untouched.
+	 * Rewrites the frontmatter block of the note through the
+	 * deterministic writer. The operation emits `modified`, whether or
+	 * not the update changed anything. If the frontmatter block does not
+	 * read as a mapping, the operation refuses the note and changes
+	 * nothing in that note.
 	 */
 	updateFrontmatter(
 		path: string,
@@ -109,13 +126,15 @@ export class FakeVault implements VaultPort {
 	}
 
 	/**
-	 * Subscribes to file events. Handlers run in subscription order. A
-	 * handler unsubscribed by an earlier handler in the same delivery is
-	 * skipped; a handler that unsubscribes itself still receives the event
-	 * it is being delivered. A handler that throws rejects the operation's
-	 * promise even though the mutation has already landed — the vault does
-	 * not roll back — and handlers after the throwing one are skipped.
-	 * Registering one function twice registers it once.
+	 * Subscribes the handler to the file events. The handlers run in the
+	 * order of subscription. If a handler unsubscribes a later handler
+	 * during the same delivery, the vault does not call that later
+	 * handler. A handler that unsubscribes itself still receives the
+	 * event that the vault delivers at that moment. If a handler throws,
+	 * the promise of the operation rejects, and the vault does not call
+	 * the handlers after the handler that threw. The change stays: the
+	 * vault does not undo the change. If you subscribe one function two
+	 * times, the vault holds that function one time.
 	 */
 	onFileEvent(handler: FileEventHandler): Unsubscribe {
 		this.handlers.add(handler);
@@ -124,13 +143,14 @@ export class FakeVault implements VaultPort {
 		};
 	}
 
-	/** Paths currently in the vault, sorted by code unit. */
+	/** The paths in the vault now, in the order of their code units. */
 	paths(): readonly string[] {
 		return [...this.files.keys()].sort(comparePaths);
 	}
 
 	/**
-	 * The whole vault as one string, framed per file in path order. Two
+	 * The whole vault as one string. The string holds the files in path
+	 * order, and a header line comes before the content of each file. Two
 	 * vaults hold the same bytes exactly when their snapshots are equal.
 	 */
 	snapshot(): string {
@@ -146,7 +166,7 @@ export class FakeVault implements VaultPort {
 	private requireFile(path: string): string {
 		const content = this.files.get(assertPath(path));
 		if (content === undefined) {
-			throw new Error(`fake vault: no file at ${path}`);
+			throw new Error(`fake vault: this vault holds no file at ${path}`);
 		}
 		return content;
 	}
@@ -172,13 +192,15 @@ function settle<T>(operation: () => T): Promise<T> {
 
 function assertPath(path: string): string {
 	if (path === '') {
-		throw new Error('fake vault: path is empty');
+		throw new Error('fake vault: the path is empty');
 	}
 	if (path.startsWith('/')) {
-		throw new Error(`fake vault: path is not vault-relative: ${path}`);
+		throw new Error(
+			`fake vault: the path is not relative to the vault root: ${path}`,
+		);
 	}
 	if (path.includes('\n')) {
-		throw new Error('fake vault: path holds a line break');
+		throw new Error('fake vault: the path holds a line break');
 	}
 	return path;
 }

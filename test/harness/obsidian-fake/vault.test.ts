@@ -9,7 +9,7 @@ import {
 } from './index';
 
 const leaveUnchanged = (): void => {
-	/* an identity update */
+	/* The body is empty on purpose: this update changes no field. */
 };
 
 function recordEvents(vault: FakeVault): VaultFileEvent[] {
@@ -21,14 +21,14 @@ function recordEvents(vault: FakeVault): VaultFileEvent[] {
 }
 
 describe('fake vault files', () => {
-	it('seeds without emitting anything', () => {
+	it('takes the files that the caller gives to the constructor, and sends no event for them', () => {
 		const vault = new FakeVault({ 'a.md': 'one', 'b.md': 'two' });
 		const events = recordEvents(vault);
 		expect(vault.paths()).toEqual(['a.md', 'b.md']);
 		expect(events).toEqual([]);
 	});
 
-	it('reads back what was written', async () => {
+	it('reads back the content that the vault wrote to the file', async () => {
 		const vault = new FakeVault();
 		await vault.write('notes/a.md', 'one');
 		expect(await vault.read('notes/a.md')).toBe('one');
@@ -36,7 +36,7 @@ describe('fake vault files', () => {
 		expect(await vault.exists('notes/b.md')).toBe(false);
 	});
 
-	it('moves a file on rename and takes it out of the vault on trash', async () => {
+	it('moves the file to the new path when the vault renames the file, and removes the file when the vault trashes the file', async () => {
 		const vault = new FakeVault({ 'a.md': 'one' });
 		await vault.rename('a.md', 'b.md');
 		expect(vault.paths()).toEqual(['b.md']);
@@ -45,7 +45,7 @@ describe('fake vault files', () => {
 		expect(vault.paths()).toEqual([]);
 	});
 
-	it('refuses operations that have no sound answer', async () => {
+	it('refuses each operation that has no correct answer, and does not change the list of paths', async () => {
 		const vault = new FakeVault({ 'a.md': 'one', 'b.md': 'two' });
 		await expect(vault.read('missing.md')).rejects.toThrow(/no file at/);
 		await expect(vault.trash('missing.md')).rejects.toThrow(/no file at/);
@@ -58,12 +58,12 @@ describe('fake vault files', () => {
 		await expect(vault.rename('a.md', 'a.md')).rejects.toThrow(/same path/);
 		await expect(vault.write('', 'x')).rejects.toThrow(/path is empty/);
 		await expect(vault.write('/a.md', 'x')).rejects.toThrow(
-			/not vault-relative/,
+			/not relative to the vault root/,
 		);
 		expect(vault.paths()).toEqual(['a.md', 'b.md']);
 	});
 
-	it('sorts a snapshot by path and frames each file', () => {
+	it('puts the files in path order in the snapshot and writes a header line before each file', () => {
 		const vault = new FakeVault({ 'b.md': 'two', 'a.md': 'one' });
 		expect(vault.snapshot()).toBe(
 			'=== a.md (3 chars) ===\none\n=== b.md (3 chars) ===\ntwo',
@@ -72,7 +72,7 @@ describe('fake vault files', () => {
 });
 
 describe('fake vault events', () => {
-	it('names creation, modification, rename, and deletion in operation order', async () => {
+	it('reports a new file, a changed file, a rename, and a delete, in the order of the operations', async () => {
 		const vault = new FakeVault();
 		const events = recordEvents(vault);
 		await vault.write('a.md', 'one');
@@ -89,7 +89,7 @@ describe('fake vault events', () => {
 		]);
 	});
 
-	it('delivers before the operation settles', async () => {
+	it('delivers the event before the promise of the operation settles', async () => {
 		const vault = new FakeVault();
 		const events = recordEvents(vault);
 		const pending = vault.write('a.md', 'one');
@@ -97,7 +97,7 @@ describe('fake vault events', () => {
 		await pending;
 	});
 
-	it('emits nothing for an operation that fails', async () => {
+	it('sends no event for an operation that fails', async () => {
 		const vault = new FakeVault({ 'a.md': 'one' });
 		const events = recordEvents(vault);
 		await expect(vault.trash('missing.md')).rejects.toThrow();
@@ -107,7 +107,7 @@ describe('fake vault events', () => {
 		expect(events).toEqual([]);
 	});
 
-	it('runs handlers in subscription order and stops on unsubscribe', async () => {
+	it('runs the handlers in the order of subscription, and stops a handler when the caller unsubscribes it', async () => {
 		const vault = new FakeVault();
 		const log: string[] = [];
 		const stopFirst = vault.onFileEvent(() => log.push('first'));
@@ -119,7 +119,7 @@ describe('fake vault events', () => {
 		expect(log).toEqual(['first', 'second', 'second']);
 	});
 
-	it('withholds an event from a handler that unsubscribes during delivery', async () => {
+	it('sends no event to a handler that another handler unsubscribed during the same delivery', async () => {
 		const vault = new FakeVault();
 		const log: string[] = [];
 		let stopSecond: (() => void) | null = null;
@@ -132,7 +132,7 @@ describe('fake vault events', () => {
 		expect(log).toEqual(['first']);
 	});
 
-	it('delivers events from an operation a handler starts, before returning', async () => {
+	it('delivers the events of an operation that a handler starts, before the first operation returns', async () => {
 		const vault = new FakeVault();
 		const log: string[] = [];
 		vault.onFileEvent((event) => {
@@ -147,7 +147,7 @@ describe('fake vault events', () => {
 });
 
 describe('fake vault frontmatter', () => {
-	it('reads a mapping, and nothing where there is none to read', async () => {
+	it('reads the fields of a mapping, and returns null when there is no mapping to read', async () => {
 		const vault = new FakeVault({
 			'minimal.md': noteFixture('minimal').content,
 			'none.md': noteFixture('no-frontmatter').content,
@@ -165,7 +165,7 @@ describe('fake vault frontmatter', () => {
 		expect(await vault.frontmatter('empty.md')).toEqual({});
 	});
 
-	it('updates through the writer and reports a modification', async () => {
+	it('changes the fields through the writer and reports a changed file', async () => {
 		const vault = new FakeVault({
 			'minimal.md': noteFixture('minimal').content,
 		});
@@ -181,7 +181,7 @@ describe('fake vault frontmatter', () => {
 		expect(events).toEqual([{ kind: 'modified', path: 'minimal.md' }]);
 	});
 
-	it('leaves a note it refuses exactly as it found it', async () => {
+	it('leaves the bytes of the note unchanged when the vault refuses the update', async () => {
 		const note = noteFixture('unparseable').content;
 		const vault = new FakeVault({ 'broken.md': note });
 		await expect(
@@ -192,7 +192,7 @@ describe('fake vault frontmatter', () => {
 		expect(await vault.read('broken.md')).toBe(note);
 	});
 
-	it('round-trips every fixture in the corpus', async () => {
+	it('keeps the fields and the body of each note in the corpus, and makes the same bytes on a second update', async () => {
 		for (const note of NOTE_FIXTURES) {
 			const vault = new FakeVault({ 'note.md': note.content });
 			const before = await vault.frontmatter('note.md');
@@ -261,18 +261,18 @@ describe('fake vault determinism', () => {
 	});
 });
 
-describe('fake vault handler failures', () => {
-	it('rejects the operation after the mutation landed, skipping later handlers', async () => {
+describe('fake vault handlers that fail', () => {
+	it('rejects the operation but keeps the change, and skips the handlers after the one that failed', async () => {
 		const vault = new FakeVault();
 		const seen: string[] = [];
 		vault.onFileEvent(() => {
-			throw new Error('handler exploded');
+			throw new Error('the handler failed');
 		});
 		vault.onFileEvent((event) => {
 			seen.push(event.kind);
 		});
 		await expect(vault.write('a.md', 'new')).rejects.toThrow(
-			'handler exploded',
+			'the handler failed',
 		);
 		await expect(vault.read('a.md')).resolves.toBe('new');
 		expect(seen).toEqual([]);

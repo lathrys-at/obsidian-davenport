@@ -1,32 +1,39 @@
 import type { TimezoneName } from './event';
 
 /**
- * Ownership mode: every calendar has exactly one, set at registration and
- * changeable in settings. Newly added CalDAV calendars default to
- * remote-owned — the safe default is the one that cannot write. Feed
- * calendars are remote-owned unconditionally, with no configuration path
- * out.
+ * Which side owns a calendar. Every calendar has exactly one mode. The
+ * plugin sets the mode when it registers the calendar, and the user can
+ * change the mode in the settings.
+ *
+ * A new CalDAV calendar starts as `remote-owned`. The `remote-owned` mode
+ * is the one mode that cannot write to the server. A mode that cannot
+ * write to the server is the safe start. A feed calendar is always
+ * `remote-owned`, and the settings give no way out of that mode.
  */
 export type OwnershipMode = 'vault-owned' | 'remote-owned' | 'bidirectional';
 
 export type CalendarSource = 'caldav' | 'feed';
 
 /**
- * Component types a collection accepts; the ecosystem convention is
- * separate collections for events and tasks.
+ * The component types that one collection accepts. The convention in the
+ * calendar ecosystem is one collection for events and another collection
+ * for tasks.
  */
 export type ComponentType = 'VEVENT' | 'VTODO';
 
 /**
- * Registry entry. The friendly name lives here and never in a record:
- * names resolve from the collection href at read time, so a rename
- * rewrites zero records. Per-calendar options accrete with their
- * features.
+ * One entry in the calendar registry. The name that the user sees lives
+ * here, and never in a record. The plugin resolves that name from the
+ * collection href at read time, so a rename rewrites no record at all.
+ * More per-calendar options join this entry as their features land.
  */
 export interface CalendarRegistryEntry {
 	readonly name: string;
 	readonly source: CalendarSource;
-	/** Settings id of the owning account; absent for feeds. */
+	/**
+	 * The id of the account that owns this calendar, as the settings hold
+	 * it. A feed calendar has no account.
+	 */
 	readonly accountId?: string;
 	readonly collectionHref: string;
 	readonly mode: OwnershipMode;

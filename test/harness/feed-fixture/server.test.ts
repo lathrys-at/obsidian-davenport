@@ -44,7 +44,7 @@ async function pollBytes(fixture: FeedFixture): Promise<number[]> {
 }
 
 describe('scripted polls', () => {
-	it('serves the variant declared for each poll, in order', async () => {
+	it('serves the variant that the script names for each poll, in order', async () => {
 		const fixture = fixtureFor({
 			polls: [
 				events([meeting, standup]),
@@ -62,7 +62,7 @@ describe('scripted polls', () => {
 		expect(fixture.pollsServed(FEED_URL)).toBe(4);
 	});
 
-	it('names a single poll against a base run', async () => {
+	it('serves a different variant at one named poll of a base run', async () => {
 		const fixture = fixtureFor({
 			polls: scriptedPolls({
 				base: events([meeting]),
@@ -84,20 +84,20 @@ describe('scripted polls', () => {
 		]);
 	});
 
-	it('refuses a named poll outside the scripted run', () => {
+	it('refuses a named poll outside the run, and a run with no polls', () => {
 		expect(() =>
 			scriptedPolls({
 				base: emptyCalendar(),
 				count: 2,
 				at: { 5: loginWall() },
 			}),
-		).toThrow(/outside the scripted 1\.\.2/);
+		).toThrow(/outside the scripted run 1\.\.2/);
 		expect(() =>
 			scriptedPolls({ base: emptyCalendar(), count: 0 }),
 		).toThrow(/at least one poll/);
 	});
 
-	it('repeats the last poll once the script runs out', async () => {
+	it('serves the last variant again after the script runs out', async () => {
 		const fixture = fixtureFor({
 			polls: [loginWall(), events([meeting])],
 		});
@@ -107,7 +107,7 @@ describe('scripted polls', () => {
 		expect(await poll(fixture)).toBe(second);
 	});
 
-	it('serves a declared variant beyond the script', async () => {
+	it('serves the variant that the beyond option declares, after the script runs out', async () => {
 		const fixture = fixtureFor({
 			polls: [events([meeting])],
 			beyond: loginWall(),
@@ -116,7 +116,7 @@ describe('scripted polls', () => {
 		expect(await poll(fixture)).toContain('Sign in required');
 	});
 
-	it('rejects with a script error once an exhausting script runs out', async () => {
+	it('rejects with a script error when a script set to exhausted runs out', async () => {
 		const fixture = fixtureFor({
 			polls: [events([meeting])],
 			beyond: 'exhausted',
@@ -129,7 +129,7 @@ describe('scripted polls', () => {
 		expect(fixture.log).toHaveLength(1);
 	});
 
-	it('carries the script error through a transport wrapping the fixture', async () => {
+	it('carries the script error through a transport that wraps the fixture', async () => {
 		const fixture = fixtureFor({
 			polls: [events([meeting])],
 			beyond: 'exhausted',
@@ -145,7 +145,7 @@ describe('scripted polls', () => {
 		).rejects.toBeInstanceOf(FeedScriptError);
 	});
 
-	it('refuses a script with a hole in its run', () => {
+	it('refuses a script with a gap in its run', () => {
 		const polls: FeedVariant[] = [];
 		polls[2] = events([meeting]);
 		expect(() => fixtureFor({ polls })).toThrow(FeedScriptError);
@@ -154,7 +154,7 @@ describe('scripted polls', () => {
 		);
 	});
 
-	it('refuses a feed declaring no polls', () => {
+	it('refuses a feed that declares no polls', () => {
 		expect(() => fixtureFor({ polls: [] })).toThrow(/declares no polls/);
 		expect(() => fixtureFor({ polls: [], beyond: 'exhausted' })).toThrow(
 			/declares no polls/,
@@ -177,7 +177,7 @@ describe('determinism', () => {
 		],
 	});
 
-	it('serves identical octets from identical scripts', async () => {
+	it('serves the same octets from two identical scripts', async () => {
 		const one = fixtureFor(script());
 		const other = fixtureFor(script());
 		for (let index = 0; index < 5; index++) {
@@ -195,7 +195,7 @@ describe('determinism', () => {
 		expect(fixture.log).toHaveLength(1);
 	});
 
-	it('churns and re-mints from the poll counter, not from elapsed time', async () => {
+	it('churns DTSTAMP and re-mints UIDs from the poll counter, and not from elapsed time', async () => {
 		const fixture = fixtureFor(script());
 		const first = await poll(fixture);
 		fixture.reset();
@@ -203,8 +203,8 @@ describe('determinism', () => {
 	});
 });
 
-describe('per-poll content deltas', () => {
-	it('adds, removes, modifies, and reschedules between polls', async () => {
+describe('content that changes between polls', () => {
+	it('adds, removes, modifies, and reschedules an event between polls', async () => {
 		const first = [meeting, standup];
 		const second = applyFeedDeltas(first, [
 			{ kind: 'remove', id: 'standup' },
@@ -243,7 +243,7 @@ describe('per-poll content deltas', () => {
 		expect(three).toContain('DTSTART:20260812T120000Z');
 	});
 
-	it('serves a decade-spanning corpus whole on every poll', async () => {
+	it('serves a corpus that spans a decade, and serves it whole on every poll', async () => {
 		const corpus = decadeSpanningCorpus({
 			referenceTime: REFERENCE_TIME,
 			perYear: 2,
@@ -256,10 +256,10 @@ describe('per-poll content deltas', () => {
 	});
 });
 
-describe('the transport seam', () => {
+describe('behavior at the transport port', () => {
 	const script: FeedScript = { polls: [events([meeting])] };
 
-	it('answers an unscripted URL with 404 and polls nothing', async () => {
+	it('answers 404 for a URL with no script, and serves no poll', async () => {
 		const fixture = fixtureFor(script);
 		const response = await fixture.request({
 			url: 'https://feeds.example.test/other.ics',
@@ -268,7 +268,7 @@ describe('the transport seam', () => {
 		expect(fixture.pollsServed(FEED_URL)).toBe(0);
 	});
 
-	it('answers a non-GET with 405 and polls nothing', async () => {
+	it('answers 405 for a method other than GET, and serves no poll', async () => {
 		const fixture = fixtureFor(script);
 		const response = await fixture.request({
 			url: FEED_URL,
@@ -289,7 +289,7 @@ describe('the transport seam', () => {
 		);
 	});
 
-	it('hands out a fresh buffer each poll', async () => {
+	it('hands out a new buffer on each poll', async () => {
 		const fixture = fixtureFor({
 			polls: [raw(Uint8Array.from([1, 2, 3]))],
 		});
@@ -299,7 +299,7 @@ describe('the transport seam', () => {
 		expect([...new Uint8Array(second.arrayBuffer)]).toEqual([1, 2, 3]);
 	});
 
-	it('logs every request with the poll it served', async () => {
+	it('logs every request with the number of the poll that it served', async () => {
 		const fixture = fixtureFor(script);
 		await fixture.request({ url: FEED_URL });
 		await fixture.request({ url: FEED_URL, method: 'DELETE' });
@@ -311,7 +311,7 @@ describe('the transport seam', () => {
 		]);
 	});
 
-	it('keeps a poll counter per feed', async () => {
+	it('keeps one poll counter for each feed', async () => {
 		const other = 'https://feeds.example.test/holidays.ics';
 		const fixture = createFeedFixture({
 			referenceTime: REFERENCE_TIME,
@@ -329,7 +329,7 @@ describe('the transport seam', () => {
 });
 
 describe('variant reuse', () => {
-	it('renders a shared variant identically wherever it appears', async () => {
+	it('renders one shared variant the same way at each place it appears', async () => {
 		const shared: FeedVariant = events([meeting]);
 		const fixture = fixtureFor({ polls: [shared, loginWall(), shared] });
 		const first = await poll(fixture);

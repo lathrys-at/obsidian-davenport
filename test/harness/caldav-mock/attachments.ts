@@ -1,33 +1,43 @@
 /**
- * Managed attachments, the part a suite can exercise: a POST against a
- * calendar object resource adds, replaces, or removes an attachment. The
- * server stores the bytes, rewrites the resource's ATTACH property, and
- * serves the attachment back at the URI it minted, so the capability is
- * observable in the resource and not only in what the server advertises.
+ * Managed attachments, limited to the part that a test suite can use. A
+ * POST to a calendar object resource adds, replaces, or removes an
+ * attachment. The server keeps the bytes, rewrites the ATTACH property of
+ * the resource, and serves the attachment again at the URI that the
+ * server made. Thus a test suite sees the capability in the resource, and
+ * not only in what the server advertises.
  *
- * Three rules bound an attachment's life, because a suite asserting on the
- * attachment path is entitled to know them rather than discover them:
+ * Three rules control the life of an attachment. A test suite that
+ * asserts on the attachment path needs these three rules. Therefore this
+ * comment gives the rules, and the suite does not have to find them by
+ * experiment.
  *
- * An attachment POST rewrites the resource, so it is a write like a PUT
- * and carries the same `If-Match` gate where the run enforces one. A
- * refused POST stores no bytes, rewrites nothing, and enters nothing in
- * the scheduling record, since nothing left the server.
+ * First rule: an attachment POST rewrites the resource. Thus the POST is
+ * a write, as a PUT is a write, and the POST obeys the same `If-Match`
+ * gate where the run enforces one. A refused POST keeps no bytes,
+ * rewrites nothing, and adds no entry to the scheduling record, because
+ * nothing left the server.
  *
- * An attachment belongs to the resource it was minted against and does not
- * outlive it: removing that resource, by request or out of band, removes
- * its attachments and their URIs answer 404 from then on. A write that
- * merely drops the ATTACH property is not a removal — the bytes stay
- * reachable, as they do on a server that collects them on its own schedule.
+ * Second rule: an attachment belongs to the resource that the server made
+ * the attachment for, and the attachment does not stay after that
+ * resource. The removal of that resource can come from a request, or from
+ * a change that does not go through a request. In both cases the server
+ * also removes the attachments of that resource, and the URIs of those
+ * attachments answer 404 from that time. A write that only drops the
+ * ATTACH property does not remove the attachment: the bytes stay
+ * available, as they stay available on a server that collects unused
+ * bytes on its own schedule.
  *
- * Turning the capability off is the server not having it: the store is kept
- * but nothing reaches it, so a stored attachment answers 404 for as long as
- * the capability is off and is reachable again when it comes back. Nothing
- * is deleted by the toggle, so a suite can turn the capability off mid-run
- * without the state under it changing.
+ * Third rule: when the capability is off, the server behaves as a server
+ * that does not have the capability. The server keeps the store, but no
+ * request reaches the store. Thus a stored attachment answers 404 for as
+ * long as the capability is off, and the same attachment is available
+ * again when the capability comes on. The switch deletes nothing. Thus a
+ * test suite can turn the capability off during a run, and the stored
+ * data stays the same.
  *
- * Boundaries: there are no size or count limits, no per-attendee access
- * control, and an attachment belongs to the whole resource rather than to
- * one recurrence instance.
+ * Limits: the server applies no size limit and no count limit, the server
+ * gives no access control per attendee, and an attachment belongs to the
+ * full resource and not to one recurrence instance.
  */
 
 import type { MockServerCapabilities } from './capabilities';
@@ -91,8 +101,9 @@ export function handleAttachmentPost(
 }
 
 /**
- * The bytes stored at an attachment URI. A server without the capability
- * has no such URI, so one is served only while the capability is on.
+ * Serves the bytes that the server keeps at an attachment URI. A server
+ * without the capability has no attachment URI. Thus the server serves
+ * these bytes only while the capability is on.
  */
 export function handleAttachmentGet(
 	attachment: AttachmentState,
@@ -177,9 +188,10 @@ function removeAttachment(
 }
 
 /**
- * The attachment this identifier names, and only where the resource
- * actually carries it: an identifier minted for some other resource is as
- * invalid here as one the server never minted.
+ * Returns the attachment that this identifier names, but only when the
+ * resource carries that attachment. An identifier that the server made
+ * for a different resource is invalid here. An identifier that the server
+ * never made is invalid here in the same way.
  */
 function attachedTo(
 	route: ResourceRoute,
@@ -196,7 +208,10 @@ function attachedTo(
 	return attachment;
 }
 
-/** Writes the rewritten resource, which is a write like any other. */
+/**
+ * Writes the rewritten resource. The server treats this write as it
+ * treats every other write.
+ */
 function store(
 	route: ResourceRoute,
 	ics: string,
@@ -229,7 +244,7 @@ function attachLine(attachment: AttachmentState, origin: string): string {
 	].join('');
 }
 
-/** Places a property last in the component the resource is about. */
+/** Adds a property as the last line of the resource's main component. */
 function withProperty(ics: string, property: string): string {
 	const lines = icsLineParts(ics);
 	const component = readIcs(ics).component;
@@ -263,9 +278,9 @@ function carriesAttachment(ics: string, managedId: string): boolean {
 }
 
 /**
- * Whether this line is the ATTACH property for the identifier. The
- * delimiter is part of the comparison, so one identifier is not read as
- * the prefix of a longer one.
+ * Tells whether this line is the ATTACH property for the identifier. The
+ * comparison includes the delimiter character. Thus the server does not
+ * read one identifier as the first part of a longer identifier.
  */
 function namesAttachment(line: string, managedId: string): boolean {
 	const upper = line.toUpperCase();
@@ -281,9 +296,10 @@ function namesAttachment(line: string, managedId: string): boolean {
 }
 
 /**
- * The ending a rewritten resource is written back with: CRLF where the
- * text uses one anywhere, and LF otherwise. A resource whose breaks
- * disagree is normalized onto one of them by the rewrite.
+ * Returns the line ending for a resource that the server writes again. The
+ * ending is CRLF when the text uses CRLF at any place, and LF in all
+ * other cases. If a resource mixes the two endings, the rewrite puts the
+ * one ending from this function on all of the lines.
  */
 function endingOf(ics: string): string {
 	return ics.includes('\r\n') ? '\r\n' : '\n';
