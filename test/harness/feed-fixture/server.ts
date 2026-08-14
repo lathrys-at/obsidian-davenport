@@ -30,8 +30,8 @@ import { renderVariant } from './variants';
  * 2. The script has a gap in its run.
  * 3. The caller names a poll that falls outside the run.
  *
- * The code that builds the script raises this error for these three faults.
- * For a script that sets `beyond` to `exhausted`, the fixture raises this
+ * The code that builds the script throws this error for these three faults.
+ * For a script that sets `beyond` to `exhausted`, the fixture throws this
  * error later, when the first poll that the script cannot answer arrives.
  */
 export class FeedScriptError extends Error {
@@ -45,7 +45,7 @@ export class FeedScriptError extends Error {
  * What a feed serves after its scripted polls run out. If `beyond` is a
  * variant, the feed serves that variant for every later poll. If `beyond` is
  * `repeat-last`, the feed serves the last scripted variant again. If `beyond`
- * is `exhausted`, the feed serves nothing, and raises a script error instead.
+ * is `exhausted`, the feed serves nothing, and throws a script error instead.
  */
 export type BeyondScript = FeedVariant | 'repeat-last' | 'exhausted';
 

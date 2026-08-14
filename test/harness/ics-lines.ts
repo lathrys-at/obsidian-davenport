@@ -11,11 +11,14 @@
  *
  * The functions here take the text as it comes. A server sends CRLF at the
  * end of a line. A client can send another line ending, and a person can
- * write a fixture by hand. Each function therefore reads every line
- * ending, and each function reads text that is not well formed instead of
- * refusing it. The caller decides what to do with such text. A caller that
- * must judge whether the text is well formed reports the problem itself. A
- * caller that only wants the properties gets the properties.
+ * write a fixture by hand. The split therefore accepts CRLF, a lone LF,
+ * and a lone CR. `icsLogicalLines` is the one function here that refuses
+ * text that is not well formed. That function throws when
+ * `readIcsLogicalLines` reports a problem. Every other function here reads
+ * text that is not well formed instead of refusing it, and the caller
+ * decides what to do with such text. A caller that must judge whether the
+ * text is well formed reports the problem itself. A caller that only wants
+ * the properties gets the properties.
  */
 
 /**

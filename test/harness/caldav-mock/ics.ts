@@ -27,7 +27,7 @@ export interface IcsFacts {
 }
 
 /**
- * Gives the content lines of a resource that the server keeps, or of a
+ * Returns the content lines of a resource that the server keeps, or of a
  * resource that a client sends. A client can send any text. Therefore
  * this function calls the shared reader in the form that accepts text of
  * any shape: the mock answers a request that carries a malformed body,
@@ -95,7 +95,7 @@ export function readIcs(ics: string): IcsFacts {
 }
 
 /**
- * Gives the end of an event that states no end. An all-day event is an
+ * Returns the end of an event that states no end. An all-day event is an
  * event with a DATE DTSTART and no DTEND. An all-day event covers the
  * full day, and thus a query over any part of that day finds the event.
  * An event that has a time and no end covers only the instant where the
@@ -116,7 +116,7 @@ function isDateValue(value: string): boolean {
 }
 
 /**
- * Gives the same comparison key one day later. The time of day does not
+ * Returns the same comparison key one day later. The time of day does not
  * change.
  */
 function nextDayStamp(stamp: string): string {
@@ -146,7 +146,7 @@ function pad(value: number): string {
 }
 
 /**
- * Makes the comparison key for a DATE value or a DATE-TIME value. This
+ * Builds the comparison key for a DATE value or a DATE-TIME value. This
  * function removes the zone designator. This function also extends a DATE
  * value to midnight of that date. Thus the values sort as text.
  */

@@ -86,7 +86,7 @@ interface Incoming {
 }
 
 /**
- * Makes the response for a failure inside the mock. Such a failure stands
+ * Builds the response for a failure inside the mock. Such a failure stands
  * for a failure of the server, and a failure of the server is a 500.
  */
 function serverFailure(error: unknown): MockResponse {

@@ -122,7 +122,7 @@ export function sha256HexOfText(text: string): string {
 }
 
 /**
- * Gives back the bytes with the padding that SHA-256 adds at the end. The
+ * Returns the bytes with the padding that SHA-256 adds at the end. The
  * padding finishes with the length of the input in bits.
  */
 function padded(bytes: Uint8Array): Uint8Array {

@@ -195,7 +195,7 @@ class Simulation implements SimulationRun {
 
 	/**
 	 * Closes the listeners of the run. Then evaluates every registered sweep
-	 * over the evidence of the run. When one sweep or more objects, raises
+	 * over the evidence of the run. When one sweep or more objects, throws
 	 * one failure that carries every report.
 	 */
 	async finish(): Promise<void> {

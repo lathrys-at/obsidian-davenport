@@ -38,12 +38,12 @@ export default class FrontmatterProbePlugin extends Plugin {
 			const said = [`${String(run.emitted)} samples`];
 			if (run.failed > 0) {
 				said.push(
-					`${String(run.failed)} fixtures that the writer refused`,
+					`fixtures that the writer refused: ${String(run.failed)}`,
 				);
 			}
 			if (run.timedOut > 0) {
 				said.push(
-					`${String(run.timedOut)} samples that waited out the cache timeout and are possibly stale`,
+					`samples that waited out the cache timeout and are possibly stale: ${String(run.timedOut)}`,
 				);
 			}
 			new Notice(

@@ -20,7 +20,7 @@ import {
 	type XmlOutput,
 } from './xml';
 
-/** Gives null when this target does not carry the property. */
+/** Returns null when this target does not carry the property. */
 export function resolveProp(
 	out: XmlOutput,
 	target: PropTarget,
@@ -219,7 +219,7 @@ function resolveResourceProp(
 }
 
 /**
- * Gives the bytes that a GET request or a calendar-data property returns
+ * Returns the bytes that a GET request or a calendar-data property returns
  * with this configuration.
  */
 export function servedBody(ics: string, caps: MockServerCapabilities): string {

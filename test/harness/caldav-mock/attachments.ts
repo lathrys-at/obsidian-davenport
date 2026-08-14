@@ -188,7 +188,7 @@ function removeAttachment(
 }
 
 /**
- * Gives the attachment that this identifier names, but only when the
+ * Returns the attachment that this identifier names, but only when the
  * resource carries that attachment. An identifier that the server made
  * for a different resource is invalid here. An identifier that the server
  * never made is invalid here in the same way.
@@ -296,7 +296,7 @@ function namesAttachment(line: string, managedId: string): boolean {
 }
 
 /**
- * Gives the line ending for a resource that the server writes again. The
+ * Returns the line ending for a resource that the server writes again. The
  * ending is CRLF when the text uses CRLF at any place, and LF in all
  * other cases. If a resource mixes the two endings, the rewrite puts the
  * one ending from this function on all of the lines.

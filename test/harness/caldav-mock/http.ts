@@ -33,7 +33,7 @@ export function headerReader(
 }
 
 /**
- * Gives the headers that a request carried, with the header names in
+ * Returns the headers that a request carried, with the header names in
  * lower case. This function removes no header and hides no value. The
  * reason: tests assert on this log and sweeps search this log, and a
  * sweep cannot report a credential that the sweep cannot see. Therefore
@@ -68,7 +68,7 @@ export function bodyText(body: string | ArrayBuffer | undefined): string {
 }
 
 /**
- * Gives the path of the request URL, or null when the URL names a
+ * Returns the path of the request URL, or null when the URL names a
  * different server. The mock answers no request for a different server.
  */
 export function pathOf(url: string, origin: string): string | null {
@@ -82,7 +82,7 @@ export function pathOf(url: string, origin: string): string | null {
 }
 
 /**
- * Gives the query that the request carries. The query is empty when the
+ * Returns the query that the request carries. The query is empty when the
  * URL does not parse.
  */
 export function queryOf(url: string, origin: string): URLSearchParams {
@@ -94,7 +94,7 @@ export function queryOf(url: string, origin: string): URLSearchParams {
 }
 
 /**
- * Makes the response that the transport port receives. A response that
+ * Builds the response that the transport port receives. A response that
  * this function truncates keeps its status and its headers, because the
  * failure is in the body only. The cut can fall in the middle of a
  * character, and this result is part of the truncation.

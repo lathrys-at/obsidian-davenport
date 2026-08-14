@@ -245,8 +245,9 @@ export class ServerState {
 		if (resourceName === undefined) {
 			return { kind: 'collection', account, collection };
 		}
-		// A resource is not a collection. Thus a path that ends with a
-		// slash names nothing, and one resource does not get two names.
+		// A resource is not a collection. Thus the trailing-slash spelling
+		// of a resource path names nothing, and one resource does not get
+		// two names.
 		if (segments.length > 4 || path.endsWith('/')) {
 			return { kind: 'unknown' };
 		}

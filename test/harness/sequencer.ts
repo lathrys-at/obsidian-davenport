@@ -26,11 +26,11 @@ import type { TestSpecification } from 'vitest/node';
  * use UTF-16 code units, so the locale of the machine does not change the
  * result.
  *
- * The two sort keys make the sorted order well defined. They do not keep the
- * files of one project together. The shuffle that follows mixes the projects
- * freely, so the files of a second project would run mixed in with the files
- * of the first. This free mixing is the difference between this sequencer
- * and the sequencer that Vitest supplies.
+ * The two sort keys are there to make the sorted order well defined, and not
+ * to keep the files of one project together. The shuffle that follows mixes
+ * the projects freely, so the files of a second project would run mixed in
+ * with the files of the first. This free mixing is the difference between
+ * this sequencer and the sequencer that Vitest supplies.
  */
 export function sortByModuleId(
 	files: readonly TestSpecification[],
