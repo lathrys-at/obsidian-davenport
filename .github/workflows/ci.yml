@@ -58,9 +58,10 @@ jobs:
             - run: node scripts/scan-bundle.mjs tools/a11-probe/dist/main.js
 
     # This job is the single required check that gates merges to main.
-    # The job passes only when every job in the needs context has the
-    # result success. The step reads the full needs context. Therefore a
-    # new job in needs is also gated, and the step needs no edit.
+    # The job passes only when every needed job has the result success.
+    # The needs context lists the needed jobs, and the step reads the
+    # full needs context. Therefore a new job in needs is also gated,
+    # and the step needs no edit.
     ci-ok:
         needs: [lint, typecheck, test, build]
         if: always()
