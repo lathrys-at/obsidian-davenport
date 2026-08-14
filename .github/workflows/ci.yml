@@ -57,9 +57,10 @@ jobs:
             - run: npm run probe:build
             - run: node scripts/scan-bundle.mjs tools/a11-probe/dist/main.js
 
-    # The single required check gating merges to main. Fails unless every
-    # job in needs succeeded; evaluating the whole needs context means a
-    # job added to needs is gated without editing the step.
+    # This job is the single required check that gates merges to main.
+    # The job passes only when every job in the needs context has the
+    # result success. The step reads the full needs context. Therefore a
+    # new job in needs is also gated, and the step needs no edit.
     ci-ok:
         needs: [lint, typecheck, test, build]
         if: always()

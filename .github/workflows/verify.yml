@@ -1,8 +1,10 @@
 name: Verify
 
-# Live verification against real servers. Dispatch only: this workflow
-# reads the provider secrets, and no push or pull request — least of all
-# one from a fork — may reach them.
+# This workflow runs the live verification against real servers. The
+# workflow reads the provider secrets. Therefore the workflow has the
+# manual dispatch trigger only. A push must not reach the provider
+# secrets. A pull request must not reach the provider secrets, and a
+# pull request from a fork is the most dangerous case.
 on:
     workflow_dispatch:
         inputs:
@@ -19,10 +21,12 @@ permissions:
     contents: read
 
 jobs:
-    # Brings up the self-hosted servers and confirms all three speak DAV,
-    # which is what the Radicale, Baikal and Nextcloud columns need before
-    # a protocol runner can use them. Takes no secret: it runs third-party
-    # images, and it consumes nothing a secret would supply.
+    # This job starts the self-hosted servers. The job then makes sure
+    # that each of the three servers answers OPTIONS with a DAV header.
+    # The Radicale, Baikal and Nextcloud provider columns need this
+    # result before a protocol runner can use these three servers. The
+    # job takes no secret. The job runs third-party images, and the job
+    # reads nothing that a secret supplies.
     containers:
         if: inputs.target == 'containers'
         runs-on: ubuntu-latest
@@ -33,8 +37,9 @@ jobs:
             - name: Start the self-hosted servers
               run: docker compose --file test/live/docker-compose.yml up --detach
 
-            # The credentials are the throwaway pair baked into the
-            # compose file, not a secret.
+            # The user name and the password below are the throwaway
+            # pair that the compose file contains. This pair is not a
+            # secret.
             - name: Probe the CalDAV roots
               timeout-minutes: 20
               run: |
@@ -47,12 +52,12 @@ jobs:
                           headers=$(curl --silent --max-time 10 --user davenport:davenport \
                               --request OPTIONS --dump-header - --output /dev/null "$url" || true)
                           if printf '%s\n' "$headers" | grep -qi '^dav:'; then
-                              echo "$name: $url answers OPTIONS with"
+                              echo "$name: $url answers OPTIONS with a DAV header:"
                               printf '%s\n' "$headers" | grep -i '^dav:'
                               return 0
                           fi
                           if [ "$attempt" -ge "$limit" ]; then
-                              echo "$name: $url sent no DAV response in $limit attempts" >&2
+                              echo "$name: $url sent no DAV response. Attempt count: $limit" >&2
                               printf '%s\n' "$headers" >&2
                               return 1
                           fi
@@ -61,10 +66,13 @@ jobs:
                       done
                   }
 
-                  # Attempts are two seconds apart. Nextcloud's first boot
-                  # runs an installer and the container does not listen
-                  # until that finishes, so its window is the longer one:
-                  # headroom for a slow runner, not a measured need.
+                  # The probe makes one attempt every two seconds. The
+                  # first boot of Nextcloud runs an installer. The
+                  # Nextcloud container does not listen until that
+                  # installer finishes. Therefore the Nextcloud probe
+                  # gets the larger attempt limit. This limit gives
+                  # headroom for a slow runner. This limit is not a
+                  # measured need.
                   failed=0
                   probe radicale http://127.0.0.1:5232/ 60 || failed=1
                   probe baikal http://127.0.0.1:8801/dav.php/ 60 || failed=1
@@ -79,10 +87,11 @@ jobs:
               if: always()
               run: docker compose --file test/live/docker-compose.yml down --volumes
 
-    # Reports which providers a dispatch can reach. The provider secrets
-    # are mapped here and nowhere else: a job maps the variables it reads,
-    # so a runner for one provider will carry that provider's three and no
-    # others.
+    # This job reports which providers a dispatch can reach. This job
+    # maps the provider secrets, and no other job maps the provider
+    # secrets. Each job maps only the variables that the job reads.
+    # Therefore a runner for one provider carries the three variables of
+    # that provider and no other variables.
     credentials-report:
         if: inputs.target == 'credentials'
         runs-on: ubuntu-latest
@@ -107,11 +116,13 @@ jobs:
             DAVENPORT_TEST_GOOGLE_USERNAME: ${{ secrets.DAVENPORT_TEST_GOOGLE_USERNAME }}
             DAVENPORT_TEST_GOOGLE_SECRET: ${{ secrets.DAVENPORT_TEST_GOOGLE_SECRET }}
         steps:
-            # Names only. A configured provider's values stay in the
-            # environment and out of the log. Whitespace-only counts as
-            # unset, because the resolver reads it that way and a report
-            # that disagrees would promise a provider that then gets
-            # skipped.
+            # The step prints variable names only. The values of a
+            # configured provider stay in the environment, and the step
+            # keeps those values out of the log. A variable that holds
+            # only whitespace counts as unset. The resolver reads such a
+            # variable as unset, and the report must agree with the
+            # resolver. A report that counts such a variable as set
+            # promises a provider, and the run then skips that provider.
             - name: Report which providers this run can reach
               run: |
                   for provider in ICLOUD FASTMAIL NEXTCLOUD RADICALE BAIKAL GOOGLE; do
@@ -126,6 +137,6 @@ jobs:
                       if [ -z "$missing" ]; then
                           echo "$provider: configured"
                       else
-                          echo "$provider: unavailable, unset:$missing"
+                          echo "$provider: unavailable. These variables count as unset:$missing"
                       fi
                   done
