@@ -9,9 +9,9 @@
 # http://localhost:8801/dav.php/. Nextcloud answers on
 # http://localhost:8802/remote.php/dav/. All three servers use davenport
 # as the user name and davenport as the password. These credentials are
-# throwaway credentials, and the project makes them public on purpose.
+# throwaway credentials. These credentials are public on purpose.
 # test/live/README.md gives the reason for the port choice, the rest of
-# the rationale, and the list of the things that depend on this file.
+# the rationale, and what depends on this file.
 
 services:
     radicale:
@@ -24,7 +24,8 @@ services:
         # The healthcheck of this image requests the root URL, and the
         # healthcheck sends no credentials. The configuration in
         # radicale/ turns authentication on. Radicale therefore answers
-        # that request with status 401.
+        # that request with status 401. A 401 fails the healthcheck.
+        # This file therefore turns the healthcheck off.
         healthcheck:
             disable: true
 
@@ -44,8 +45,8 @@ services:
         # The Nextcloud image installs the server on first boot. The
         # image installs the server only when the environment supplies
         # the admin user name, the admin password, and a database
-        # setting. A SQLite database stays in this container. The stack
-        # therefore needs no second container for a database.
+        # setting. The stack uses a SQLite database. The stack therefore
+        # needs no second container for a database.
         environment:
             SQLITE_DATABASE: nextcloud
             NEXTCLOUD_ADMIN_USER: davenport

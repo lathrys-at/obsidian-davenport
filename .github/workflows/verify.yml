@@ -3,13 +3,13 @@ name: Verify
 # This workflow runs the live verification against real servers. The
 # workflow reads the provider secrets. Therefore the workflow has the
 # manual dispatch trigger only. A push must not reach the provider
-# secrets. A pull request must not reach the provider secrets, and a
-# pull request from a fork is the most dangerous case.
+# secrets. A pull request must not reach the provider secrets. A pull
+# request from a fork must not reach the provider secrets either.
 on:
     workflow_dispatch:
         inputs:
             target:
-                description: What to verify
+                description: Select what this run must verify.
                 type: choice
                 required: true
                 default: containers
@@ -38,8 +38,7 @@ jobs:
               run: docker compose --file test/live/docker-compose.yml up --detach
 
             # The user name and the password below are the throwaway
-            # pair that the compose file contains. This pair is not a
-            # secret.
+            # pair of the compose stack. This pair is not a secret.
             - name: Probe the CalDAV roots
               timeout-minutes: 20
               run: |
@@ -57,7 +56,7 @@ jobs:
                               return 0
                           fi
                           if [ "$attempt" -ge "$limit" ]; then
-                              echo "$name: $url sent no DAV response. Attempt count: $limit" >&2
+                              echo "$name: $url sent no DAV response. Attempt count: $attempt" >&2
                               printf '%s\n' "$headers" >&2
                               return 1
                           fi
@@ -66,13 +65,14 @@ jobs:
                       done
                   }
 
-                  # The probe makes one attempt every two seconds. The
-                  # first boot of Nextcloud runs an installer. The
+                  # The probe waits two seconds between attempts. Each
+                  # attempt also waits up to ten seconds for an answer.
+                  # The first boot of Nextcloud runs an installer. The
                   # Nextcloud container does not listen until that
                   # installer finishes. Therefore the Nextcloud probe
                   # gets the larger attempt limit. This limit gives
-                  # headroom for a slow runner. This limit is not a
-                  # measured need.
+                  # headroom for a slow runner. Nobody measured the time
+                  # that the installer needs.
                   failed=0
                   probe radicale http://127.0.0.1:5232/ 60 || failed=1
                   probe baikal http://127.0.0.1:8801/dav.php/ 60 || failed=1
@@ -90,8 +90,8 @@ jobs:
     # This job reports which providers a dispatch can reach. This job
     # maps the provider secrets, and no other job maps the provider
     # secrets. Each job maps only the variables that the job reads.
-    # Therefore a runner for one provider carries the three variables of
-    # that provider and no other variables.
+    # Therefore a runner for one provider will carry the three variables
+    # of that provider and no other variables.
     credentials-report:
         if: inputs.target == 'credentials'
         runs-on: ubuntu-latest
@@ -119,10 +119,11 @@ jobs:
             # The step prints variable names only. The values of a
             # configured provider stay in the environment, and the step
             # keeps those values out of the log. A variable that holds
-            # only whitespace counts as unset. The resolver reads such a
-            # variable as unset, and the report must agree with the
-            # resolver. A report that counts such a variable as set
-            # promises a provider, and the run then skips that provider.
+            # only whitespace counts as unset. The credential resolver of
+            # the live tests reads such a variable as unset, and the
+            # report must agree with the resolver. A report that counts
+            # such a variable as set promises a provider, and the live
+            # tests then skip that provider.
             - name: Report which providers this run can reach
               run: |
                   for provider in ICLOUD FASTMAIL NEXTCLOUD RADICALE BAIKAL GOOGLE; do
@@ -137,6 +138,6 @@ jobs:
                       if [ -z "$missing" ]; then
                           echo "$provider: configured"
                       else
-                          echo "$provider: unavailable. These variables count as unset:$missing"
+                          echo "$provider: unavailable. Every variable that follows counts as unset:$missing"
                       fi
                   done
