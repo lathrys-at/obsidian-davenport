@@ -13,8 +13,10 @@ import type { InstallVerdict, VaultReport } from './vault-core.ts';
 import { CONFIG_FOLDER, PROBE_FOLDER, listPhrase } from './vault-core.ts';
 
 /**
- * The name of the plugin folder for the probe. This name must be equal to
- * the identifier in the manifest of the probe.
+ * The identifier of the probe. The script uses this value as the name of
+ * the plugin folder. The script also writes this value into the list of
+ * enabled plugins. Therefore this value must be equal to the identifier in
+ * the manifest of the probe.
  */
 export const PROBE_ID = 'davenport-frontmatter-probe';
 

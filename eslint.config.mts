@@ -49,7 +49,7 @@ export default defineConfig(
 		'.claude',
 		'.vaults',
 		'dist',
-		'tools/frontmatter-probe/dist',
+		'tools/*/dist',
 		'coverage',
 		'esbuild.config.mjs',
 		'version-bump.mjs',

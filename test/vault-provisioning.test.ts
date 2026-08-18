@@ -791,6 +791,17 @@ describe('the wiring between the repository and the script', () => {
 		expect(reach(scripts, 'vault')).toBe('node scripts/vault.mjs');
 	});
 
+	// The script names the plugin folder after this constant, and the script
+	// writes this constant into the list of enabled plugins. Obsidian matches
+	// that list against the identifier in the manifest. Therefore the three
+	// must be the same string, and this test holds them together.
+	it('names the plugin folder after the identifier in the manifest', () => {
+		const manifest: unknown = JSON.parse(
+			read('tools/frontmatter-probe/manifest.json'),
+		);
+		expect(reach(manifest, 'id')).toBe(PROBE_ID);
+	});
+
 	// The vaults hold a built plugin and the files that a probe run wrote.
 	// None of these files belongs in the history of the repository that
 	// builds them.

@@ -2,7 +2,7 @@ node_modules
 main.js
 coverage
 package-lock.json
-tools/frontmatter-probe/dist
+tools/*/dist
 .vaults
 *.md
 .github/
