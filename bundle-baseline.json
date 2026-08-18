@@ -1,0 +1,19 @@
+{
+	"raw": 662,
+	"compressed": 447,
+	"outputs": [
+		{
+			"path": "main.js",
+			"kind": "entry",
+			"raw": 662,
+			"compressed": 447
+		}
+	],
+	"modules": [
+		{
+			"name": "src/main.ts",
+			"bytes": 103
+		}
+	],
+	"overhead": 559
+}

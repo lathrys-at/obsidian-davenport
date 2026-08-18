@@ -1,5 +1,6 @@
 import esbuild from 'esbuild';
 import process from 'process';
+import { writeFileSync } from 'node:fs';
 import { builtinModules } from 'node:module';
 
 const banner = `/*
@@ -39,10 +40,20 @@ const context = await esbuild.context({
 	treeShaking: true,
 	outfile: 'main.js',
 	minify: prod,
+	// The metafile says which module holds which bytes of the output.
+	// `scripts/bundle-size.mjs` reads it. The watch build never writes it.
+	metafile: prod,
 });
 
 if (prod) {
-	await context.rebuild();
+	const result = await context.rebuild();
+	if (result.metafile === undefined) {
+		throw new Error('the production build made no metafile');
+	}
+	writeFileSync(
+		new URL('bundle-meta.json', import.meta.url),
+		`${JSON.stringify(result.metafile, undefined, '\t')}\n`,
+	);
 	process.exit(0);
 } else {
 	await context.watch();

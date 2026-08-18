@@ -60,6 +60,19 @@ sweeps.
 
   The exit status is part of the interface. Therefore several cases run the
   real script as a process.
+- `test/bundle-size.test.ts` — the decisions behind
+  `scripts/bundle-size.mjs`:
+    - what the check reads out of the metafile that the build writes;
+    - which module gets the bytes of one input, and how a file under
+      `node_modules` counts against the package that holds it;
+    - what the measurement of the built files adds up to;
+    - how much growth past the committed baseline the check accepts;
+    - what the comparison says, and the wording that the check prints.
+
+  One case reads `bundle-baseline.json` itself, because that file is the
+  record of the build that this repository ships. The exit status is part of
+  the interface. Therefore several cases run the real script as a process
+  over a build that the case writes.
 - `test/live/` — what verification runs against real servers need. This
   directory holds the credential resolver and the self-hosted CalDAV
   containers. Nothing here reaches a server during `npm test`.
