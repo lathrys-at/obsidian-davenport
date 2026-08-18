@@ -20,7 +20,10 @@ export default defineConfig({
 		},
 		coverage: {
 			provider: 'v8',
-			reporter: ['text', 'lcov'],
+			// The json-summary reporter writes the counts of each file.
+			// scripts/coverage-ratchet.mjs reads those counts and compares
+			// them against the floors in coverage-baseline.json.
+			reporter: ['text', 'lcov', 'json-summary'],
 			include: ['src/**/*.ts'],
 			exclude: [...coverageConfigDefaults.exclude, 'src/**/*.test.ts'],
 		},

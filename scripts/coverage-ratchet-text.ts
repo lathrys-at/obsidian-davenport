@@ -1,0 +1,224 @@
+/**
+ * The wording of everything that the coverage ratchet prints. The check
+ * prints two kinds of line. The report says what the tests cover, and what
+ * each file does against its floor. The failure names each metric that fell
+ * past the grace, and each file that the baseline holds and the run does not
+ * report.
+ *
+ * Each line that states a fact carries the name of the check, so that the
+ * line stays legible in a log that holds the output of many steps. A line
+ * that continues a statement carries no name, and it stands indented under
+ * the line that it continues.
+ */
+
+import type {
+	Comparison,
+	Count,
+	Counts,
+	FileMove,
+	Metric,
+	Move,
+	Report,
+} from './coverage-ratchet-core.ts';
+import { GRACE, METRICS, percentOf } from './coverage-ratchet-core.ts';
+
+/** The lines of the report. The report says what the tests cover. */
+export function reportLines(
+	report: Report,
+	comparison: Comparison,
+): readonly string[] {
+	return [
+		say(`the tests run ${countsText(report.total)}`),
+		say(
+			`the whole run against the baseline: ${movesText(comparison.total)}. The check reports the whole run, and it never fails on the whole run.`,
+		),
+		say(
+			`the grace is ${points(GRACE)}. The check fails when one metric of one file falls more than the grace below the floor of that file. The check also fails when the run does not report a file that the baseline holds.`,
+		),
+		...fileLines(report, comparison),
+		...changeLines(comparison),
+		...freshLines(comparison),
+	];
+}
+
+/** The counts of a whole run, with the percentage of each count. */
+function countsText(counts: Counts): string {
+	return list(METRICS.map((metric) => countText(counts[metric], metric)));
+}
+
+function countText(count: Count, metric: Metric): string {
+	return `${String(count.covered)} of ${String(count.total)} ${metric} (${percent(percentOf(count))})`;
+}
+
+/** What four metrics did, in one phrase. */
+function movesText(moves: readonly Move[]): string {
+	return list(moves.map((move) => `${move.metric} ${moved(move.change)}`));
+}
+
+/**
+ * The lines that name each file of the run. A file that holds no statement
+ * gets no row of its own, because every floor of such a file is 100 percent
+ * and the row says nothing.
+ */
+function fileLines(report: Report, comparison: Comparison): readonly string[] {
+	const changed = new Map(
+		comparison.changed.map((file) => [file.path, file]),
+	);
+	const fresh = new Set(comparison.fresh);
+	const withCode = report.files.filter(
+		(file) => file.counts.statements.total > 0,
+	);
+	const lines = [
+		say(
+			`the run reports ${count(report.files.length, 'file')}, and ${String(withCode.length)} of them hold a statement`,
+		),
+	];
+	for (const file of withCode) {
+		const numbers = METRICS.map(
+			(metric) => `${metric} ${percent(percentOf(file.counts[metric]))}`,
+		).join('  ');
+		lines.push(
+			`  ${file.path}  ${numbers}  ${note(file.path, changed, fresh)}`,
+		);
+	}
+	const rest = report.files.length - withCode.length;
+	if (rest > 0) {
+		lines.push(`  the other ${count(rest, 'file')} hold no statement`);
+	}
+	return lines;
+}
+
+/** What one row of the table says about the floor of that file. */
+function note(
+	path: string,
+	changed: ReadonlyMap<string, FileMove>,
+	fresh: ReadonlySet<string>,
+): string {
+	if (fresh.has(path)) {
+		return 'the baseline does not hold this file';
+	}
+	const move = changed.get(path);
+	return move === undefined ? 'no change' : movesText(move.moves);
+}
+
+/** The lines that name each file whose coverage differs from its floor. */
+function changeLines(comparison: Comparison): readonly string[] {
+	if (comparison.changed.length === 0) {
+		return [say('no file moved against its floor')];
+	}
+	const lines = [
+		say(
+			`${count(comparison.changed.length, 'file')} moved against a floor`,
+		),
+	];
+	for (const file of comparison.changed) {
+		for (const move of file.moves) {
+			lines.push(`  ${file.path}  ${moveText(move)}`);
+		}
+	}
+	return lines;
+}
+
+function moveText(move: Move): string {
+	return `${move.metric}  from ${percent(move.floor)} to ${percent(move.now)}  ${moved(move.change)}`;
+}
+
+/** The lines that name each file that the baseline does not hold. */
+function freshLines(comparison: Comparison): readonly string[] {
+	if (comparison.fresh.length === 0) {
+		return [];
+	}
+	return [
+		say(
+			`the baseline holds no floor for ${count(comparison.fresh.length, 'file')} of this run. Write the baseline to give these files a floor.`,
+		),
+		...comparison.fresh.map((path) => `  ${path}`),
+	];
+}
+
+/** The lines of the failure. The check fails after it says these lines. */
+export function failureLines(comparison: Comparison): readonly string[] {
+	if (!comparison.fails) {
+		return [];
+	}
+	const lines = [...goneLines(comparison), ...fellLines(comparison)];
+	lines.push(
+		say(
+			'accept this change in the pull request that causes it. Write the new numbers into the baseline in that same pull request. The command `node scripts/coverage-ratchet.mjs --write-baseline` writes the file.',
+		),
+	);
+	return lines;
+}
+
+/** The lines that name each file that the run does not report. */
+function goneLines(comparison: Comparison): readonly string[] {
+	if (comparison.gone.length === 0) {
+		return [];
+	}
+	const lines = comparison.gone.map((path) =>
+		say(
+			`the run does not report ${path}, and the baseline holds a floor for that file`,
+		),
+	);
+	lines.push(
+		say(
+			'a file that leaves the coverage report keeps no floor, and the numbers of the run give no other sign of that loss. A change that deletes a file writes the baseline in that same change.',
+		),
+	);
+	return lines;
+}
+
+/** The lines that name each metric that fell past the grace. */
+function fellLines(comparison: Comparison): readonly string[] {
+	const lines: string[] = [];
+	for (const file of comparison.changed) {
+		for (const move of file.moves) {
+			if (move.past) {
+				lines.push(
+					say(
+						`the ${move.metric} of ${file.path} fell from ${percent(move.floor)} to ${percent(move.now)}. The fall of ${points(-move.change)} goes past the grace of ${points(GRACE)}.`,
+					),
+				);
+			}
+		}
+	}
+	return lines;
+}
+
+/** The name that the check prints in front of each line that it says. */
+export function say(text: string): string {
+	return `coverage ratchet: ${text}`;
+}
+
+/** A percentage, as the report says it. */
+function percent(value: number): string {
+	return `${String(Math.round(value * 100) / 100)}%`;
+}
+
+/** A count of percentage points, as the report says it. */
+function points(value: number): string {
+	const size = Math.abs(Math.round(value * 100) / 100);
+	return `${String(size)} percentage ${size === 1 ? 'point' : 'points'}`;
+}
+
+/** What one percentage did against its floor. */
+function moved(change: number): string {
+	if (change === 0) {
+		return 'the same';
+	}
+	return change > 0 ? `${points(change)} more` : `${points(change)} less`;
+}
+
+/** A count and the thing that it counts, with the plural of that thing. */
+function count(value: number, thing: string): string {
+	return `${String(value)} ${thing}${value === 1 ? '' : 's'}`;
+}
+
+/** Several phrases, with a comma between them and "and" before the last. */
+function list(parts: readonly string[]): string {
+	const last = parts[parts.length - 1];
+	if (parts.length < 2 || last === undefined) {
+		return parts.join('');
+	}
+	return `${parts.slice(0, -1).join(', ')} and ${last}`;
+}

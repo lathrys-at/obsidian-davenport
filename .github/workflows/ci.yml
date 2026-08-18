@@ -42,6 +42,7 @@ jobs:
                   cache: npm
             - run: npm ci
             - run: npm run coverage
+            - run: node scripts/coverage-ratchet.mjs
             - run: node scripts/plan-ids.mjs
 
     # This job runs the steps of the test job on Windows. Windows uses
