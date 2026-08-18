@@ -44,6 +44,30 @@ jobs:
             - run: npm run coverage
             - run: node scripts/plan-ids.mjs
 
+    # This job runs the steps of the test job on Windows. Windows uses
+    # another path separator, another line ending, and a filesystem that
+    # ignores letter case. Code that assumes the rules of Linux passes on
+    # the job above and fails here.
+    test-windows:
+        runs-on: windows-latest
+        steps:
+            # Git for Windows changes the line ending of a text file when it
+            # writes the file into the working tree. Tests compare the octets
+            # of the fixture files. A changed line ending therefore makes a
+            # test fail for a reason that is not in the code. This step stops
+            # the change, and the working tree holds the same octets on every
+            # platform. The .gitattributes file already covers the ICS
+            # corpus, and this step covers every other file.
+            - run: git config --global core.autocrlf false
+            - uses: actions/checkout@v6
+            - uses: actions/setup-node@v6
+              with:
+                  node-version-file: .nvmrc
+                  cache: npm
+            - run: npm ci
+            - run: npm run coverage
+            - run: node scripts/plan-ids.mjs
+
     build:
         runs-on: ubuntu-latest
         steps:
@@ -65,7 +89,7 @@ jobs:
     # full needs context. Therefore a new job in needs is also gated,
     # and the step needs no edit.
     ci-ok:
-        needs: [lint, typecheck, test, build]
+        needs: [lint, typecheck, test, test-windows, build]
         if: always()
         runs-on: ubuntu-latest
         steps:
