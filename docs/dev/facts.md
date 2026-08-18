@@ -113,7 +113,7 @@ Protocol: [docs/dev/facts/a-11.md](facts/a-11.md)
   vault lives in the iCloud Drive container) — one API version on two
   platforms; ~~the minimum matrix of the protocol, which is the current
   Obsidian API version and the previous one on macOS, is still open~~
-  the owner retired the previous-version cell, and #11 records the
+  a previous-version cell is not required, and #11 records the
   decision ·
   The probe ran the 14-fixture corpus in both environments, and the 13
   parseable fixtures emitted identical bytes, fixture for fixture. Both
