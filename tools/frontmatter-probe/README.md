@@ -26,9 +26,10 @@ npm ci
 npm run probe:build
 ```
 
-These commands write `tools/a11-probe/dist/`. That folder holds `main.js`
-and `manifest.json`. The build embeds the note corpus into `main.js` at
-this step. Therefore you must send the same `dist/` to every environment.
+These commands write `tools/frontmatter-probe/dist/`. That folder holds
+`main.js` and `manifest.json`. The build embeds the note corpus into
+`main.js` at this step. Therefore you must send the same `dist/` to every
+environment.
 A probe that you build two times from the same commit carries the same
 fixtures. The comparison script refuses to compare runs whose fixtures
 differed.
@@ -51,11 +52,11 @@ about.
 Copy the two files in `dist/` into the vault, at:
 
 ```
-<Vault>/.obsidian/plugins/davenport-a11-probe/
+<Vault>/.obsidian/plugins/davenport-frontmatter-probe/
 ```
 
-The folder name must be exactly `davenport-a11-probe`. Create the folders
-that are not there yet. If this vault uses a different name for
+The folder name must be exactly `davenport-frontmatter-probe`. Create the
+folders that are not there yet. If this vault uses a different name for
 `.obsidian`, use the name of the vault's config folder.
 
 On a desktop, this step is a file copy. On a phone, it is easier to copy
@@ -130,7 +131,7 @@ Run this command from the repository root, with the node version in
 `.nvmrc`:
 
 ```bash
-node tools/a11-probe/compare.mjs macos-1.9.14.json ios-1.9.14.json
+node tools/frontmatter-probe/compare.mjs macos-1.9.14.json ios-1.9.14.json
 ```
 
 The script loads its comparison from a TypeScript module. Node reads such

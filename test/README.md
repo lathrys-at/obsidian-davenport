@@ -31,12 +31,12 @@ Layout:
 sweeps.
 - `test/probe-compare.test.ts`, `test/probe-hash.test.ts` and
   `test/probe-results.test.ts` — the pure halves of the frontmatter probe
-  under `tools/a11-probe/`. One pure half is the comparison over results
-  files. Another pure half is the digest that the probe carries. The probe
-  carries this digest so that the probe hashes the same way on every device.
-  Another pure half is the naming and the wording that its results module
-  decides. The rest of the probe runs in a real vault, and it is exercised
-  by hand. `tools/a11-probe/README.md` says how to do this.
+  under `tools/frontmatter-probe/`. One pure half is the comparison over
+  results files. Another pure half is the digest that the probe carries. The
+  probe carries this digest so that the probe hashes the same way on every
+  device. Another pure half is the naming and the wording that its results
+  module decides. The rest of the probe runs in a real vault, and it is
+  exercised by hand. `tools/frontmatter-probe/README.md` says how to do this.
 - `test/vault-provisioning.test.ts` — the decisions behind
   `scripts/vault.mjs`. That script makes a scratch vault with the probe
   installed. One decision is the names that the script accepts and the names

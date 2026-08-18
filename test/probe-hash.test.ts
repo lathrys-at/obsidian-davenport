@@ -11,7 +11,7 @@
 
 import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
-import { sha256Hex, sha256HexOfText } from '../tools/a11-probe/sha256';
+import { sha256Hex, sha256HexOfText } from '../tools/frontmatter-probe/sha256';
 import { NOTE_FIXTURES } from './harness/fixtures/note-corpus';
 
 /**

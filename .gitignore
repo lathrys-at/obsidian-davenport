@@ -19,7 +19,7 @@ main.js
 *.map
 
 # The probe kit's build output, assembled for copying into a vault.
-tools/a11-probe/dist/
+tools/frontmatter-probe/dist/
 
 # obsidian
 data.json

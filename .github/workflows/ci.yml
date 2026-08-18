@@ -56,7 +56,7 @@ jobs:
             - run: npm run build
             - run: node scripts/scan-bundle.mjs
             - run: npm run probe:build
-            - run: node scripts/scan-bundle.mjs tools/a11-probe/dist/main.js
+            - run: node scripts/scan-bundle.mjs tools/frontmatter-probe/dist/main.js
 
     # This job is the single required check that gates merges to main.
     # The job passes only when every needed job has the result success.

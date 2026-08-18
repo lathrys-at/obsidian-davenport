@@ -49,7 +49,7 @@ export default defineConfig(
 		'.claude',
 		'.vaults',
 		'dist',
-		'tools/a11-probe/dist',
+		'tools/frontmatter-probe/dist',
 		'coverage',
 		'esbuild.config.mjs',
 		'version-bump.mjs',
@@ -70,8 +70,8 @@ export default defineConfig(
 						'eslint.config.mts',
 						'manifest.json',
 						'scripts/*.mjs',
-						'tools/a11-probe/manifest.json',
-						'tools/a11-probe/*.mjs',
+						'tools/frontmatter-probe/manifest.json',
+						'tools/frontmatter-probe/*.mjs',
 					],
 				},
 				tsconfigRootDir: import.meta.dirname,
@@ -164,10 +164,10 @@ export default defineConfig(
 	// hashing bytes is the whole of its job.
 	{
 		name: 'davenport/probe-plugin',
-		files: ['tools/a11-probe/**/*.ts'],
+		files: ['tools/frontmatter-probe/**/*.ts'],
 		ignores: [
-			'tools/a11-probe/compare-core.ts',
-			'tools/a11-probe/compare-format.ts',
+			'tools/frontmatter-probe/compare-core.ts',
+			'tools/frontmatter-probe/compare-format.ts',
 		],
 		rules: {
 			'no-restricted-imports': [
@@ -195,8 +195,8 @@ export default defineConfig(
 	{
 		name: 'davenport/probe-tooling',
 		files: [
-			'tools/a11-probe/compare-core.ts',
-			'tools/a11-probe/compare-format.ts',
+			'tools/frontmatter-probe/compare-core.ts',
+			'tools/frontmatter-probe/compare-format.ts',
 		],
 		rules: {
 			'obsidianmd/no-nodejs-modules': 'off',
@@ -206,7 +206,7 @@ export default defineConfig(
 	// on it: the engine string is evidence about a result, not a switch.
 	{
 		name: 'davenport/probe-environment',
-		files: ['tools/a11-probe/environment.ts'],
+		files: ['tools/frontmatter-probe/environment.ts'],
 		rules: {
 			'obsidianmd/platform': 'off',
 		},

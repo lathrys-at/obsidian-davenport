@@ -32,7 +32,7 @@ const CORPUS_MODULE = 'probe-corpus';
 const here = new URL('./', import.meta.url);
 const distribution = new URL('./dist/', here);
 const banner = `/*
-esbuild made this file from tools/a11-probe/ in the davenport repository.
+esbuild made this file from tools/frontmatter-probe/ in the davenport repository.
 The note corpus is in this file. The source of the corpus is under
 test/harness/fixtures/notes/.
 */
@@ -78,10 +78,10 @@ console.log(
 	`probe build: the bundle holds ${NOTE_FIXTURES.length} fixtures and ${bytes} bytes of note text`,
 );
 console.log(
-	'probe build: wrote tools/a11-probe/dist/main.js and tools/a11-probe/dist/manifest.json',
+	'probe build: wrote tools/frontmatter-probe/dist/main.js and tools/frontmatter-probe/dist/manifest.json',
 );
 console.log(
-	'probe build: copy the dist folder into a vault as the plugin folder davenport-a11-probe; tools/a11-probe/README.md gives the full path',
+	'probe build: copy the dist folder into a vault as the plugin folder davenport-frontmatter-probe; tools/frontmatter-probe/README.md gives the full path',
 );
 
 /**
