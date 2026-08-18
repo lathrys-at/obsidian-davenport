@@ -115,6 +115,9 @@ const RUNTIME_PREFIX = 'node:';
 /** The directory name that holds the installed dependencies. */
 const DEPENDENCY_DIRECTORY = 'node_modules';
 
+/** The start of a file URL, before the optional host part and the path. */
+const FILE_URL_PREFIX = 'file://';
+
 const CLOCK_REMEDY =
 	'Read the time from the controlled clock in test/harness/clock.ts.';
 const TIMER_REMEDY =
@@ -298,18 +301,53 @@ function frameText(frame: string): FrameText {
  * question mark or a number sign, and a search over the whole path would cut
  * the path at that name. Every frame of the repository would then fall
  * outside the repository root.
+ *
+ * The conversion of a file URL fails for some URLs, and the platform decides
+ * which URLs. On windows the conversion fails for a URL that carries no drive
+ * letter, for example `file:///repo/test/x.ts`. On the other platforms the
+ * conversion fails for a URL that names a host. On every platform the
+ * conversion fails for a URL that holds an encoded separator. The catch
+ * therefore reads the path part out of the URL text, and the classification
+ * gets a path in each of these cases.
+ *
+ * Without this step the classification reads the URL text itself. That text
+ * starts with `file://`. It does not start with the repository root, and it
+ * does not start with the name of the dependency directory. The rule then
+ * answers `repository` for the file of a dependency, and the poison throws
+ * for a call that it must permit.
  */
 function locationPath(location: string): string {
 	const withoutPosition = location.replace(/(?::\d+)+$/, '');
 	const withoutQuery = withoutPosition.replace(/[?#][^/]*$/, '');
-	if (!withoutQuery.startsWith('file://')) {
+	if (!withoutQuery.startsWith(FILE_URL_PREFIX)) {
 		return withoutQuery;
 	}
 	try {
 		return fileURLToPath(withoutQuery);
 	} catch {
-		return withoutQuery;
+		return fileUrlPath(withoutQuery);
 	}
+}
+
+/**
+ * Returns the path part of a file URL. The function cuts off the `file://`
+ * prefix, and it cuts off the host part that can follow the prefix.
+ * `file:///repo/test/x.ts` therefore gives `/repo/test/x.ts`, and
+ * `file://build/share/x.js` gives `/share/x.js`.
+ *
+ * A URL that holds no separator after the prefix names no path. The function
+ * then returns the text that follows the prefix. The rule that classifies the
+ * path reads that text as a relative path, and the poison then refuses.
+ *
+ * The function keeps the percent-encoded characters of the URL as they are.
+ * The conversion fails for a URL that holds an encoded separator. A decoding
+ * step here would make a separator out of that character, and the path would
+ * then name a different file.
+ */
+function fileUrlPath(url: string): string {
+	const afterPrefix = url.slice(FILE_URL_PREFIX.length);
+	const separator = afterPrefix.indexOf('/');
+	return separator === -1 ? afterPrefix : afterPrefix.slice(separator);
 }
 
 function forwardSlashes(path: string): string {
