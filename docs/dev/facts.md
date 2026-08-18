@@ -111,8 +111,10 @@ Protocol: [docs/dev/facts/a-11.md](facts/a-11.md)
 - **2026-08-18** · macOS (Obsidian API 1.13.7, Electron 43.3.0, run
   2026-08-16) and iOS 18.7 (Obsidian API 1.13.7, run 2026-08-18; the
   vault lives in the iCloud Drive container) — one API version on two
-  platforms; the minimum matrix of the protocol, which is the current
-  Obsidian API version and the previous one on macOS, is still open ·
+  platforms; ~~the minimum matrix of the protocol, which is the current
+  Obsidian API version and the previous one on macOS, is still open~~
+  the owner retired the previous-version cell, and #11 records the
+  decision ·
   The probe ran the 14-fixture corpus in both environments, and the 13
   parseable fixtures emitted identical bytes, fixture for fixture. Both
   environments refused the `unparseable` control with the same parse
