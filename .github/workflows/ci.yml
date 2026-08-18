@@ -42,6 +42,7 @@ jobs:
                   cache: npm
             - run: npm ci
             - run: npm run coverage
+            - run: node scripts/plan-ids.mjs
 
     build:
         runs-on: ubuntu-latest
