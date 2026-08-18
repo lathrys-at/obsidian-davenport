@@ -42,5 +42,8 @@
 		"typescript-eslint": "^8.59.1",
 		"vitest": "^4.1.10",
 		"yaml": "^2.9.0"
+	},
+	"dependencies": {
+		"ical.js": "2.2.1"
 	}
 }
