@@ -18,8 +18,10 @@
  * report is the point. The report says which module cost how many bytes, and
  * it gives each output file a line of its own. A chunk that loads lazily is
  * an output file of its own. Therefore a claim about lazy loading is
- * checkable here. The comparison fails only on growth of the order of
- * magnitude, and `stepFor` states that limit in bytes.
+ * checkable here. The comparison fails on growth of the order of magnitude,
+ * and `stepFor` states that limit in bytes. The comparison also fails on an
+ * output file that the baseline holds and the build no longer makes, because
+ * a payload that stops loading lazily can keep the total the same.
  *
  * A build that gives this module nothing to measure is a fault, and the
  * check fails on it. A metafile that does not describe the files on disk is
@@ -392,7 +394,10 @@ export interface Comparison {
 	readonly raw: Change;
 	readonly compressed: Change;
 	readonly outputs: readonly OutputMove[];
-	/** The output files that the baseline holds and the build does not make. */
+	/**
+	 * The output files that the baseline holds and the build does not make.
+	 * Each one fails the check.
+	 */
 	readonly gone: readonly string[];
 	/** Every module that grew, largest growth first. */
 	readonly grew: readonly Move[];
@@ -403,12 +408,19 @@ export interface Comparison {
 }
 
 /**
- * The comparison of the build against the baseline. Only the raw size and
- * the compressed size of the whole build decide the result, and each one
- * gets the step of its own baseline. Growth of a single module never fails
- * the check by itself, and a build that is smaller than the baseline never
- * fails the check. The comparison reports every move that it finds, because
- * the report is what makes the numbers legible.
+ * The comparison of the build against the baseline. Two things fail the
+ * check. The first is the raw size or the compressed size of the whole
+ * build, and each one gets the step of its own baseline. The second is an
+ * output file that the baseline holds and the build no longer makes: a
+ * payload that stops loading lazily moves into another output file and
+ * leaves the total the same, and only the missing file shows it.
+ *
+ * Nothing else fails the check. Growth of a single module never fails the
+ * check by itself. A new output file never fails the check. A move of bytes
+ * between output files that keeps the totals never fails the check. A build
+ * that is smaller than the baseline never fails the check. The comparison
+ * reports every move that it finds, because the report is what makes the
+ * numbers legible.
  */
 export function compare(report: Report, baseline: Baseline): Comparison {
 	const raw = changeOf(baseline.raw, report.raw);
@@ -431,20 +443,21 @@ export function compare(report: Report, baseline: Baseline): Comparison {
 	});
 	const made = new Set(report.outputs.map((output) => output.path));
 	const moves = movesOf(report, baseline);
+	const gone = baseline.outputs
+		.map((output) => output.path)
+		.filter((path) => !made.has(path));
 	return {
 		raw,
 		compressed,
 		outputs,
-		gone: baseline.outputs
-			.map((output) => output.path)
-			.filter((path) => !made.has(path)),
+		gone,
 		grew: moves
 			.filter((move) => move.change > 0)
 			.sort((left, right) => right.change - left.change),
 		shrank: moves
 			.filter((move) => move.change < 0)
 			.sort((left, right) => left.change - right.change),
-		fails: raw.past || compressed.past,
+		fails: raw.past || compressed.past || gone.length > 0,
 	};
 }
 

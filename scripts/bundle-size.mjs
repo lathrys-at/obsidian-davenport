@@ -8,9 +8,14 @@
  * The check compares the sizes against `bundle-baseline.json`. The check
  * fails when the raw size or the compressed size grows past the baseline by
  * more than a generous step, and the failure names the modules that grew.
+ * The check also fails when the baseline holds an output file that the build
+ * no longer makes, because a payload that stops loading lazily moves into
+ * another output file and keeps the total the same.
+ *
  * The check is an instrument for attribution, and it is not a budget. A
  * build that is smaller than the baseline is a report, and never a failure.
- * The baseline moves only when a person writes the new numbers into it.
+ * A move of bytes between the output files that keeps the totals is a report
+ * too. The baseline moves only when a person writes the new numbers into it.
  *
  * The production build writes the metafile that this check reads. Run
  * `npm run build` first. The check fails when the metafile is absent, and it

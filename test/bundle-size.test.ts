@@ -382,32 +382,49 @@ describe('the comparison against the baseline', () => {
 		]);
 	});
 
-	it('reports an output file that the build stopped making', () => {
-		const before: Baseline = reportOf([
-			{ path: 'main.js', bytes: 900 },
-			{ path: 'chunk-A.js', bytes: 300, entry: false },
-		]);
-		const comparison = compare(
-			reportOf([{ path: 'main.js', bytes: 1200 }]),
-			before,
-		);
+	/** A build of one entry file and one chunk beside it. */
+	const split: Baseline = reportOf([
+		{ path: 'main.js', bytes: 900 },
+		{ path: 'chunk-A.js', bytes: 300, entry: false },
+	]);
+
+	it('fails on an output file that the build stopped making', () => {
+		const merged = reportOf([{ path: 'main.js', bytes: 1200 }]);
+		const comparison = compare(merged, split);
 		expect(comparison.gone).toStrictEqual(['chunk-A.js']);
+		expect(comparison.fails).toBe(true);
+		expect(comparison.raw.past).toBe(false);
+		expect(comparison.raw.change).toBe(0);
 		expect(comparison.outputs[0]?.was).toStrictEqual({
 			raw: 900,
 			compressed: 300,
 		});
+		expect(failureLines(comparison).join('\n')).toContain(
+			'the build no longer produces chunk-A.js',
+		);
 	});
 
-	it('reports an output file that the baseline does not hold', () => {
-		const split = reportOf([
-			{ path: 'main.js', bytes: 900 },
-			{ path: 'chunk-A.js', bytes: 300, entry: false },
-		]);
+	it('accepts an output file that the baseline does not hold', () => {
 		const comparison = compare(split, baseline);
 		expect(comparison.outputs[1]?.was).toBeUndefined();
+		expect(comparison.gone).toStrictEqual([]);
+		expect(comparison.fails).toBe(false);
 		expect(reportLines(split, comparison).join('\n')).toContain(
 			'chunk-A.js  chunk  300 bytes raw  100 bytes compressed  the baseline does not hold this file',
 		);
+	});
+
+	it('accepts bytes that move between the output files it still makes', () => {
+		const moved = reportOf([
+			{ path: 'main.js', bytes: 600 },
+			{ path: 'chunk-A.js', bytes: 600, entry: false },
+		]);
+		const comparison = compare(moved, split);
+		expect(comparison.raw.change).toBe(0);
+		expect(comparison.compressed.change).toBe(0);
+		expect(comparison.gone).toStrictEqual([]);
+		expect(comparison.fails).toBe(false);
+		expect(failureLines(comparison)).toStrictEqual([]);
 	});
 });
 
@@ -585,6 +602,19 @@ describe('the check as a process', () => {
 		expect(result.status).toBe(1);
 		expect(result.output).toContain('goes past the step');
 		expect(result.output).toContain('ical.js  from 0 bytes to 190000');
+	});
+
+	it('fails when the build stops making an output file of the baseline', () => {
+		const lazy = reportOf([
+			{ path: 'merged.js', bytes: 600 },
+			{ path: 'merged-chunk.js', bytes: 600, entry: false },
+		]);
+		const meta = build('merged', [{ path: 'merged.js', bytes: 1200 }]);
+		const result = run(meta, record('merged', lazy));
+		expect(result.status).toBe(1);
+		expect(result.output).toContain(
+			'the build no longer produces merged-chunk.js',
+		);
 	});
 
 	it('passes on a build that is smaller than its baseline', () => {

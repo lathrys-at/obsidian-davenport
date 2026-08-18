@@ -1,7 +1,8 @@
 /**
  * The wording of everything that the bundle-size check prints. The check
  * prints two kinds of line. The report says what the build weighs, where the
- * weight comes from, and what moved against the baseline. The failure says
+ * weight comes from, and what moved against the baseline. The failure names
+ * each output file that the build no longer makes. The failure also says
  * which size went past the step, and it names the modules that grew.
  *
  * Each line that states a fact carries the name of the check, so that the
@@ -35,7 +36,7 @@ export function reportLines(
 			`the baseline holds ${bytes(comparison.raw.baseline)} raw and ${bytes(comparison.compressed.baseline)} compressed. The raw size is ${moved(comparison.raw.change)}, and the compressed size is ${moved(comparison.compressed.change)}.`,
 		),
 		say(
-			`the step is ${bytes(comparison.raw.step)} raw and ${bytes(comparison.compressed.step)} compressed. The check fails on growth past the step, and it fails on nothing else.`,
+			`the step is ${bytes(comparison.raw.step)} raw and ${bytes(comparison.compressed.step)} compressed. The check fails on growth past the step, and on an output file that the build no longer makes.`,
 		),
 		...outputLines(comparison),
 		...moduleLines(report, comparison),
@@ -108,16 +109,25 @@ export function failureLines(comparison: Comparison): readonly string[] {
 		return [];
 	}
 	const lines: string[] = [];
-	if (comparison.raw.past) {
-		lines.push(say(pastStep('raw', comparison.raw)));
+	for (const path of comparison.gone) {
+		lines.push(
+			say(
+				`the build no longer produces ${path}, and the baseline holds that output file. A payload that stops loading lazily moves into another output file, and the total stays the same.`,
+			),
+		);
 	}
-	if (comparison.compressed.past) {
-		lines.push(say(pastStep('compressed', comparison.compressed)));
+	if (comparison.raw.past || comparison.compressed.past) {
+		if (comparison.raw.past) {
+			lines.push(say(pastStep('raw', comparison.raw)));
+		}
+		if (comparison.compressed.past) {
+			lines.push(say(pastStep('compressed', comparison.compressed)));
+		}
+		lines.push(...grewLines(comparison.grew));
 	}
-	lines.push(...grewLines(comparison.grew));
 	lines.push(
 		say(
-			'accept this growth in the pull request that causes it, and write the new numbers into the baseline in the same change. The command `node scripts/bundle-size.mjs --write-baseline` writes the file.',
+			'accept this change in the pull request that causes it, and write the new numbers into the baseline in the same change. The command `node scripts/bundle-size.mjs --write-baseline` writes the file.',
 		),
 	);
 	return lines;
