@@ -48,7 +48,7 @@ item.
 | A-8 | Google CalDAV RFC 6578 support | stage 2 | unrecorded |
 | A-9 | Google verification requirements | stage 6 (v2 gate) | unrecorded |
 | A-10 | Google iTIP behavior on attendee writes | stage 6 | unrecorded |
-| A-11 | processFrontMatter byte determinism | stage 2 (gate; first, before stage 1's frontmatter-writing work) | unrecorded |
+| A-11 | processFrontMatter byte determinism | stage 2 (gate; first, before stage 1's frontmatter-writing work) | recorded |
 | A-12 | External-modification vault events | stage 2 | unrecorded |
 | A-13 | requestUrl redirects, large bodies, tsdav under load | stage 2 | unrecorded |
 | A-14 | Obsidian Sync merge behavior on records | stage 1 | unrecorded |
@@ -102,4 +102,20 @@ item.
 Write one heading for each item, in the entry format above. Create
 that heading
 with the item's first recorded fact. Link the item's protocol document at
-the top of that heading. No headings exist yet.
+the top of that heading.
+
+### A-11 — processFrontMatter byte determinism
+
+Protocol: [docs/dev/facts/a-11.md](facts/a-11.md)
+
+- **2026-08-18** · macOS (Obsidian API 1.13.7, Electron 43.3.0, run
+  2026-08-16) and iOS 18.7 (Obsidian API 1.13.7, run 2026-08-18; the
+  vault lives in the iCloud Drive container) — one API version on two
+  platforms; the minimum matrix of the protocol, which is the current
+  Obsidian API version and the previous one on macOS, is still open ·
+  The probe ran the 14-fixture corpus in both environments, and the 13
+  parseable fixtures emitted identical bytes, fixture for fixture. Both
+  environments refused the `unparseable` control with the same parse
+  error · branch taken: determinism holds in the tested environments —
+  this entry records the fact, and the result validates the [E]/[M]
+  fakes.
