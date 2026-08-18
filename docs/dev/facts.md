@@ -113,8 +113,9 @@ Protocol: [docs/dev/facts/a-11.md](facts/a-11.md)
   vault lives in the iCloud Drive container) — one API version on two
   platforms; the minimum matrix of the protocol, which is the current
   Obsidian API version and the previous one on macOS, is still open ·
-  The probe ran the 14-fixture corpus in both environments. The 13
+  The probe ran the 14-fixture corpus in both environments, and the 13
   parseable fixtures emitted identical bytes, fixture for fixture. Both
   environments refused the `unparseable` control with the same parse
   error · branch taken: determinism holds in the tested environments —
-  the fact records, and the result validates the [E]/[M] fakes.
+  this entry records the fact, and the result validates the [E]/[M]
+  fakes.
