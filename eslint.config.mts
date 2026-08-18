@@ -226,6 +226,23 @@ export default defineConfig(
 			'obsidianmd/no-global-this': 'off',
 		},
 	},
+	// The time poison is the runtime half of the ambient-time ban. The
+	// poison replaces the time functions on each global spelling that a
+	// caller can reach them through, and its tests read the same names back
+	// to prove that the poison went in. The rules that steer plugin code to
+	// the popout-safe window do not apply to these two files, because the
+	// subject of these two files is the global object itself.
+	{
+		name: 'davenport/time-poison',
+		files: [
+			'test/harness/sweeps/time-poison.ts',
+			'test/harness/sweeps/time-poison.test.ts',
+		],
+		rules: {
+			'obsidianmd/no-global-this': 'off',
+			'obsidianmd/prefer-window-timers': 'off',
+		},
+	},
 	// All network I/O flows through the transport port; the Obsidian
 	// adapter backs it with requestUrl. A direct fetch breaks on mobile.
 	{

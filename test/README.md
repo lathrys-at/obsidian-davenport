@@ -120,7 +120,15 @@ Sweeps are named predicates over that evidence. The standing set is in
 register its own sweeps. `vitest.config.ts` wires in `setup.ts`, and
 `setup.ts` applies to every test file. `setup.ts` poisons global fetch.
 Therefore a call outside the transport port throws where the call is written.
-`setup.ts` also returns the registry to the standing set before each test.
+`setup.ts` also poisons the ambient time functions: `Date.now`, the `Date`
+constructor with no argument, and the ambient timers. Therefore a test that
+reads the wall clock throws where the reading is written, and the controlled
+clock stays the one source of time. The poison asks which code made the call:
+a call from a dependency gets the real answer, because the test runner and
+the test dependencies read the wall clock in the same process as the tests.
+A test that must read the real clock calls `withRealTime`, and that call
+states its reason. `setup.ts` also returns the registry to the standing set
+before each test.
 
 Files run in a random order, and the tests inside each file also run in a
 random order. A test that passes only on state that a neighbour left behind
