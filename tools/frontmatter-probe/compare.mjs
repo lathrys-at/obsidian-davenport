@@ -2,7 +2,7 @@
  * This script compares the results files that the probe wrote. Each
  * environment gives one results file.
  *
- *     node tools/a11-probe/compare.mjs <results.json> [<results.json> ...]
+ *     node tools/frontmatter-probe/compare.mjs <results.json> [<results.json> ...]
  *
  * The script prints one row for each fixture. Then the script prints the
  * detail of each fixture that diverged. The last line is the verdict.
@@ -25,7 +25,7 @@ import { formatReport } from './compare-format.ts';
 const EXIT_DIVERGED = 1;
 const EXIT_UNUSABLE = 2;
 const USAGE =
-	'usage: node tools/a11-probe/compare.mjs <results.json> [<results.json> ...]';
+	'usage: node tools/frontmatter-probe/compare.mjs <results.json> [<results.json> ...]';
 
 const paths = process.argv.slice(2);
 

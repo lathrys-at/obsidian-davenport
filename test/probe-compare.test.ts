@@ -18,13 +18,13 @@ import {
 	type ComparisonReport,
 	type FixtureComparison,
 	type LoadedRun,
-} from '../tools/a11-probe/compare-core';
-import { formatReport } from '../tools/a11-probe/compare-format';
+} from '../tools/frontmatter-probe/compare-core';
+import { formatReport } from '../tools/frontmatter-probe/compare-format';
 import type {
 	FixtureResult,
 	MetadataSettling,
 	ProbeResults,
-} from '../tools/a11-probe/results';
+} from '../tools/frontmatter-probe/results';
 
 const encoder = new TextEncoder();
 

@@ -189,7 +189,7 @@ function repositoryRoot() {
 }
 
 function probeBuild(root) {
-	return join(root, 'tools', 'a11-probe', 'build.mjs');
+	return join(root, 'tools', 'frontmatter-probe', 'build.mjs');
 }
 
 /**
@@ -237,7 +237,7 @@ function buildProbe(root) {
 		process.stderr.write(built.stderr || built.stdout || '');
 		throw new Error('the probe build failed, and its output is above');
 	}
-	const distribution = join(root, 'tools', 'a11-probe', 'dist');
+	const distribution = join(root, 'tools', 'frontmatter-probe', 'dist');
 	return new Map(
 		PROBE_FILES.map((file) => {
 			const source = join(distribution, file);

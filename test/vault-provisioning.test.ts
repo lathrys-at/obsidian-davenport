@@ -32,7 +32,7 @@ import {
 	PROBE_FOLDER,
 	RESULTS_NAME,
 	resultsPath,
-} from '../tools/a11-probe/results';
+} from '../tools/frontmatter-probe/results';
 import type { NameCheck } from '../scripts/vault-core';
 import {
 	NAME_LIMIT,
@@ -52,7 +52,7 @@ import {
 const bytes = (text: string): Uint8Array => new TextEncoder().encode(text);
 
 const BUNDLE = bytes('the bundle');
-const MANIFEST = bytes('{"id":"davenport-a11-probe"}');
+const MANIFEST = bytes('{"id":"davenport-frontmatter-probe"}');
 
 /** A build of two files, as the script reads a build back off the disk. */
 const FRESH = new Map([
@@ -229,13 +229,13 @@ describe('what a walked vault adds up to', () => {
 			'README.md',
 			'.obsidian/app.json',
 			'.obsidian/community-plugins.json',
-			'.obsidian/plugins/davenport-a11-probe/main.js',
+			'.obsidian/plugins/davenport-frontmatter-probe/main.js',
 			'frontmatter-probe/simple.md',
 			'frontmatter-probe/emission-samples-20260811-091233Z.json',
 			'frontmatter-probe/emission-samples-20260812-134501Z.json',
 		],
-		installedPlugins: ['davenport-a11-probe'],
-		enabledPlugins: ['davenport-a11-probe'],
+		installedPlugins: ['davenport-frontmatter-probe'],
+		enabledPlugins: ['davenport-frontmatter-probe'],
 		unreadable: [],
 	};
 
@@ -262,14 +262,14 @@ describe('what a walked vault adds up to', () => {
 
 	it('says which installed plugins the vault enables', () => {
 		expect(summarizeVault(scan).plugins).toEqual([
-			{ id: 'davenport-a11-probe', enabled: true },
+			{ id: 'davenport-frontmatter-probe', enabled: true },
 		]);
 	});
 
 	it('calls an installed plugin not enabled when the list omits it', () => {
 		const report = summarizeVault({ ...scan, enabledPlugins: [] });
 		expect(report.plugins).toEqual([
-			{ id: 'davenport-a11-probe', enabled: false },
+			{ id: 'davenport-frontmatter-probe', enabled: false },
 		]);
 	});
 
@@ -278,7 +278,7 @@ describe('what a walked vault adds up to', () => {
 	it('treats an absent list as a list that enables no plugin', () => {
 		const report = summarizeVault({ ...scan, enabledPlugins: null });
 		expect(report.plugins).toEqual([
-			{ id: 'davenport-a11-probe', enabled: false },
+			{ id: 'davenport-frontmatter-probe', enabled: false },
 		]);
 		expect(report.enabledWithoutFolder).toEqual([]);
 	});
@@ -286,7 +286,7 @@ describe('what a walked vault adds up to', () => {
 	it('names an enabled id that no installed folder supplies', () => {
 		const report = summarizeVault({
 			...scan,
-			enabledPlugins: ['davenport-a11-probe', 'something-else'],
+			enabledPlugins: ['davenport-frontmatter-probe', 'something-else'],
 		});
 		expect(report.enabledWithoutFolder).toEqual(['something-else']);
 	});
@@ -406,8 +406,8 @@ describe('what the script prints', () => {
 		},
 		report: summarizeVault({
 			files: ['README.md'],
-			installedPlugins: ['davenport-a11-probe'],
-			enabledPlugins: ['davenport-a11-probe'],
+			installedPlugins: ['davenport-frontmatter-probe'],
+			enabledPlugins: ['davenport-frontmatter-probe'],
 			unreadable: [],
 		}),
 		cliFound: false,
@@ -703,7 +703,7 @@ describe('running against a vault that already holds work', () => {
 		);
 		writeFileSync(
 			join(path, '.obsidian', 'community-plugins.json'),
-			'["davenport-a11-probe","other-plugin"]\n',
+			'["davenport-frontmatter-probe","other-plugin"]\n',
 		);
 		writeFileSync(join(probeFolder, 'data.json'), '{"runs":3}\n');
 		writeFileSync(
@@ -734,10 +734,12 @@ describe('running against a vault that already holds work', () => {
 			.filter(([file, digest]) => before.get(file) !== digest)
 			.map(([file]) => file);
 		expect(changed).toEqual([
-			'.obsidian/plugins/davenport-a11-probe/main.js',
+			'.obsidian/plugins/davenport-frontmatter-probe/main.js',
 		]);
 		expect(
-			after.has('.obsidian/plugins/davenport-a11-probe/data.json'),
+			after.has(
+				'.obsidian/plugins/davenport-frontmatter-probe/data.json',
+			),
 		).toBe(true);
 	});
 
@@ -759,7 +761,7 @@ describe('running against a vault that already holds work', () => {
 				'utf8',
 			),
 		).toContain(PROBE_ID);
-		expect(printed).toContain('davenport-a11-probe (enabled)');
+		expect(printed).toContain('davenport-frontmatter-probe (enabled)');
 		expect(readFileSync(join(path, 'notes', 'carried.md'), 'utf8')).toBe(
 			'# carried\n',
 		);
@@ -787,6 +789,17 @@ describe('the wiring between the repository and the script', () => {
 		const packaged: unknown = JSON.parse(read('package.json'));
 		const scripts: unknown = reach(packaged, 'scripts');
 		expect(reach(scripts, 'vault')).toBe('node scripts/vault.mjs');
+	});
+
+	// The script names the plugin folder after this constant, and the script
+	// writes this constant into the list of enabled plugins. Obsidian matches
+	// that list against the identifier in the manifest. Therefore the three
+	// must be the same string, and this test holds them together.
+	it('names the plugin folder after the identifier in the manifest', () => {
+		const manifest: unknown = JSON.parse(
+			read('tools/frontmatter-probe/manifest.json'),
+		);
+		expect(reach(manifest, 'id')).toBe(PROBE_ID);
 	});
 
 	// The vaults hold a built plugin and the files that a probe run wrote.

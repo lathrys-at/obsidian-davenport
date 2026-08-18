@@ -12,8 +12,13 @@
 import type { InstallVerdict, VaultReport } from './vault-core.ts';
 import { CONFIG_FOLDER, PROBE_FOLDER, listPhrase } from './vault-core.ts';
 
-/** The name of the plugin folder for the probe. This name cannot change. */
-export const PROBE_ID = 'davenport-a11-probe';
+/**
+ * The identifier of the probe. The script uses this value as the name of
+ * the plugin folder. The script also writes this value into the list of
+ * enabled plugins. Therefore this value must be equal to the identifier in
+ * the manifest of the probe.
+ */
+export const PROBE_ID = 'davenport-frontmatter-probe';
 
 /** The name that the probe shows in the list of installed plugins. */
 const PROBE_NAME = 'Davenport frontmatter probe';
@@ -110,7 +115,7 @@ frontmatter writer into the same folder. Copy those files back to the
 repository. Then compare the runs from two devices with this command:
 
 \`\`\`bash
-node tools/a11-probe/compare.mjs <one file> <another file>
+node tools/frontmatter-probe/compare.mjs <one file> <another file>
 \`\`\`
 
 ## If the command is not in the palette
@@ -285,6 +290,6 @@ function runningLines(): string[] {
 		'  2. Run the command Run frontmatter probe.',
 		'',
 		`  Each run writes one file in ${PROBE_FOLDER}/ inside the vault. To`,
-		'  compare the files from two devices, use tools/a11-probe/compare.mjs.',
+		'  compare the files from two devices, use tools/frontmatter-probe/compare.mjs.',
 	];
 }

@@ -18,8 +18,10 @@ main.js
 # Exclude sourcemaps
 *.map
 
-# The probe kit's build output, assembled for copying into a vault.
-tools/a11-probe/dist/
+# The build output of a kit under tools/, assembled for copying into a
+# vault. The pattern names no kit, so a renamed kit stays ignored, and the
+# build output of an earlier name stays ignored too.
+tools/*/dist/
 
 # obsidian
 data.json

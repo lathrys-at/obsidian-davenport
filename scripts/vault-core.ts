@@ -17,7 +17,10 @@
  * apart.
  */
 
-import { PROBE_FOLDER, RESULTS_NAME } from '../tools/a11-probe/results.ts';
+import {
+	PROBE_FOLDER,
+	RESULTS_NAME,
+} from '../tools/frontmatter-probe/results.ts';
 
 export { PROBE_FOLDER };
 

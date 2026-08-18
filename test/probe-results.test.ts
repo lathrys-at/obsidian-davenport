@@ -16,7 +16,7 @@ import {
 	NAME_ATTEMPTS,
 	describeError,
 	resultsPath,
-} from '../tools/a11-probe/results';
+} from '../tools/frontmatter-probe/results';
 
 const NOW = new Date('2026-08-12T09:14:03.500Z');
 
