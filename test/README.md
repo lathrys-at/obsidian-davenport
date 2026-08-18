@@ -123,11 +123,12 @@ Therefore a call outside the transport port throws where the call is written.
 `setup.ts` also poisons the ambient time functions: `Date.now`, the `Date`
 constructor with no argument, and the ambient timers. Therefore a test that
 reads the wall clock throws where the reading is written, and the controlled
-clock stays the one source of time. The poison asks which code made the call:
-a call from a dependency gets the real answer, because the test runner and
-the test dependencies read the wall clock in the same process as the tests.
-A test that must read the real clock calls `withRealTime`, and that call
-states its reason. `setup.ts` also returns the registry to the standing set
+clock stays the one source of time. The poison asks which code made the call.
+A call from a dependency gets the real answer. The test runner and the test
+dependencies read the wall clock in the same process as the tests. A file of
+this repository under a directory named `node_modules` stays repository code,
+and the ban still covers it. A test that must read the real clock calls
+`withRealTime`, and that call states its reason. `setup.ts` also returns the registry to the standing set
 before each test.
 
 Files run in a random order, and the tests inside each file also run in a

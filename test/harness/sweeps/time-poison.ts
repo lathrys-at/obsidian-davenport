@@ -1,12 +1,12 @@
 /**
- * The runtime half of time discipline. Every time reading of the plugin must
- * come from the clock port, and in the tests the controlled clock answers
- * that port. This module replaces the ambient time functions with functions
- * that throw. A test that reads the wall clock therefore fails at the line
- * that reads it, and not on some later run where the wall clock gives a
- * different answer. The text below uses two terms: the poison is the
- * replacement function, and a spelling is the name that a caller writes to
- * reach the function.
+ * The runtime half of time discipline. Every reading of the clock in the
+ * plugin must come from the clock port, and in the tests the controlled clock
+ * answers that port. This module replaces the ambient time functions with
+ * functions that throw. A test that reads the wall clock therefore fails at
+ * the line that reads the clock. It does not fail later, on a run where the
+ * wall clock gives a different answer. The text below uses two terms: the
+ * poison is the replacement function, and a spelling is the name that a
+ * caller writes to reach the function.
  *
  * The poison covers three surfaces:
  *
@@ -24,6 +24,12 @@
  * and it has no delay to time. `performance.now` counts from the start of
  * the process, and vitest measures the duration of each test with it.
  *
+ * The ban covers the ordinary spellings, and it does not cover every path to
+ * the wall clock. `performance.timeOrigin` plus `performance.now` gives the
+ * wall clock. `new Intl.DateTimeFormat().format()` with no argument reads the
+ * wall clock through an intrinsic that no property replacement reaches. Both
+ * paths stay outside the ban.
+ *
  * The poison covers the global names that the fetch poison covers:
  * `globalThis`, `window`, `self`, and `global`. Under node all these names
  * resolve to one object, and one poison covers all of them. The module still
@@ -35,11 +41,25 @@
  * keeps the property descriptor that it found, so that it can lift the
  * poison and put the original function back.
  *
- * The poison asks which code made the call. A call from a file of this
- * repository throws. A call from a file under `node_modules`, and a call
- * from a module of the node runtime, gets the real answer. The poison lets
- * these calls through, because the test runner and the test dependencies
- * read the wall clock in the same process as the tests:
+ * The poison asks which code made the call, and it answers from the path in
+ * the first stack frame below the poison:
+ *
+ * - A path inside the repository root is repository code, and the call
+ *   throws. The repository root is the first directory above this file that
+ *   holds a package.json file.
+ * - A path inside the `node_modules` directory of the repository root is
+ *   dependency code, and the call gets the real answer.
+ * - A path outside the repository root is dependency code, and the call gets
+ *   the real answer. A module name that starts with `node:` is a module of
+ *   the node runtime, and the call gets the real answer.
+ *
+ * A directory named `node_modules` deeper in the repository does not make the
+ * files inside it dependency code. A fixture tree can hold such a directory,
+ * and the code in it stays under the ban.
+ *
+ * The poison must let the calls of the dependencies through, because the test
+ * runner and the test dependencies read the wall clock in the same process as
+ * the tests:
  *
  * - vitest stamps the console output of a test with `Date.now`. A poison
  *   that refused that call would drop the output of every test that writes
@@ -50,10 +70,19 @@
  * - eslint, its plugins, and vitest itself read the wall clock while they
  *   load. A test that imports them cannot wrap that reading.
  *
- * The question is who made the call, and not what the call runs under. A
- * test that calls fast-check therefore passes, and that same test throws
- * where it reads the clock itself.
+ * The rule reads the frame that made the call, and it does not read the
+ * frames below that frame. A test that calls fast-check therefore passes,
+ * and that same test throws where it reads the clock itself. The rule has a
+ * limit in the other direction. Repository code can hand a poisoned function
+ * to a dependency as a value, and the dependency can then call it. The frame
+ * that made that call belongs to the dependency, and the reading passes. The
+ * poison catches the ordinary spellings, and the poison is not a capability
+ * boundary.
  */
+
+import { existsSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 /**
  * The names of the global objects that a caller can reach the ambient time
@@ -64,16 +93,26 @@ const ALIAS_NAMES = ['window', 'self', 'global'] as const;
 /** The ambient timer functions that the poison replaces. */
 const TIMER_NAMES = ['setTimeout', 'setInterval', 'setImmediate'] as const;
 
-/** A frame of a dependency. The pattern holds for both path separators. */
-const DEPENDENCY_FRAME = /[/\\]node_modules[/\\]/;
+/**
+ * The number of stack frames that one capture collects. The poison reads the
+ * first frame that names a path, and the frames above that frame name no
+ * path. This budget holds every such run of frames that the tests produce,
+ * and it keeps the cost of the capture small.
+ */
+const FRAME_BUDGET = 20;
 
-/** The start of a frame of the node runtime, for example `node:internal/…`. */
-const RUNTIME_FRAME = 'node:';
+/** The start of a location of the node runtime, for example `node:internal/…`. */
+const RUNTIME_PREFIX = 'node:';
+
+/** The directory name that holds the installed dependencies. */
+const DEPENDENCY_DIRECTORY = 'node_modules';
 
 const CLOCK_REMEDY =
 	'Read the time from the controlled clock in test/harness/clock.ts.';
 const TIMER_REMEDY =
 	'Make timers with the controlled clock in test/harness/clock.ts.';
+const ASYNC_BODY_MESSAGE =
+	'withRealTime needs a body that runs to its end without an await. The poison comes back when the body returns.';
 
 /** The error that a poisoned time function throws. */
 export class AmbientTimeError extends Error {
@@ -88,6 +127,9 @@ export class AmbientTimeError extends Error {
 		this.spelling = spelling;
 	}
 }
+
+/** What one stack frame says about the code that made a call. */
+export type FrameOwner = 'repository' | 'outside' | 'unreadable';
 
 type Newable = abstract new (...args: never[]) => unknown;
 
@@ -108,6 +150,27 @@ let poisoned = false;
 let exemptionDepth = 0;
 let exemptionLiftedThePoison = false;
 
+/**
+ * Returns the first directory above this file that holds a package.json
+ * file. Returns the working directory of the process when no directory above
+ * this file holds one.
+ */
+function findRepositoryRoot(): string {
+	let directory = dirname(fileURLToPath(import.meta.url));
+	for (;;) {
+		if (existsSync(join(directory, 'package.json'))) {
+			return directory;
+		}
+		const parent = dirname(directory);
+		if (parent === directory) {
+			return process.cwd();
+		}
+		directory = parent;
+	}
+}
+
+const REPOSITORY_ROOT = findRepositoryRoot();
+
 function spellings(): GlobalSpelling[] {
 	const found: GlobalSpelling[] = [
 		{ spelling: 'globalThis', target: globalThis },
@@ -122,6 +185,45 @@ function spellings(): GlobalSpelling[] {
 }
 
 /**
+ * Returns the position of the round bracket that opens the last group of the
+ * text. The text must end with a closing round bracket. Returns -1 when the
+ * brackets do not pair. A path can hold round brackets of its own, so the
+ * search counts the brackets instead of taking the last one.
+ */
+function openingBracket(text: string): number {
+	let depth = 0;
+	for (let index = text.length - 1; index >= 0; index -= 1) {
+		const character = text[index];
+		if (character === ')') {
+			depth += 1;
+		} else if (character === '(') {
+			depth -= 1;
+			if (depth === 0) {
+				return index;
+			}
+		}
+	}
+	return -1;
+}
+
+/** Returns the position of the bracket that closes the group at `open`. */
+function closingBracket(text: string, open: number): number {
+	let depth = 0;
+	for (let index = open; index < text.length; index += 1) {
+		const character = text[index];
+		if (character === '(') {
+			depth += 1;
+		} else if (character === ')') {
+			depth -= 1;
+			if (depth === 0) {
+				return index;
+			}
+		}
+	}
+	return -1;
+}
+
+/**
  * Returns the location that a stack frame names, for example
  * `/home/user/repo/test/suite.test.ts:12:3`. Returns null for a frame that
  * names no location, such as `at Array.map (<anonymous>)`.
@@ -131,37 +233,131 @@ function frameLocation(frame: string): string | null {
 	if (!trimmed.startsWith('at ')) {
 		return null;
 	}
-	const location = trimmed.endsWith(')')
-		? trimmed.slice(trimmed.lastIndexOf('(') + 1, -1)
-		: trimmed.slice(3);
+	const body = trimmed.slice(3);
+	let location = body;
+	if (body.endsWith(')')) {
+		const open = openingBracket(body);
+		if (open === -1) {
+			return null;
+		}
+		location = body.slice(open + 1, -1);
+	}
+	// V8 writes the frame of an eval as `eval at name (origin), position`.
+	// The origin names the file that called eval, and that file is the code
+	// that this module must classify.
+	if (location.startsWith('eval at ')) {
+		const open = location.indexOf('(');
+		const close = open === -1 ? -1 : closingBracket(location, open);
+		if (close === -1) {
+			return null;
+		}
+		location = location.slice(open + 1, close);
+	}
 	return location.includes(':') ? location : null;
+}
+
+/**
+ * Returns the path that a location names. The function drops the line and
+ * column numbers, drops a query string that the module server added, and
+ * turns a file URL into a path.
+ */
+function locationPath(location: string): string {
+	const withoutPosition = location.replace(/(?::\d+)+$/, '');
+	const withoutQuery = withoutPosition.replace(/[?#].*$/, '');
+	if (!withoutQuery.startsWith('file://')) {
+		return withoutQuery;
+	}
+	try {
+		return fileURLToPath(withoutQuery);
+	} catch {
+		return withoutQuery;
+	}
+}
+
+function forwardSlashes(path: string): string {
+	return path.replace(/\\/g, '/');
+}
+
+function isAbsolutePath(path: string): boolean {
+	return /^([A-Za-z]:)?\//.test(path);
+}
+
+function ownerOfPath(path: string, root: string): FrameOwner {
+	const file = forwardSlashes(path);
+	const base = forwardSlashes(root);
+	if (file === base || file.startsWith(`${base}/`)) {
+		const relative = file.slice(base.length + 1);
+		return relative.startsWith(`${DEPENDENCY_DIRECTORY}/`)
+			? 'outside'
+			: 'repository';
+	}
+	if (isAbsolutePath(file)) {
+		return 'outside';
+	}
+	return file.startsWith(`${DEPENDENCY_DIRECTORY}/`)
+		? 'outside'
+		: 'repository';
+}
+
+/**
+ * Returns what one stack frame says about the code that made the call. A
+ * frame that names no location says nothing, and the caller of this function
+ * then reads the next frame.
+ */
+function frameOwner(frame: string, root: string): FrameOwner {
+	const location = frameLocation(frame);
+	if (location === null) {
+		return 'unreadable';
+	}
+	if (location.startsWith(RUNTIME_PREFIX)) {
+		return 'outside';
+	}
+	return ownerOfPath(locationPath(location), root);
 }
 
 /**
  * Returns true when a file of this repository made the call. The function
  * reads the first frame below `boundary` that names a location. The
- * `boundary` argument is the poison itself, so the stack starts at the
- * caller of the poison.
+ * `boundary` argument is the poison itself, so the stack starts at the caller
+ * of the poison.
  *
- * The function returns false when no frame names a location. Such a stack is
- * no proof of a breach, and the runner must keep running.
+ * Two writable globals decide what a stack holds: `Error.stackTraceLimit` and
+ * `Error.prepareStackTrace`. Vitest installs a hook in the second global for
+ * its source maps, and other tools install a hook of their own. This function
+ * therefore sets both globals to a known value for the length of the capture,
+ * and puts back the values that it found. Without this step, a limit of zero,
+ * or a hook that returns something other than a string, turns the poison off
+ * and the reading passes.
+ *
+ * The function returns true when no frame names a location, and when the
+ * stack is not a string. A stack of that shape is the mark of a hook that
+ * this function did not expect, and the poison then refuses.
  */
 function callerIsRepositoryCode(
 	boundary: (...args: never[]) => unknown,
 ): boolean {
-	const holder = new Error();
-	Error.captureStackTrace(holder, boundary);
-	for (const frame of (holder.stack ?? '').split('\n').slice(1)) {
-		const location = frameLocation(frame);
-		if (location === null) {
-			continue;
+	const limit = Error.stackTraceLimit;
+	const prepare: unknown = Reflect.get(Error, 'prepareStackTrace');
+	Error.stackTraceLimit = FRAME_BUDGET;
+	Reflect.set(Error, 'prepareStackTrace', undefined);
+	try {
+		const holder = new Error();
+		Error.captureStackTrace(holder, boundary);
+		const stack: unknown = holder.stack;
+		if (typeof stack !== 'string') {
+			return true;
 		}
-		return (
-			!DEPENDENCY_FRAME.test(location) &&
-			!location.startsWith(RUNTIME_FRAME)
-		);
+		for (const frame of stack.split('\n')) {
+			const owner = frameOwner(frame, REPOSITORY_ROOT);
+			if (owner !== 'unreadable') {
+				return owner === 'repository';
+			}
+		}
+		return true;
+	} finally {
+		Error.stackTraceLimit = limit;
+		Reflect.set(Error, 'prepareStackTrace', prepare);
 	}
-	return false;
 }
 
 /**
@@ -255,6 +451,25 @@ function replace(target: object, key: string, value: unknown): void {
 }
 
 /**
+ * Points `Date.prototype.constructor` at the proxy. Without this step,
+ * `new Date(0).constructor === Date` is false, because the left side gives
+ * the real constructor and the right side gives the proxy.
+ */
+function pointPrototypeAtProxy(
+	real: DateConstructor,
+	proxy: DateConstructor,
+): void {
+	const prototype: unknown = real.prototype;
+	if (typeof prototype !== 'object' || prototype === null) {
+		return;
+	}
+	const current: unknown = Reflect.get(prototype, 'constructor');
+	if (needsPoison(prototype, 'constructor', current)) {
+		replace(prototype, 'constructor', proxy);
+	}
+}
+
+/**
  * Installs the poison on each global object that does not hold the poison
  * already. The function poisons a property one time only. A second call
  * therefore cannot hide an original function behind a second layer of
@@ -275,7 +490,9 @@ export function poisonTime(): void {
 				);
 			}
 			if (needsPoison(target, 'Date', date)) {
-				replace(target, 'Date', poisonedDate(holder, spelling));
+				const proxy = poisonedDate(holder, spelling);
+				replace(target, 'Date', proxy);
+				pointPrototypeAtProxy(holder, proxy);
 			}
 		}
 		for (const name of TIMER_NAMES) {
@@ -348,28 +565,45 @@ export function timePoisonHolds(): boolean {
 	});
 }
 
-function isPromiseLike(value: unknown): boolean {
+function isPromiseLike(value: unknown): value is PromiseLike<unknown> {
 	if (typeof value !== 'object' || value === null) {
 		return false;
 	}
 	return typeof Reflect.get(value, 'then') === 'function';
 }
 
+function isAsyncFunction(body: unknown): boolean {
+	return Object.prototype.toString.call(body) === '[object AsyncFunction]';
+}
+
 /**
- * Runs `body` with the real time functions in place, and puts the poison
- * back afterwards. The `reason` argument states why this test must read the
- * real clock. The reason stands at the call, so that a reader of the test
- * sees the exception and the ground for it.
+ * Runs `body` with the real time functions in place, and puts the poison back
+ * afterwards. The `reason` argument states why this test must read the real
+ * clock. The reason stands at the call, so that a reader of the test sees the
+ * exception and the ground for it.
  *
  * The real time functions stay in place for the body of the call, and for
- * nothing else. The body must therefore run to its end without an await. A
- * body that returns a promise throws, because the poison would come back
- * while that promise was still pending.
+ * nothing else. The body must therefore run to its end without an await. An
+ * async body throws before it runs. A plain function that returns a promise
+ * throws after it runs, and this function then takes the rejection of that
+ * promise, so that the rejection cannot fail another test.
+ *
+ * The call throws when other code holds the time functions. Fake timers hold
+ * them, and so does a stubbed global. Putting the original functions back
+ * over such a holder would discard the clock of that holder without a word.
  */
 export function withRealTime<T>(reason: string, body: () => T): T {
 	if (reason.trim().length === 0) {
 		throw new Error(
 			'withRealTime needs a reason. The reason tells a reader why this test reads the real clock.',
+		);
+	}
+	if (isAsyncFunction(body)) {
+		throw new Error(ASYNC_BODY_MESSAGE);
+	}
+	if (poisoned && !timePoisonHolds()) {
+		throw new Error(
+			'withRealTime cannot run while other code holds the time functions. Fake timers hold them, and so does a stubbed global. Put the time functions back before you call withRealTime.',
 		);
 	}
 	if (exemptionDepth === 0) {
@@ -380,9 +614,11 @@ export function withRealTime<T>(reason: string, body: () => T): T {
 	try {
 		const result = body();
 		if (isPromiseLike(result)) {
-			throw new Error(
-				'withRealTime needs a body that runs to its end without an await. The poison comes back when the body returns.',
+			void result.then(
+				() => undefined,
+				() => undefined,
 			);
+			throw new Error(ASYNC_BODY_MESSAGE);
 		}
 		return result;
 	} finally {
@@ -392,3 +628,12 @@ export function withRealTime<T>(reason: string, body: () => T): T {
 		}
 	}
 }
+
+/**
+ * The parts of the caller rule that the tests of this module read. No other
+ * module reads this object.
+ */
+export const timePoisonInternalsForTests = {
+	frameOwner,
+	repositoryRoot: (): string => REPOSITORY_ROOT,
+};

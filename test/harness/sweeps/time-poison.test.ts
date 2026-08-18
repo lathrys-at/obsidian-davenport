@@ -5,11 +5,42 @@ import {
 	poisonTime,
 	restoreTime,
 	timePoisonHolds,
+	timePoisonInternalsForTests,
 	withRealTime,
 } from './time-poison';
+import type { FrameOwner } from './time-poison';
 
 const ALIASES = ['window', 'self', 'global'] as const;
 const TIMERS = ['setTimeout', 'setInterval', 'setImmediate'] as const;
+
+const { frameOwner, repositoryRoot } = timePoisonInternalsForTests;
+
+const ROOT = repositoryRoot();
+
+/**
+ * A path that a fixture tree could hold. The directory name says
+ * node_modules, and the file under it is still a file of this repository.
+ */
+const FIXTURE_UNDER_DEPENDENCY_NAME = `${ROOT}/test/probefix/node_modules/reader.ts`;
+
+/** A path of an installed dependency of this repository. */
+const INSTALLED_DEPENDENCY = `${ROOT}/node_modules/probe-package/index.js`;
+
+/**
+ * Builds a function whose stack frame names the given path. V8 takes the name
+ * of an evaluated script from its sourceURL comment, so a test can put a frame
+ * of any path in front of the poison. The alternative is a fixture file under
+ * a directory named node_modules, and git ignores every such directory.
+ */
+function functionAtPath(
+	path: string,
+	source: string,
+): (...args: unknown[]) => unknown {
+	const build = new Function(
+		`return (${source})\n//# sourceURL=${path}`,
+	) as () => (...args: unknown[]) => unknown;
+	return build();
+}
 
 /**
  * A global object that a test puts under an alias name. The object holds its
@@ -142,6 +173,30 @@ describe('time poisoning', () => {
 		expect(new Date(0).toISOString()).toBe('1970-01-01T00:00:00.000Z');
 	});
 
+	it('keeps the constructor of a date pointed at the name Date', () => {
+		expect(new Date(0).constructor).toBe(Date);
+		expect(Date.prototype.constructor).toBe(Date);
+	});
+
+	it('keeps a class that extends Date, and refuses its zero-argument call', () => {
+		class Stamp extends Date {}
+		const made = new Stamp(5);
+		expect(made.getTime()).toBe(5);
+		expect(made).toBeInstanceOf(Stamp);
+		expect(made).toBeInstanceOf(Date);
+		expect(() => new Stamp()).toThrow(AmbientTimeError);
+	});
+
+	it('keeps Reflect.construct with a new target, and refuses it with no argument', () => {
+		class Stamp extends Date {}
+		const made: Date = Reflect.construct(Date, [7], Stamp);
+		expect(made.getTime()).toBe(7);
+		expect(made).toBeInstanceOf(Stamp);
+		expect(() => {
+			Reflect.construct(Date, [], Stamp);
+		}).toThrow(AmbientTimeError);
+	});
+
 	it('keeps the functions that cancel a timer and the microtask queue', () => {
 		expect(() => {
 			clearTimeout(undefined);
@@ -188,6 +243,7 @@ describe('time poisoning', () => {
 		restoreTime();
 		expect(timePoisonHolds()).toBe(false);
 		expect(globalValue('globalThis', 'Date')).not.toBe(poison);
+		expect(Date.prototype.constructor).toBe(Date);
 		expect(Date.now()).toBeGreaterThan(0);
 		expect(new Date().getTime()).toBeGreaterThan(0);
 	});
@@ -215,6 +271,239 @@ describe('time poisoning', () => {
 			if (original !== undefined) {
 				Object.defineProperty(Date, 'now', original);
 			}
+		}
+	});
+});
+
+describe('the rule that reads the caller of a time function', () => {
+	const REPOSITORY_FRAMES: readonly (readonly [string, string, string])[] = [
+		[
+			'a named frame',
+			'    at readClock (/repo/test/foo.test.ts:3:12)',
+			'/repo',
+		],
+		['a frame with no name', '    at /repo/test/foo.test.ts:3:12', '/repo'],
+		[
+			'a module body',
+			'    at Object.<anonymous> (/repo/test/foo.test.ts:3:12)',
+			'/repo',
+		],
+		[
+			'a constructor',
+			'    at new Reader (/repo/src/core/x.ts:1:1)',
+			'/repo',
+		],
+		[
+			'an async frame',
+			'    at async Module.run (/repo/test/x.ts:1:1)',
+			'/repo',
+		],
+		['a file URL', '    at file:///repo/test/x.ts:1:1', '/repo'],
+		[
+			'a path that holds round brackets',
+			'    at now (/repo/My (Repo) Files/test/x.ts:1:1)',
+			'/repo',
+		],
+		[
+			'a path under a fixture directory named node_modules',
+			`    at readClock (${FIXTURE_UNDER_DEPENDENCY_NAME}:1:1)`,
+			ROOT,
+		],
+		[
+			'a relative path of this repository',
+			'    at now (test/x.ts:1:1)',
+			'/repo',
+		],
+		[
+			'a path with the query string of the module server',
+			'    at now (/repo/test/x.ts?v=abc123:1:1)',
+			'/repo',
+		],
+		[
+			'an eval inside this repository',
+			'    at eval (eval at run (/repo/test/x.ts:1:1), <anonymous>:1:1)',
+			'/repo',
+		],
+		[
+			'a path with the separator of windows',
+			'    at now (C:\\repo\\test\\x.ts:1:1)',
+			'C:\\repo',
+		],
+	];
+
+	const OUTSIDE_FRAMES: readonly (readonly [string, string, string])[] = [
+		[
+			'an installed dependency',
+			'    at now (/repo/node_modules/pkg/index.js:1:1)',
+			'/repo',
+		],
+		[
+			'an installed dependency behind a file URL',
+			'    at now (file:///repo/node_modules/fast-check/lib/fast-check.js:1:1)',
+			'/repo',
+		],
+		[
+			'an installed dependency whose path holds round brackets',
+			'    at now (/repo/node_modules/pkg/a (b)/f.js:1:1)',
+			'/repo',
+		],
+		[
+			'a dependency of a dependency',
+			'    at now (/repo/node_modules/pkg/node_modules/sub/x.js:1:1)',
+			'/repo',
+		],
+		[
+			'a relative path of a dependency',
+			'    at now (node_modules/pkg/i.js:1:1)',
+			'/repo',
+		],
+		[
+			'a module of the node runtime',
+			'    at processTicksAndRejections (node:internal/process/task_queues:105:5)',
+			'/repo',
+		],
+		[
+			'a module of the node runtime with no name',
+			'    at node:internal/main/run_main_module:23:47',
+			'/repo',
+		],
+		[
+			'a path outside the repository',
+			'    at now (/elsewhere/lib/i.js:1:1)',
+			'/repo',
+		],
+		[
+			'a path that starts with the name of the repository root',
+			'    at now (/repository-other/test/x.ts:1:1)',
+			'/repo',
+		],
+		[
+			'an eval inside a dependency',
+			'    at eval (eval at run (/repo/node_modules/pkg/i.js:1:1), <anonymous>:1:1)',
+			'/repo',
+		],
+		[
+			'an installed dependency under the separator of windows',
+			'    at now (C:\\repo\\node_modules\\pkg\\i.js:1:1)',
+			'C:\\repo',
+		],
+	];
+
+	const UNREADABLE_FRAMES: readonly (readonly [string, string])[] = [
+		['a builtin', '    at Array.map (<anonymous>)'],
+		['a native frame', '    at native'],
+		['the promise constructor', '    at new Promise (<anonymous>)'],
+		['the head line of the stack', 'Error'],
+		['an empty line', ''],
+	];
+
+	it.each(REPOSITORY_FRAMES)(
+		'reads %s as repository code',
+		(_, frame, root) => {
+			expect(frameOwner(frame, root)).toBe<FrameOwner>('repository');
+		},
+	);
+
+	it.each(OUTSIDE_FRAMES)(
+		'reads %s as code outside the ban',
+		(_, frame, root) => {
+			expect(frameOwner(frame, root)).toBe<FrameOwner>('outside');
+		},
+	);
+
+	it.each(UNREADABLE_FRAMES)('reads %s as no answer', (_, frame) => {
+		expect(frameOwner(frame, '/repo')).toBe<FrameOwner>('unreadable');
+	});
+
+	it('throws for a repository file under a directory named node_modules', () => {
+		const read = functionAtPath(
+			FIXTURE_UNDER_DEPENDENCY_NAME,
+			'function readClock() { return Date.now(); }',
+		);
+		const make = functionAtPath(
+			FIXTURE_UNDER_DEPENDENCY_NAME,
+			'function makeDate() { return new Date(); }',
+		);
+		expect(() => read()).toThrow(AmbientTimeError);
+		expect(() => make()).toThrow(AmbientTimeError);
+	});
+
+	it('answers an installed dependency with the real time', () => {
+		const read = functionAtPath(
+			INSTALLED_DEPENDENCY,
+			'function readClock() { return Date.now(); }',
+		);
+		expect(read()).toBeGreaterThan(0);
+	});
+
+	it('answers a dependency that calls a poisoned function that it received', () => {
+		const invoke = functionAtPath(
+			INSTALLED_DEPENDENCY,
+			'function invoke(read) { return read(); }',
+		);
+		expect(invoke(Date.now)).toBeGreaterThan(0);
+	});
+
+	it('throws when a dependency calls a function of this repository', () => {
+		const invoke = functionAtPath(
+			INSTALLED_DEPENDENCY,
+			'function invoke(read) { return read(); }',
+		);
+		expect(() => invoke(() => Date.now())).toThrow(AmbientTimeError);
+	});
+});
+
+describe('the time poison under a stack hook', () => {
+	it('throws when the stack trace limit is zero', () => {
+		const limit = Error.stackTraceLimit;
+		Error.stackTraceLimit = 0;
+		try {
+			expect(() => Date.now()).toThrow(AmbientTimeError);
+			expect(Error.stackTraceLimit).toBe(0);
+		} finally {
+			Error.stackTraceLimit = limit;
+		}
+	});
+
+	it('throws when a stack hook returns nothing', () => {
+		const prepare: unknown = Reflect.get(Error, 'prepareStackTrace');
+		const hook = (): undefined => undefined;
+		Reflect.set(Error, 'prepareStackTrace', hook);
+		try {
+			expect(() => Date.now()).toThrow(AmbientTimeError);
+			expect(Reflect.get(Error, 'prepareStackTrace')).toBe(hook);
+		} finally {
+			Reflect.set(Error, 'prepareStackTrace', prepare);
+		}
+	});
+
+	it('throws when a stack hook returns the frames themselves', () => {
+		const prepare: unknown = Reflect.get(Error, 'prepareStackTrace');
+		const hook = (_: Error, frames: unknown[]): unknown[] => frames;
+		Reflect.set(Error, 'prepareStackTrace', hook);
+		try {
+			expect(() => Date.now()).toThrow(AmbientTimeError);
+			expect(Reflect.get(Error, 'prepareStackTrace')).toBe(hook);
+		} finally {
+			Reflect.set(Error, 'prepareStackTrace', prepare);
+		}
+	});
+
+	it('answers a dependency under a stack hook that returns the frames', () => {
+		const read = functionAtPath(
+			INSTALLED_DEPENDENCY,
+			'function readClock() { return Date.now(); }',
+		);
+		const prepare: unknown = Reflect.get(Error, 'prepareStackTrace');
+		Reflect.set(
+			Error,
+			'prepareStackTrace',
+			(_: Error, frames: unknown[]): unknown[] => frames,
+		);
+		try {
+			expect(read()).toBeGreaterThan(0);
+		} finally {
+			Reflect.set(Error, 'prepareStackTrace', prepare);
 		}
 	});
 });
@@ -257,12 +546,54 @@ describe('the named exception to the time poison', () => {
 		expect(timePoisonHolds()).toBe(true);
 	});
 
-	it('refuses a body that returns a promise', () => {
+	it('refuses an async body before that body runs', () => {
+		let ran = false;
+		const body = async (): Promise<number> => {
+			ran = true;
+			return Promise.resolve(1);
+		};
 		expect(() =>
-			withRealTime('this test returns a promise', () =>
-				Promise.resolve(1),
-			),
+			withRealTime('this test uses an async body', body),
 		).toThrow(/without an await/);
+		expect(ran).toBe(false);
+		expect(timePoisonHolds()).toBe(true);
+	});
+
+	it('refuses a plain body that returns a promise, and takes its rejection', async () => {
+		const reports: unknown[] = [];
+		const record = (reason: unknown): void => {
+			reports.push(reason);
+		};
+		const wait = withRealTime(
+			'this test needs the real setImmediate to wait one turn',
+			() => globalThis.setImmediate,
+		);
+		process.on('unhandledRejection', record);
+		try {
+			expect(() =>
+				withRealTime('this test returns a promise', () =>
+					Promise.reject(new Error('the body of this test rejects')),
+				),
+			).toThrow(/without an await/);
+			await new Promise<void>((resolve) => {
+				wait(resolve);
+			});
+		} finally {
+			process.off('unhandledRejection', record);
+		}
+		expect(reports).toEqual([]);
+		expect(timePoisonHolds()).toBe(true);
+	});
+
+	it('refuses to run while fake timers hold the time functions', () => {
+		vi.useFakeTimers();
+		try {
+			expect(() =>
+				withRealTime('this test runs inside fake timers', () => 1),
+			).toThrow(/holds the time functions/);
+		} finally {
+			vi.useRealTimers();
+		}
 		expect(timePoisonHolds()).toBe(true);
 	});
 });
