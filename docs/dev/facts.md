@@ -108,13 +108,13 @@ the top of that heading.
 
 Protocol: [docs/dev/facts/a-11.md](facts/a-11.md)
 
-- **2026-08-18** · macOS (Obsidian API 1.13.7, Electron 43.3.0) and iOS
-  18.7 (Obsidian API 1.13.7), one scratch vault on each platform — one
-  Obsidian API version on two platforms; the minimum matrix of the
-  protocol, which is two Obsidian versions on macOS, is still open · The
-  14-fixture probe corpus produced byte-identical frontmatter emission in
-  the two environments: the 13 parseable fixtures emitted identical
-  bytes, fixture for fixture, and both environments refused the
-  `unparseable` control with the same parse error · branch taken:
-  determinism holds — the result validates the [E]/[M] fakes, and no
-  designated-writer redesign is necessary.
+- **2026-08-18** · macOS (Obsidian API 1.13.7, Electron 43.3.0, run
+  2026-08-16) and iOS 18.7 (Obsidian API 1.13.7, run 2026-08-18; the
+  vault lives in the iCloud Drive container) — one API version on two
+  platforms; the minimum matrix of the protocol, which is the current
+  Obsidian API version and the previous one on macOS, is still open ·
+  The probe ran the 14-fixture corpus in both environments. The 13
+  parseable fixtures emitted identical bytes, fixture for fixture. Both
+  environments refused the `unparseable` control with the same parse
+  error · branch taken: determinism holds in the tested environments —
+  the fact records, and the result validates the [E]/[M] fakes.
