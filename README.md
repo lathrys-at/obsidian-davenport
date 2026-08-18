@@ -27,3 +27,17 @@ The design documentation is in
 [docs/davenport-spec.md](docs/davenport-spec.md) and
 [docs/davenport-test-plan.md](docs/davenport-test-plan.md). The
 development process is in [docs/dev/process.md](docs/dev/process.md).
+
+## Third-party software
+
+Davenport uses [ical.js](https://github.com/kewisch/ical.js) 2.2.1 to
+read and write iCalendar data, and the build puts ical.js into
+`main.js`. ical.js is Copyright (C) Philipp Kewisch, and it is under the
+[Mozilla Public License 2.0](https://mozilla.org/MPL/2.0/). The code of
+ical.js in `main.js` stays under that license. You can get the source of
+that version at
+<https://github.com/kewisch/ical.js/releases/tag/v2.2.1>. The file
+`main.js` carries the same notice.
+
+Davenport itself is under the 0-BSD license. The file
+[LICENSE](LICENSE) holds the text.
