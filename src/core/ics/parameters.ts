@@ -15,10 +15,11 @@
  * value again in a form that carries the same meaning. The third change
  * does not: the serializer writes no backslash back, so a backslash that
  * stood before a comma is gone from the bytes. One part of the third
- * change is an exception. A backslash and the letter n is the form that
- * one large calendar client writes for a line break, the corpus holds that
- * form, and the serializer writes the same line break back as a caret and
- * the letter n. That form therefore keeps its meaning.
+ * change is an exception. A backslash and the letter n, in either case, is
+ * the form that one large calendar client writes for a line break, the
+ * corpus holds that form, and the serializer writes the same line break
+ * back as a caret and the letter n. That form therefore keeps its
+ * meaning.
  *
  * The check here builds the value that the accepted changes give, and it
  * compares that value with the value that the library read. The check

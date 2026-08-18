@@ -169,7 +169,7 @@ function rulePartProblem(part: string, rule: JCalRecur): string | null {
 	if (name === 'UNTIL') {
 		return DATE.test(text) || DATE_TIME.test(text)
 			? null
-			: rulePartIs(name, text, 'date and no date-time');
+			: `carries ${quote(text)} in the rule part ${name}, and that value is neither a date nor a date-time`;
 	}
 	if (name === 'COUNT' || name === 'INTERVAL') {
 		if (!DIGITS.test(text)) {
@@ -245,7 +245,11 @@ function plainNumber(text: string): string {
 			digits = digits.slice(0, -1);
 		}
 	}
-	return sign + digits.replace(/^0+(?=\d)/, '');
+	const plain = digits.replace(/^0+(?=\d)/, '');
+	// The number type of the language holds one zero, and the sign of that
+	// zero is gone when the number comes back to text. A text that writes a
+	// zero with a sign therefore keeps its meaning without the sign.
+	return plain === '0' ? plain : sign + plain;
 }
 
 function periodProblem(part: string): string | null {

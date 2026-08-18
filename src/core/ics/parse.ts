@@ -67,9 +67,10 @@
  *   a day which does not exist passes the gate. An identifier that names
  *   no time zone passes the gate. A repeat rule that selects no day passes
  *   the gate.
- * - The changes of spelling that the round trip makes and that keep the
- *   meaning. The list is complete, and the tests hold one text for each
- *   item:
+ * - The changes that the round trip makes and that keep the meaning. The
+ *   list names every such change that the tests of this module observe. It
+ *   is not a proof that the round trip makes no other change. The tests
+ *   hold one text for each item:
  *     - the parser raises the case of a property name and of a parameter
  *       name;
  *     - the parser drops a value type that is the default one;
@@ -79,15 +80,30 @@
  *       the same escape again;
  *     - the serializer encodes a caret and a quotation mark inside a
  *       parameter value as the format states;
- *     - the parser reads a backslash and the letter n inside a parameter
- *       value as a line break, and the serializer writes that line break
- *       as a parameter escape;
+ *     - the parser reads a backslash and the letter n, in either case, as
+ *       a line break inside a parameter value, and the serializer writes
+ *       that line break as a parameter escape;
  *     - the serializer writes a backslash before a character that a text
  *       value must escape, and it writes two backslashes for one;
  *     - the serializer writes a number in its plain form, so a leading
- *       plus sign, a leading zero, and a trailing zero after a decimal
- *       point are gone;
- *     - the serializer moves VALUE to the end of the parameter list.
+ *       plus sign, a leading zero, a trailing zero after a decimal point,
+ *       and the sign of a zero are gone;
+ *     - the serializer moves VALUE to the end of the parameter list;
+ *     - a property that stands after a component moves in front of that
+ *       component, because jCal holds the properties of a component in one
+ *       list and the components inside it in another list;
+ *     - a property that stands between two components moves in front of
+ *       both, for the same reason;
+ *     - the serializer folds a long line again, and it can fold at another
+ *       place than the text does;
+ *     - the serializer joins a fold that the text makes where no fold is
+ *       necessary;
+ *     - the serializer ends every line with a carriage return and a line
+ *       feed, so a text that ends its lines with a line feed alone gets
+ *       the carriage return back.
+ *
+ *   The last five changes are the work of the canonical serializer, and
+ *   that serializer owns the order of properties and the width of a fold.
  * - The one change of meaning that this project accepts: a vendor
  *   parameter that carries more than one value becomes one value that
  *   holds the commas.

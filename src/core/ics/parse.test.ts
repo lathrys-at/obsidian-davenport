@@ -1,6 +1,10 @@
 import ICAL from 'ical.js';
 import { describe, expect, it } from 'vitest';
 import { icsCorpus } from '../../../test/harness/fixtures/ics-corpus';
+import {
+	icsLogicalLines,
+	icsPhysicalLines,
+} from '../../../test/harness/ics-lines';
 import type { JCalComponent } from './jcal';
 import type { IcsParseFailure, IcsParseProblem } from './parse';
 import { parseIcs } from './parse';
@@ -441,6 +445,36 @@ const ACCEPTED: [string, string][] = [
 		'a parameter escape that no standard names',
 		calendar('X-PLACE;X-NAME=a^zb:value'),
 	],
+	[
+		'a backslash and a capital N in a parameter',
+		calendar('X-PLACE;X-NAME=line1\\Nline2:value'),
+	],
+	['coordinates that carry a zero with a sign', event('GEO:-0.0;0.0')],
+	[
+		'an integer that is a zero with a sign',
+		calendar('X-COUNT;VALUE=INTEGER:-0'),
+	],
+	[
+		'a float that is a zero with a sign',
+		calendar('X-RATIO;VALUE=FLOAT:-0.0'),
+	],
+	[
+		'a property that stands after a component',
+		calendar('BEGIN:VEVENT', 'UID:a', 'END:VEVENT', 'X-AFTER:one'),
+	],
+	[
+		'a property that stands between two components',
+		calendar(
+			'BEGIN:VEVENT',
+			'UID:a',
+			'END:VEVENT',
+			'X-MIDDLE:one',
+			'BEGIN:VTODO',
+			'UID:b',
+			'END:VTODO',
+		),
+	],
+	['a fold that no length requires', calendar('X-SHORT:one', '  two')],
 ];
 
 describe('the parse boundary and the values that the library keeps', () => {
@@ -518,7 +552,9 @@ describe('the messages of the parse boundary', () => {
 	it('names the rule part that carries a value it cannot hold', () => {
 		expect(
 			failureOf(event('RRULE:FREQ=DAILY;UNTIL=garbage')).message,
-		).toContain('in the rule part UNTIL');
+		).toContain(
+			'in the rule part UNTIL, and that value is neither a date nor a date-time',
+		);
 	});
 
 	it('says that a text holds no calendar only when it holds none', () => {
@@ -528,5 +564,67 @@ describe('the messages of the parse boundary', () => {
 		expect(
 			failureOf(calendar('X-NOTE:one') + calendar('X-NOTE:two')).problem,
 		).not.toBe('no-calendar');
+	});
+});
+
+describe('the changes that the round trip makes and that keep the meaning', () => {
+	function reemitted(text: string): string {
+		return ICAL.stringify([...calendarOf(text)]);
+	}
+
+	it('moves a property that stands after a component', () => {
+		const text = calendar(
+			'BEGIN:VEVENT',
+			'UID:a',
+			'END:VEVENT',
+			'X-AFTER:one',
+		);
+		const out = reemitted(text);
+		expect(out.indexOf('X-AFTER:one')).toBeLessThan(
+			out.indexOf('BEGIN:VEVENT'),
+		);
+	});
+
+	it('moves a property that stands between two components', () => {
+		const text = calendar(
+			'BEGIN:VEVENT',
+			'UID:a',
+			'END:VEVENT',
+			'X-MIDDLE:one',
+			'BEGIN:VTODO',
+			'UID:b',
+			'END:VTODO',
+		);
+		const out = reemitted(text);
+		expect(out.indexOf('X-MIDDLE:one')).toBeLessThan(
+			out.indexOf('BEGIN:VEVENT'),
+		);
+	});
+
+	it('folds a long line again at another place', () => {
+		const value = 'x'.repeat(120);
+		const text = calendar(
+			`X-LONG:${value.slice(0, 30)}`,
+			` ${value.slice(30)}`,
+		);
+		const out = reemitted(text);
+		expect(icsPhysicalLines(out)).not.toEqual(
+			icsPhysicalLines(text).slice(0, -1),
+		);
+		expect(icsLogicalLines(icsPhysicalLines(out))).toContain(
+			`X-LONG:${value}`,
+		);
+	});
+
+	it('joins a fold that no length requires', () => {
+		const text = calendar('X-SHORT:one', '  two');
+		expect(text).toContain('X-SHORT:one\r\n  two');
+		expect(reemitted(text)).toContain('X-SHORT:one two\r\n');
+	});
+
+	it('writes a carriage return before every line feed', () => {
+		const text = 'BEGIN:VCALENDAR\nVERSION:2.0\nEND:VCALENDAR\n';
+		expect(text).not.toContain('\r');
+		expect(reemitted(text)).toContain('VERSION:2.0\r\n');
 	});
 });
