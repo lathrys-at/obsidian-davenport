@@ -37,9 +37,7 @@ export function faultLines(faults: readonly PlanFault[]): readonly string[] {
 	}
 	const lines = faults.map((fault) => say(faultText(fault)));
 	lines.push(
-		say(
-			'the check cannot compare the titles against a plan that it cannot read',
-		),
+		say('The comparison did not run. The plan failed the checks above.'),
 	);
 	return lines;
 }

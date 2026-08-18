@@ -19,7 +19,8 @@ Layout:
   compares the titles with the plan. That check fails on a title that cites
   an ID that the plan does not contain, and it runs with the tests in CI.
   Write each title as a plain string, because the check reads no ID out of a
-  title that a program builds.
+  title that a program builds. A suite heading lands together with its first
+  item, because a declared suite that defines no ID fails the check.
 - Colocated `src/**/*.test.ts` micro-unit tests are allowed for internal
   helpers. Anything that asserts a plan ID lives under `test/suites/`.
 - `test/fetch-guards.test.ts` — the static halves of the network-discipline

@@ -231,7 +231,9 @@ describe('a plan that gives the check no vocabulary', () => {
 		).join('\n');
 		expect(lines).toContain('the plan defines no ID');
 		expect(lines).toContain('the plan declares the suite QQ');
-		expect(lines).toContain('cannot compare the titles against a plan');
+		expect(lines).toContain(
+			'The comparison did not run. The plan failed the checks above.',
+		);
 	});
 
 	it('says nothing about a plan that carries its vocabulary', () => {
