@@ -12,8 +12,38 @@ npm run coverage                          # every test, with a coverage report
 ```
 
 The argument after `--` filters the file paths. A fragment of a path selects
-every file that contains the fragment. The coverage configuration sets no
-threshold. A low number therefore does not make a run fail.
+every file that contains the fragment.
+
+## The coverage ratchet
+
+The coverage run writes `coverage/coverage-summary.json`.
+[`scripts/coverage-ratchet.mjs`](../scripts/coverage-ratchet.mjs) reads that
+file and compares each source file against the floor that
+[`coverage-baseline.json`](../coverage-baseline.json) holds for that file. CI
+runs the check after the coverage run:
+
+```bash
+npm run coverage
+node scripts/coverage-ratchet.mjs
+```
+
+The baseline holds a floor for each file, and not one floor for the whole
+repository. The check reports the numbers of the whole run, and it never fails
+on those numbers.
+
+Three things fail the check:
+
+- one metric of one file falls more than two percentage points below its
+  floor;
+- the baseline holds a file, and the run does not report that file;
+- the run reports a file, and the baseline holds no floor for that file.
+
+A change that adds a file, moves a file, or deletes a file therefore writes
+the baseline in that same change.
+
+The check never writes the baseline by itself. Accept an intended change in
+the pull request that causes it: run
+`node scripts/coverage-ratchet.mjs --write-baseline` and commit the new file.
 
 ## Order and seeds
 
