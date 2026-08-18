@@ -1,13 +1,19 @@
 /**
  * Every test title in the suites carries the ID of the plan item that the
  * test implements. The coverage map of the plan points back at those IDs.
- * The titles are therefore the traceability surface. This check holds the
- * titles to the plan.
+ * The titles are therefore the traceability surface. This check compares the
+ * titles with the plan.
  *
  * The check fails when a title cites an ID that the plan does not contain. A
  * renamed plan item causes this failure. A mistyped title also causes this
  * failure. The check reports the test IDs that no title cites, and the check
  * does not fail on these IDs. The plan lands in stages by design.
+ *
+ * The check also fails when the plan gives it no vocabulary to work with. A
+ * plan file that the check cannot read is one such fault. A plan that
+ * declares a suite and defines no ID for that suite is another. Therefore a
+ * change to the format of the plan turns this check red, and it never leaves
+ * a check that reads nothing and reports success.
  *
  * The check reads the plan and the suite files. It reads no other file. The
  * unit tests beside the harness take their names from what they cover, and
@@ -29,8 +35,13 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { readPlan, readSuites, reconcile } from './plan-ids-core.ts';
-import { failureLines, reportLines, say } from './plan-ids-text.ts';
+import {
+	planFaults,
+	readPlan,
+	readSuites,
+	reconcile,
+} from './plan-ids-core.ts';
+import { failureLines, faultLines, reportLines, say } from './plan-ids-text.ts';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const PLAN = 'docs/davenport-test-plan.md';
@@ -63,18 +74,35 @@ function shown(path) {
 	return inside.startsWith('..') ? path : inside.split(sep).join('/');
 }
 
+/** The reason that an error carries. */
+function said(error) {
+	return error instanceof Error ? error.message : String(error);
+}
+
 const planPath = process.argv[2] ?? join(ROOT, PLAN);
 const suiteRoot = process.argv[3] ?? join(ROOT, SUITES);
 
 let plan;
 try {
 	plan = readFileSync(planPath, 'utf8');
-} catch {
-	console.error(say(`the check cannot read the plan ${planPath}`));
+} catch (error) {
+	console.error(
+		say(
+			`the check cannot read the plan file at ${planPath}: ${said(error)}`,
+		),
+	);
 	process.exit(1);
 }
 
 const corpus = readPlan(plan);
+const faults = faultLines(planFaults(corpus));
+if (faults.length > 0) {
+	for (const line of faults) {
+		console.error(line);
+	}
+	process.exit(1);
+}
+
 const files = suiteFiles(suiteRoot).map((path) => ({
 	path: shown(path),
 	text: readFileSync(path, 'utf8'),

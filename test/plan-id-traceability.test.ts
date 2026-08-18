@@ -2,6 +2,7 @@
  * The decisions behind the plan-ID traceability check:
  *
  * - which IDs the check reads out of the test plan;
+ * - what the check does with a plan that gives it no vocabulary;
  * - which words in a title are IDs, and which words only look like IDs;
  * - which titles the check reads out of a suite file;
  * - what the comparison of the two sets says;
@@ -12,8 +13,8 @@
  * two-sided: the check catches an ID that nobody defined, and the check
  * passes over a technical word of the same shape.
  *
- * The script itself only finds the files and reads them. A run can end in two
- * ways, and these tests exercise both ways as a process. The interface
+ * The script itself only finds the files and reads them. A run can end in
+ * several ways, and these tests exercise each way as a process. The interface
  * includes the exit status, and not only the words that the run prints.
  */
 
@@ -30,11 +31,16 @@ import type {
 } from '../scripts/plan-ids-core';
 import {
 	citedIds,
+	planFaults,
 	readPlan,
 	readSuites,
 	reconcile,
 } from '../scripts/plan-ids-core';
-import { failureLines, reportLines } from '../scripts/plan-ids-text';
+import {
+	failureLines,
+	faultLines,
+	reportLines,
+} from '../scripts/plan-ids-text';
 import { readTitles } from '../scripts/plan-ids-titles';
 
 const PLAN_PATH = fileURLToPath(
@@ -42,6 +48,9 @@ const PLAN_PATH = fileURLToPath(
 );
 const SCRIPT = fileURLToPath(
 	new URL('../scripts/plan-ids.mjs', import.meta.url),
+);
+const MOCK_ATTACHMENTS = fileURLToPath(
+	new URL('./harness/caldav-mock/attachments.ts', import.meta.url),
 );
 
 const PLAN = readPlan(readFileSync(PLAN_PATH, 'utf8'));
@@ -82,12 +91,19 @@ function run(source: string): {
 	return { found, result: reconcile(PLAN, found) };
 }
 
+/** One title for every test ID that the plan contains. */
+function everyTestId(): string {
+	return PLAN.suiteIds
+		.map((id) => `it('${id} covered', () => {});`)
+		.join('\n');
+}
+
 describe('the IDs that the plan contains', () => {
 	it('takes the suite tags from the headings of the suites part', () => {
 		expect(SMALL.suitePrefixes).toEqual(['QQ', 'ZQ']);
 	});
 
-	it('takes an ID from every bold span, with a shape tag or without one', () => {
+	it('takes an ID from every item, with a shape tag or without one', () => {
 		expect(SMALL.ids).toEqual([
 			'XV-1',
 			'QQ-1',
@@ -100,29 +116,19 @@ describe('the IDs that the plan contains', () => {
 
 	it('separates the test IDs from the sweeps and the protocol items', () => {
 		expect(SMALL.suiteIds).toEqual(['QQ-1', 'QQ-2', 'ZQ-1']);
-	});
-
-	it('sorts the longest prefix first, so a short one takes no match', () => {
-		expect(SMALL.prefixes).toEqual(['QQ', 'XV', 'ZQ', 'B']);
-	});
-
-	it('names a suite that declares a tag and defines no ID', () => {
-		const corpus = readPlan('### 5.9 Empty suite [EE] — §9');
-		expect(corpus.emptySuites).toEqual(['EE']);
-		expect(PLAN.emptySuites).toEqual([]);
+		expect(SMALL.otherIds).toEqual(['XV-1', 'B-1', 'B-2']);
 	});
 
 	it('reads the whole corpus of the real plan', () => {
 		expect(PLAN.suitePrefixes).toHaveLength(26);
 		expect(PLAN.ids).toHaveLength(266);
 		expect(PLAN.suiteIds).toHaveLength(227);
+		expect(PLAN.otherIds).toHaveLength(39);
 	});
 
-	it('holds the sweeps and the protocol items outside the test IDs', () => {
-		const others = PLAN.ids.filter((id) => !PLAN.suiteIds.includes(id));
-		expect(others).toContain('IV-1');
-		expect(others).toContain('A-11');
-		expect(others).toHaveLength(39);
+	it('keeps the sweeps and the protocol items outside the test IDs', () => {
+		expect(PLAN.otherIds).toContain('IV-1');
+		expect(PLAN.otherIds).toContain('A-11');
 	});
 
 	it('numbers every suite from one, with no gap and no repeat', () => {
@@ -140,6 +146,96 @@ describe('the IDs that the plan contains', () => {
 				PLAN.suiteIds.filter((id) => id.startsWith(`${prefix}-`)),
 			).toEqual(wanted);
 		}
+	});
+
+	it('takes the first tag of a heading that carries two', () => {
+		const corpus = readPlan(
+			[
+				'### 5.1 First suite [QQ] and [ZQ] — §1',
+				'- **QQ-1 [D]** One.',
+			].join('\n'),
+		);
+		expect(corpus.suitePrefixes).toEqual(['QQ']);
+		expect(corpus.suiteIds).toEqual(['QQ-1']);
+	});
+
+	it('counts a tag one time when two headings carry it', () => {
+		const corpus = readPlan(
+			[
+				'### 5.1 First part [QQ] — §1',
+				'- **QQ-1 [D]** One.',
+				'### 5.2 Second part [QQ] — §2',
+				'- **QQ-2 [D]** Two.',
+			].join('\n'),
+		);
+		expect(corpus.suitePrefixes).toEqual(['QQ']);
+	});
+
+	// A bold technical word must not become a plan ID. If it did, its letters
+	// would join the vocabulary, and every title that carried the same word
+	// would read as a citation of a real ID.
+	it.each([
+		['a word inside a sentence', 'The digest is **SHA-256** everywhere.'],
+		['a word that opens a paragraph', '**UTF-8** is the encoding.'],
+		['a bold marker inside a word', 'The item x**ZZ-1** is not an item.'],
+	])('defines no ID from %s', (_what, line) => {
+		const corpus = readPlan(
+			['### 5.1 First suite [QQ] — §1', '- **QQ-1 [D]** One.', line].join(
+				'\n',
+			),
+		);
+		expect(corpus.ids).toEqual(['QQ-1']);
+		expect(corpus.prefixes).toEqual(['QQ']);
+	});
+
+	it('defines an ID that follows the end of a sentence', () => {
+		const corpus = readPlan(
+			[
+				'### 6.1 A protocol [V]',
+				'- **B-1** The first one. **B-2** The second one.',
+			].join('\n'),
+		);
+		expect(corpus.ids).toEqual(['B-1', 'B-2']);
+	});
+});
+
+describe('a plan that gives the check no vocabulary', () => {
+	it('finds no fault in the real plan', () => {
+		expect(planFaults(PLAN)).toEqual([]);
+	});
+
+	it('reports a plan with no suite and no ID', () => {
+		expect(planFaults(readPlan('# A plan with nothing in it'))).toEqual([
+			{ kind: 'no-suite' },
+			{ kind: 'no-id' },
+		]);
+	});
+
+	it('reports a suite that defines no ID', () => {
+		const corpus = readPlan(
+			[
+				'### 5.1 First suite [QQ] — §1',
+				'- **QQ-1 [D]** One.',
+				'### 5.2 Second suite [ZQ] — §2',
+				'- ZQ-1 without the bold marker.',
+			].join('\n'),
+		);
+		expect(planFaults(corpus)).toEqual([
+			{ kind: 'empty-suite', tag: 'ZQ' },
+		]);
+	});
+
+	it('states each fault and the consequence of the faults', () => {
+		const lines = faultLines(
+			planFaults(readPlan('### 5.1 First suite [QQ] — §1')),
+		).join('\n');
+		expect(lines).toContain('the plan defines no ID');
+		expect(lines).toContain('the plan declares the suite QQ');
+		expect(lines).toContain('cannot compare the titles against a plan');
+	});
+
+	it('says nothing about a plan that carries its vocabulary', () => {
+		expect(faultLines(planFaults(PLAN))).toEqual([]);
 	});
 });
 
@@ -215,28 +311,40 @@ describe('the words in a title that are IDs', () => {
 		);
 	});
 
-	// A longer number and a padded number are each their own ID. The plan
-	// contains neither one, and the check therefore reports the title. A
-	// mistyped ID fails loudly, and it never passes as the ID beside it.
-	it('reads a longer number as its own ID', () => {
-		expect(citedIds('FM-20 is not FM-2', PLAN.prefixes)).toEqual([
-			'FM-20',
-			'FM-2',
-		]);
-		expect(citedIds('A-260 is not A-26', PLAN.prefixes)).toEqual([
-			'A-260',
-			'A-26',
+	// A number that no item carries is its own ID, and the plan does not
+	// contain it. Therefore the check reports the title. A mistyped ID fails
+	// loudly, and it never passes as the ID beside it, at any length.
+	it.each([
+		['a longer number', 'FM-20 is not FM-2', ['FM-20', 'FM-2']],
+		['a four-digit number', 'FM-1000 is not FM-1', ['FM-1000', 'FM-1']],
+		['a padded number', 'FM-02 is not FM-2', ['FM-02', 'FM-2']],
+		['a longer protocol number', 'A-2600 is not A-26', ['A-2600', 'A-26']],
+	])('reads %s as its own ID', (_what, title, wanted) => {
+		expect(citedIds(title, PLAN.prefixes)).toEqual(wanted);
+	});
+
+	it('reports a number that no item carries', () => {
+		const { result } = run("it('FM-1000 counts too high', () => {});");
+		expect(result.unknown.map((citation) => citation.id)).toEqual([
+			'FM-1000',
 		]);
 	});
 
-	it('reads a number with a leading zero as its own ID', () => {
-		expect(citedIds('FM-02 is not FM-2', PLAN.prefixes)).toEqual([
-			'FM-02',
-			'FM-2',
-		]);
-		const { result } = run("it('FM-02 pads the number', () => {});");
-		expect(result.unknown.map((citation) => citation.id)).toEqual([
-			'FM-02',
+	// A decimal number takes the shape of an ID and means something else. The
+	// check must not read it as the ID in front of the point, because that ID
+	// exists and the check would then report a test that nobody wrote.
+	it('reads no ID out of a decimal number', () => {
+		expect(citedIds('PM-2.5 is particulate matter', PLAN.prefixes)).toEqual(
+			[],
+		);
+		expect(
+			citedIds('the limit is A-11.4 micrograms', PLAN.prefixes),
+		).toEqual([]);
+	});
+
+	it('takes an ID that a sentence ends with', () => {
+		expect(citedIds('the anchor is PM-2.', PLAN.prefixes)).toEqual([
+			'PM-2',
 		]);
 	});
 
@@ -246,21 +354,25 @@ describe('the words in a title that are IDs', () => {
 });
 
 describe('the titles that a suite file declares', () => {
-	it('takes the title of a call to describe, to it, and to test', () => {
+	it('takes the title of every name that carries one', () => {
 		const found = readTitles(
 			[
 				"describe('the group', () => {",
 				"\tit('the first case', () => {});",
 				'\ttest("the second case", () => {});',
 				'});',
+				"suite('the other group', () => {});",
+				"bench('the benchmark', () => {});",
 			].join('\n'),
 		);
 		expect(found.titles).toEqual([
 			{ line: 1, title: 'the group' },
 			{ line: 2, title: 'the first case' },
 			{ line: 3, title: 'the second case' },
+			{ line: 5, title: 'the other group' },
+			{ line: 6, title: 'the benchmark' },
 		]);
-		expect(found.unreadable).toBe(0);
+		expect(found.unreadable).toEqual([]);
 	});
 
 	it('takes the title of a call that a table of rows curries', () => {
@@ -269,6 +381,7 @@ describe('the titles that a suite file declares', () => {
 				"describe.each([['a'], ['b']])('the group %s', () => {",
 				"\tit.each(rows())('the case %s', () => {});",
 				"\tit.skip('the skipped case', () => {});",
+				"\tit.skip.each([1])('the skipped row %i', () => {});",
 				'});',
 			].join('\n'),
 		);
@@ -276,33 +389,84 @@ describe('the titles that a suite file declares', () => {
 			'the group %s',
 			'the case %s',
 			'the skipped case',
+			'the skipped row %i',
 		]);
-		expect(found.unreadable).toBe(0);
+		expect(found.unreadable).toEqual([]);
 	});
 
-	it('takes a title that a template string spells', () => {
-		const found = readTitles('it(`the case ${name} makes`, () => {});');
+	// A tagged template carries the rows of a table. The reader must step over
+	// the template and take the title of the call that stands on it.
+	it('takes the title of a call that a tagged table curries', () => {
+		const found = readTitles(
+			[
+				'it.each`',
+				'\ta    | b',
+				'\t${1} | ${2}',
+				"`('FM-99 tagged table $a', () => {});",
+			].join('\n'),
+		);
 		expect(found.titles).toEqual([
-			{ line: 1, title: 'the case ${name} makes' },
+			{ line: 1, title: 'FM-99 tagged table $a' },
+		]);
+		expect(found.unreadable).toEqual([]);
+	});
+
+	it('takes a title that a template with no expression spells', () => {
+		const found = readTitles('it(`the plain template case`, () => {});');
+		expect(found.titles).toEqual([
+			{ line: 1, title: 'the plain template case' },
 		]);
 	});
 
-	it('counts a title that is not text, and reads no ID from it', () => {
-		const found = readTitles('it(titleFor(item), () => {});');
+	// A title that a program builds is not a title that the check can read.
+	// The check keeps the place and the text of each one, and it never takes a
+	// part of such a title for the whole of it.
+	it.each([
+		[
+			'a template with an expression',
+			'it(`the case ${name} makes`, () => {});',
+		],
+		[
+			'a title that a program joins',
+			"it('FM-' + number + ' one', () => {});",
+		],
+		['a title that a name stands for', 'it(titleFor(item), () => {});'],
+		['a call with no title at all', 'it();'],
+	])('cannot read %s', (_what, source) => {
+		const found = readTitles(source);
 		expect(found.titles).toEqual([]);
-		expect(found.unreadable).toBe(1);
+		expect(found.unreadable).toHaveLength(1);
+		expect(found.unreadable[0]?.line).toBe(1);
+	});
+
+	it('keeps the text that stands where the title was expected', () => {
+		const found = readTitles("it('FM-' + number + ' one', () => {});");
+		expect(found.unreadable[0]?.text).toBe("'FM-' + number + ' one'");
+	});
+
+	it('cites no ID from a title that it cannot read', () => {
+		const { found, result } = run("it('FM-' + '99 one', () => {});");
+		expect(result.cited).toEqual([]);
+		expect(result.unknown).toEqual([]);
+		expect(found.unreadable).toEqual([
+			{
+				path: 'test/suites/example.test.ts',
+				line: 1,
+				text: "'FM-' + '99 one'",
+			},
+		]);
 	});
 
 	it('passes over a name that no call follows', () => {
 		const found = readTitles('const it = 1;\nconst test = describe;\n');
 		expect(found.titles).toEqual([]);
-		expect(found.unreadable).toBe(0);
+		expect(found.unreadable).toEqual([]);
 	});
 
 	it('passes over a call on an object', () => {
 		const found = readTitles("expect(pattern.test('FM-2')).toBe(true);");
 		expect(found.titles).toEqual([]);
-		expect(found.unreadable).toBe(0);
+		expect(found.unreadable).toEqual([]);
 	});
 
 	it('passes over a comment and over text in quotes', () => {
@@ -315,6 +479,46 @@ describe('the titles that a suite file declares', () => {
 			].join('\n'),
 		);
 		expect(found.titles).toEqual([{ line: 4, title: 'the real case' }]);
+	});
+
+	// The reader parses the file, so a quote character inside a regular
+	// expression cannot put it out of step with the rest of the file.
+	it('reads every title after a regular expression that holds a quote', () => {
+		const found = readTitles(
+			[
+				"const first = /it's/;",
+				'const second = /filename="([^"]*)"/i;',
+				"it('FM-1 one', () => {});",
+				"describe('FM-2 group', () => {",
+				"\tit('FM-3 three', () => {});",
+				'});',
+			].join('\n'),
+		);
+		expect(found.titles.map((site) => site.title)).toEqual([
+			'FM-1 one',
+			'FM-2 group',
+			'FM-3 three',
+		]);
+	});
+
+	// The same shape stands in the mock server of the harness. The file itself
+	// declares no title, and a file that appends titles to it keeps them all.
+	it('reads every title of a real file that holds that shape', () => {
+		const real = readFileSync(MOCK_ATTACHMENTS, 'utf8');
+		expect(real).toContain('/filename="([^"]*)"/i');
+		expect(readTitles(real, 'attachments.ts')).toEqual({
+			titles: [],
+			unreadable: [],
+		});
+		const appended = readTitles(
+			`${real}\nit('FM-1 one', () => {});\nit('FM-2 two', () => {});\n`,
+			'attachments.ts',
+		);
+		expect(appended.titles.map((site) => site.title)).toEqual([
+			'FM-1 one',
+			'FM-2 two',
+		]);
+		expect(appended.unreadable).toEqual([]);
 	});
 });
 
@@ -335,7 +539,7 @@ describe('what the citations and the plan say about each other', () => {
 		const { found, result } = run(
 			"it('the corpus holds UTF-8 and SHA-256 bytes', () => {});",
 		);
-		expect(found.titles).toBe(1);
+		expect(found.titleCount).toBe(1);
 		expect(result.unknown).toEqual([]);
 		expect(result.cited).toEqual([]);
 	});
@@ -344,8 +548,18 @@ describe('what the citations and the plan say about each other', () => {
 		const { result } = run("it('FM-2 names both keys', () => {});");
 		expect(result.unknown).toEqual([]);
 		expect(result.cited).toEqual(['FM-2']);
+		expect(result.citedTests).toEqual(['FM-2']);
 		expect(result.uncited).not.toContain('FM-2');
-		expect(result.uncited).toHaveLength(226);
+		expect(result.uncited).toHaveLength(PLAN.suiteIds.length - 1);
+	});
+
+	it('counts a sweep against the citations and not against the test IDs', () => {
+		const { result } = run(
+			"it('the anchor of IV-3 stands here', () => {});",
+		);
+		expect(result.cited).toEqual(['IV-3']);
+		expect(result.citedTests).toEqual([]);
+		expect(result.uncited).toHaveLength(PLAN.suiteIds.length);
 	});
 
 	// The plan gives some IDs to more than one stage, and each stage brings
@@ -409,7 +623,7 @@ describe('what the check prints', () => {
 		expect(lines).toContain('test/suites/example.test.ts:2 cites FM-99');
 		expect(lines).toContain('title: FM-99 invents an ID');
 		expect(lines).toContain(
-			'the count of citations that the plan does not',
+			'the count of citations of IDs that the plan does not contain is 1',
 		);
 	});
 
@@ -418,29 +632,76 @@ describe('what the check prints', () => {
 		expect(failureLines(result)).toEqual([]);
 	});
 
-	it('states the counts and lists every ID that no title cites', () => {
+	it('states the counts of the plan', () => {
+		const { found, result } = run("it('FM-1 one', () => {});");
+		expect(reportLines(PLAN, found, result)[0]).toContain(
+			'the plan contains 266 IDs. The plan gives 227 of these IDs to the suites, and 39 to the sweeps',
+		);
+	});
+
+	it('lists the IDs that the titles cite, and not the count alone', () => {
+		const { found, result } = run(
+			["it('FM-1 one', () => {});", "it('LG-2 two', () => {});"].join(
+				'\n',
+			),
+		);
+		const lines = reportLines(PLAN, found, result);
+		expect(lines.join('\n')).toContain('the titles cite 2 IDs of the plan');
+		expect(lines).toContain('  FM-1');
+		expect(lines).toContain('  LG-2');
+	});
+
+	it('lists every test ID that no title cites', () => {
 		const { found, result } = run("it('FM-1 one', () => {});");
 		const lines = reportLines(PLAN, found, result).join('\n');
-		expect(lines).toContain('the plan contains 266 IDs, and 227 of them');
 		expect(lines).toContain(
-			'the count of test IDs that no title cites is 226',
+			`the count of test IDs that no title cites is ${String(PLAN.suiteIds.length - 1)}`,
 		);
 		expect(lines).toContain('FM-2');
-		expect(lines).not.toMatch(/\bFM-1\b/);
 	});
 
-	it('states that a cited ID can still be incomplete', () => {
-		const { found, result } = run("it('FM-1 one', () => {});");
-		expect(reportLines(PLAN, found, result).join('\n')).toContain(
-			'more than one stage',
+	// The caveat guards against one reading: that a cited ID is a finished
+	// item. Full coverage is the state in which a reader draws that
+	// conclusion, so the caveat must stand there too.
+	it('states that a title covers one stage whenever the titles cite an ID', () => {
+		for (const source of [
+			"it('FM-1 one', () => {});",
+			everyTestId(),
+			"it('the anchor of IV-3 stands here', () => {});",
+		]) {
+			const { found, result } = run(source);
+			expect(reportLines(PLAN, found, result).join('\n')).toContain(
+				'A title for one stage does not cover the other stages',
+			);
+		}
+	});
+
+	it('states what full coverage means and what it does not mean', () => {
+		const { found, result } = run(everyTestId());
+		const lines = reportLines(PLAN, found, result).join('\n');
+		expect(result.uncited).toEqual([]);
+		expect(lines).toContain(
+			'every test ID has at least one title that cites it',
 		);
+		expect(lines).toContain('This check does not compare the stages');
 	});
 
-	it('reports the count of the titles that it could not read', () => {
+	it('names the titles that it cannot read', () => {
 		const { found, result } = run('it(titleFor(item), () => {});');
-		expect(reportLines(PLAN, found, result).join('\n')).toContain(
-			'the count of titles that are not text is 1',
+		const lines = reportLines(PLAN, found, result).join('\n');
+		expect(lines).toContain(
+			'the count of titles that the check cannot read is 1',
 		);
+		expect(lines).toContain(
+			'test/suites/example.test.ts:1  titleFor(item)',
+		);
+	});
+
+	it('counts one ID as one ID', () => {
+		const { found, result } = run("it('FM-1 one', () => {});");
+		const lines = reportLines(PLAN, found, result).join('\n');
+		expect(lines).toContain('the titles cite 1 ID of the plan');
+		expect(lines).toContain('the count of titles in the suite files is 1');
 	});
 });
 
@@ -466,6 +727,13 @@ describe('the check as a process', () => {
 		};
 	}
 
+	/** A plan file in the scratch directory, and the path to it. */
+	function planFile(name: string, text: string): string {
+		const path = join(scratch, name);
+		writeFileSync(path, text, 'utf8');
+		return path;
+	}
+
 	it('passes over the tree of this repository', () => {
 		const result = check([]);
 		expect(result.err).toBe('');
@@ -474,9 +742,13 @@ describe('the check as a process', () => {
 	});
 
 	it('fails on a title that cites an ID that the plan does not contain', () => {
-		const file = join(scratch, 'invented.test.ts');
-		writeFileSync(file, "it('FM-99 invents an ID', () => {});\n", 'utf8');
-		const result = check([PLAN_PATH, scratch]);
+		const suites = mkdtempSync(join(scratch, 'suites-'));
+		writeFileSync(
+			join(suites, 'invented.test.ts'),
+			"it('FM-99 invents an ID', () => {});\n",
+			'utf8',
+		);
+		const result = check([PLAN_PATH, suites]);
 		expect(result.status).toBe(1);
 		expect(result.err).toContain('cites FM-99');
 		expect(result.err).toContain('invented.test.ts:1');
@@ -486,6 +758,44 @@ describe('the check as a process', () => {
 		const result = check([join(scratch, 'no-such-plan.md')]);
 		expect(result.status).toBe(1);
 		expect(result.err.trimEnd().split('\n')).toHaveLength(1);
-		expect(result.err).toContain('cannot read the plan');
+		expect(result.err).toContain('cannot read the plan file at');
+	});
+
+	// A plan that the check cannot parse must turn the check red. A check that
+	// reads nothing compares nothing, and a comparison of nothing passes.
+	it('fails on a plan that defines no ID', () => {
+		const result = check([planFile('empty.md', '')]);
+		expect(result.status).toBe(1);
+		expect(result.err).toContain('the plan defines no ID');
+		expect(result.err).toContain('the plan declares no suite');
+	});
+
+	it('fails on a plan whose items lost the bold marker', () => {
+		const result = check([
+			planFile(
+				'boldless.md',
+				[
+					'### 5.1 First suite [FM] — §1',
+					'- FM-1 [D] The first item.',
+				].join('\n'),
+			),
+		]);
+		expect(result.status).toBe(1);
+		expect(result.err).toContain('the plan declares the suite FM');
+		expect(result.err).toContain('defines no ID for that suite');
+	});
+
+	it('fails on a plan whose headings lost their tags', () => {
+		const result = check([
+			planFile(
+				'tagless.md',
+				[
+					'### 5.1 First suite — §1',
+					'- **FM-1 [D]** The first item.',
+				].join('\n'),
+			),
+		]);
+		expect(result.status).toBe(1);
+		expect(result.err).toContain('the plan declares no suite');
 	});
 });

@@ -15,9 +15,11 @@ Layout:
   test title carries the plan ID of the assertion that the test implements,
   for example `FM-2: date alongside start fails naming both keys`. The
   coverage map in the plan refers to these IDs. The titles are therefore the
-  traceability surface. Keep the titles exact. `scripts/plan-ids.mjs` holds
-  the titles to the plan. That check fails on a title that cites an ID that
-  the plan does not contain, and it runs with the tests in CI.
+  traceability surface. Keep the titles exact. `scripts/plan-ids.mjs`
+  compares the titles with the plan. That check fails on a title that cites
+  an ID that the plan does not contain, and it runs with the tests in CI.
+  Write each title as a plain string, because the check reads no ID out of a
+  title that a program builds.
 - Colocated `src/**/*.test.ts` micro-unit tests are allowed for internal
   helpers. Anything that asserts a plan ID lives under `test/suites/`.
 - `test/fetch-guards.test.ts` — the static halves of the network-discipline
@@ -47,12 +49,16 @@ sweeps.
   the owner put there was rewritten. These cases take their vaults down
   afterwards.
 - `test/plan-id-traceability.test.ts` — the decisions behind
-  `scripts/plan-ids.mjs`. One decision is which words in the plan are IDs.
-  Another decision is which words in a title cite an ID, and which words only
-  look like one. Another decision is which titles a suite file declares.
-  Another decision is what the comparison of the two sets says, and the
-  wording that the check prints around it. The exit status is part of the
-  interface. Therefore a few cases run the real script as a process.
+  `scripts/plan-ids.mjs`:
+    - which IDs the check reads out of the plan;
+    - what the check does with a plan that gives it no vocabulary;
+    - which words in a title cite an ID, and which words only look like one;
+    - which titles a suite file declares;
+    - what the comparison of the two sets says, and the wording that the check
+      prints around it.
+
+  The exit status is part of the interface. Therefore several cases run the
+  real script as a process.
 - `test/live/` — what verification runs against real servers need. This
   directory holds the credential resolver and the self-hosted CalDAV
   containers. Nothing here reaches a server during `npm test`.
