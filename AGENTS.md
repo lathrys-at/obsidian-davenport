@@ -8,7 +8,7 @@
 
 ## Environment & tooling
 
-- Node.js: use the version that `.nvmrc` pins. The `engines` field of `package.json` requires Node 24 or newer, and CI reads the version from `.nvmrc`.
+- Node.js: use the version that `.nvmrc` pins. The `engines` field of `package.json` requires Node 24 or newer. CI reads the version from `.nvmrc`.
 - **Package manager: npm** (`package.json` defines the scripts and dependencies).
 - **Bundler: esbuild** (`esbuild.config.mjs` and the build scripts depend on it).
 - Types: `obsidian` type definitions.
@@ -50,8 +50,8 @@ npm run build
         ports/          # Interfaces the engine depends on (transport,
                         #   vault, device store, clock, logger)
       adapters/         # Port implementations over platform APIs
-        desktop/        # Desktop-only adapters; the one zone where the
-                        #   lint configuration permits Node APIs
+        desktop/        # Desktop-only adapters; the approved home for
+                        #   Node APIs in the plugin source
                         #   (arrives with features)
       ui/               # Views, modals, settings tab (arrives with features)
     ```
