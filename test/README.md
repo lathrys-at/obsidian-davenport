@@ -128,8 +128,8 @@ A call from a dependency gets the real answer. The test runner and the test
 dependencies read the wall clock in the same process as the tests. A file of
 this repository under a directory named `node_modules` stays repository code,
 and the ban still covers it. A test that must read the real clock calls
-`withRealTime`, and that call states its reason. `setup.ts` also returns the registry to the standing set
-before each test.
+`withRealTime`, and that call states its reason. `setup.ts` also returns the
+registry to the standing set before each test.
 
 Files run in a random order, and the tests inside each file also run in a
 random order. A test that passes only on state that a neighbour left behind

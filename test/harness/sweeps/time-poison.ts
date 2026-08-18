@@ -49,13 +49,20 @@
  *   holds a package.json file.
  * - A path inside the `node_modules` directory of the repository root is
  *   dependency code, and the call gets the real answer.
- * - A path outside the repository root is dependency code, and the call gets
- *   the real answer. A module name that starts with `node:` is a module of
- *   the node runtime, and the call gets the real answer.
+ * - A path outside the repository root is not repository code, and the call
+ *   gets the real answer. This branch takes in everything that the two rules
+ *   above do not name, and the poison permits it. A module name that starts
+ *   with `node:` is a module of the node runtime, and the call gets the real
+ *   answer.
  *
  * A directory named `node_modules` deeper in the repository does not make the
  * files inside it dependency code. A fixture tree can hold such a directory,
  * and the code in it stays under the ban.
+ *
+ * A frame that names no path decides nothing, and the walk reads the next
+ * frame. A frame that holds a path that the poison cannot read makes the
+ * poison refuse, because that path could name a file of this repository. The
+ * poison also refuses when no frame in the stack names a path.
  *
  * The poison must let the calls of the dependencies through, because the test
  * runner and the test dependencies read the wall clock in the same process as
@@ -95,11 +102,12 @@ const TIMER_NAMES = ['setTimeout', 'setInterval', 'setImmediate'] as const;
 
 /**
  * The number of stack frames that one capture collects. The poison reads the
- * first frame that names a path, and the frames above that frame name no
- * path. This budget holds every such run of frames that the tests produce,
- * and it keeps the cost of the capture small.
+ * first frame that names a path, and it needs one such frame. The frames
+ * above that frame name no path, and ten frames give room for a run of them.
+ * Ten is also the number that V8 collects on its own, so a capture under this
+ * budget costs what a capture without a budget costs.
  */
-const FRAME_BUDGET = 20;
+const FRAME_BUDGET = 10;
 
 /** The start of a location of the node runtime, for example `node:internal/…`. */
 const RUNTIME_PREFIX = 'node:';
@@ -128,8 +136,25 @@ export class AmbientTimeError extends Error {
 	}
 }
 
-/** What one stack frame says about the code that made a call. */
-export type FrameOwner = 'repository' | 'outside' | 'unreadable';
+/**
+ * What one stack frame says about the code that made a call. A frame is
+ * `repository` when the frame names a file of this repository, and `outside`
+ * when the frame names anything else. A frame is `unreadable` when the frame
+ * names no path at all, and the walk then reads the next frame. A frame is
+ * `unparseable` when the frame holds a path that this module cannot read, and
+ * the poison then refuses.
+ */
+export type FrameOwner =
+	'repository' | 'outside' | 'unreadable' | 'unparseable';
+
+/** What one stack frame holds, before the classification of the path. */
+type FrameText =
+	| { readonly kind: 'path'; readonly location: string }
+	| { readonly kind: 'none' }
+	| { readonly kind: 'unparseable' };
+
+const NO_PATH: FrameText = { kind: 'none' };
+const UNPARSEABLE: FrameText = { kind: 'unparseable' };
 
 type Newable = abstract new (...args: never[]) => unknown;
 
@@ -169,7 +194,7 @@ function findRepositoryRoot(): string {
 	}
 }
 
-const REPOSITORY_ROOT = findRepositoryRoot();
+const REPOSITORY_ROOT = forwardSlashes(findRepositoryRoot());
 
 function spellings(): GlobalSpelling[] {
 	const found: GlobalSpelling[] = [
@@ -225,20 +250,27 @@ function closingBracket(text: string, open: number): number {
 
 /**
  * Returns the location that a stack frame names, for example
- * `/home/user/repo/test/suite.test.ts:12:3`. Returns null for a frame that
- * names no location, such as `at Array.map (<anonymous>)`.
+ * `/home/user/repo/test/suite.test.ts:12:3`.
+ *
+ * A frame that names no location gives `none`, and the walk over the frames
+ * then reads the next frame. `at Array.map (<anonymous>)` is such a frame.
+ *
+ * A frame whose round brackets do not pair gives `unparseable`. A path can
+ * hold a closing bracket without an opening one, and the location then cannot
+ * be cut out of the frame. The poison refuses on such a frame, because the
+ * frame does hold a path, and the path could name a file of this repository.
  */
-function frameLocation(frame: string): string | null {
+function frameText(frame: string): FrameText {
 	const trimmed = frame.trim();
 	if (!trimmed.startsWith('at ')) {
-		return null;
+		return NO_PATH;
 	}
 	const body = trimmed.slice(3);
 	let location = body;
 	if (body.endsWith(')')) {
 		const open = openingBracket(body);
 		if (open === -1) {
-			return null;
+			return UNPARSEABLE;
 		}
 		location = body.slice(open + 1, -1);
 	}
@@ -249,21 +281,27 @@ function frameLocation(frame: string): string | null {
 		const open = location.indexOf('(');
 		const close = open === -1 ? -1 : closingBracket(location, open);
 		if (close === -1) {
-			return null;
+			return UNPARSEABLE;
 		}
 		location = location.slice(open + 1, close);
 	}
-	return location.includes(':') ? location : null;
+	return location.includes(':') ? { kind: 'path', location } : NO_PATH;
 }
 
 /**
  * Returns the path that a location names. The function drops the line and
  * column numbers, drops a query string that the module server added, and
  * turns a file URL into a path.
+ *
+ * The query string sits at the end of the last part of the path, and the
+ * search for it stops at the last separator. A directory name can hold a
+ * question mark or a number sign, and a search over the whole path would cut
+ * the path at that name. Every frame of the repository would then fall
+ * outside the repository root.
  */
 function locationPath(location: string): string {
 	const withoutPosition = location.replace(/(?::\d+)+$/, '');
-	const withoutQuery = withoutPosition.replace(/[?#].*$/, '');
+	const withoutQuery = withoutPosition.replace(/[?#][^/]*$/, '');
 	if (!withoutQuery.startsWith('file://')) {
 		return withoutQuery;
 	}
@@ -305,14 +343,17 @@ function ownerOfPath(path: string, root: string): FrameOwner {
  * then reads the next frame.
  */
 function frameOwner(frame: string, root: string): FrameOwner {
-	const location = frameLocation(frame);
-	if (location === null) {
+	const text = frameText(frame);
+	if (text.kind === 'none') {
 		return 'unreadable';
 	}
-	if (location.startsWith(RUNTIME_PREFIX)) {
+	if (text.kind === 'unparseable') {
+		return 'unparseable';
+	}
+	if (text.location.startsWith(RUNTIME_PREFIX)) {
 		return 'outside';
 	}
-	return ownerOfPath(locationPath(location), root);
+	return ownerOfPath(locationPath(text.location), root);
 }
 
 /**
@@ -329,6 +370,11 @@ function frameOwner(frame: string, root: string): FrameOwner {
  * or a hook that returns something other than a string, turns the poison off
  * and the reading passes.
  *
+ * Both globals take their new value through `Reflect.set`. A process can make
+ * either global read-only, and an assignment would then throw a TypeError out
+ * of an ordinary reading of the clock. `Reflect.set` reports the refusal
+ * instead, and the capture runs under the value that stands.
+ *
  * The function returns true when no frame names a location, and when the
  * stack is not a string. A stack of that shape is the mark of a hook that
  * this function did not expect, and the poison then refuses.
@@ -336,9 +382,9 @@ function frameOwner(frame: string, root: string): FrameOwner {
 function callerIsRepositoryCode(
 	boundary: (...args: never[]) => unknown,
 ): boolean {
-	const limit = Error.stackTraceLimit;
+	const limit: unknown = Reflect.get(Error, 'stackTraceLimit');
 	const prepare: unknown = Reflect.get(Error, 'prepareStackTrace');
-	Error.stackTraceLimit = FRAME_BUDGET;
+	Reflect.set(Error, 'stackTraceLimit', FRAME_BUDGET);
 	Reflect.set(Error, 'prepareStackTrace', undefined);
 	try {
 		const holder = new Error();
@@ -350,12 +396,12 @@ function callerIsRepositoryCode(
 		for (const frame of stack.split('\n')) {
 			const owner = frameOwner(frame, REPOSITORY_ROOT);
 			if (owner !== 'unreadable') {
-				return owner === 'repository';
+				return owner !== 'outside';
 			}
 		}
 		return true;
 	} finally {
-		Error.stackTraceLimit = limit;
+		Reflect.set(Error, 'stackTraceLimit', limit);
 		Reflect.set(Error, 'prepareStackTrace', prepare);
 	}
 }

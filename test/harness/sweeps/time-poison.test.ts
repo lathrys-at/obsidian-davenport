@@ -329,6 +329,21 @@ describe('the rule that reads the caller of a time function', () => {
 			'    at now (C:\\repo\\test\\x.ts:1:1)',
 			'C:\\repo',
 		],
+		[
+			'a root whose name holds a number sign',
+			'    at now (/work/proj#2/test/x.ts:1:1)',
+			'/work/proj#2',
+		],
+		[
+			'a root whose name holds a question mark',
+			'    at now (/work/proj?a/test/x.ts:1:1)',
+			'/work/proj?a',
+		],
+		[
+			'a query string under a root whose name holds a number sign',
+			'    at now (/work/proj#2/test/x.ts?v=abc123:1:1)',
+			'/work/proj#2',
+		],
 	];
 
 	const OUTSIDE_FRAMES: readonly (readonly [string, string, string])[] = [
@@ -387,6 +402,22 @@ describe('the rule that reads the caller of a time function', () => {
 			'    at now (C:\\repo\\node_modules\\pkg\\i.js:1:1)',
 			'C:\\repo',
 		],
+		[
+			'an installed dependency under a root whose name holds a number sign',
+			'    at now (/work/proj#2/node_modules/pkg/i.js:1:1)',
+			'/work/proj#2',
+		],
+	];
+
+	const UNPARSEABLE_FRAMES: readonly (readonly [string, string])[] = [
+		[
+			'a path that holds a closing bracket without an opening one',
+			'    at now (/repo/we)ird/test/x.ts:1:1)',
+		],
+		[
+			'an eval frame that names no origin in brackets',
+			'    at eval (eval at run /repo/test/x.ts:1:1, <anonymous>:1:1)',
+		],
 	];
 
 	const UNREADABLE_FRAMES: readonly (readonly [string, string])[] = [
@@ -413,6 +444,26 @@ describe('the rule that reads the caller of a time function', () => {
 
 	it.each(UNREADABLE_FRAMES)('reads %s as no answer', (_, frame) => {
 		expect(frameOwner(frame, '/repo')).toBe<FrameOwner>('unreadable');
+	});
+
+	it.each(UNPARSEABLE_FRAMES)(
+		'reads %s as a path it cannot read',
+		(_, frame) => {
+			expect(frameOwner(frame, '/repo')).toBe<FrameOwner>('unparseable');
+		},
+	);
+
+	it('throws for a path that it cannot read, under a dependency frame', () => {
+		const read = functionAtPath(
+			`${ROOT}/test/we)ird/reader.ts`,
+			'function readClock() { return Date.now(); }',
+		);
+		const invoke = functionAtPath(
+			INSTALLED_DEPENDENCY,
+			'function invoke(read) { return read(); }',
+		);
+		expect(() => read()).toThrow(AmbientTimeError);
+		expect(() => invoke(read)).toThrow(AmbientTimeError);
 	});
 
 	it('throws for a repository file under a directory named node_modules', () => {
@@ -454,23 +505,53 @@ describe('the rule that reads the caller of a time function', () => {
 });
 
 describe('the time poison under a stack hook', () => {
-	it('throws when the stack trace limit is zero', () => {
+	it('throws when the stack trace limit is zero, and still answers a dependency', () => {
+		const read = functionAtPath(
+			INSTALLED_DEPENDENCY,
+			'function readClock() { return Date.now(); }',
+		);
 		const limit = Error.stackTraceLimit;
 		Error.stackTraceLimit = 0;
 		try {
 			expect(() => Date.now()).toThrow(AmbientTimeError);
+			expect(read()).toBeGreaterThan(0);
 			expect(Error.stackTraceLimit).toBe(0);
 		} finally {
 			Error.stackTraceLimit = limit;
 		}
 	});
 
-	it('throws when a stack hook returns nothing', () => {
+	it('throws when the stack trace limit takes no new value', () => {
+		const original = Object.getOwnPropertyDescriptor(
+			Error,
+			'stackTraceLimit',
+		);
+		Object.defineProperty(Error, 'stackTraceLimit', {
+			value: 10,
+			writable: false,
+			enumerable: false,
+			configurable: true,
+		});
+		try {
+			expect(() => Date.now()).toThrow(AmbientTimeError);
+		} finally {
+			if (original !== undefined) {
+				Object.defineProperty(Error, 'stackTraceLimit', original);
+			}
+		}
+	});
+
+	it('throws when a stack hook returns nothing, and still answers a dependency', () => {
+		const read = functionAtPath(
+			INSTALLED_DEPENDENCY,
+			'function readClock() { return Date.now(); }',
+		);
 		const prepare: unknown = Reflect.get(Error, 'prepareStackTrace');
 		const hook = (): undefined => undefined;
 		Reflect.set(Error, 'prepareStackTrace', hook);
 		try {
 			expect(() => Date.now()).toThrow(AmbientTimeError);
+			expect(read()).toBeGreaterThan(0);
 			expect(Reflect.get(Error, 'prepareStackTrace')).toBe(hook);
 		} finally {
 			Reflect.set(Error, 'prepareStackTrace', prepare);
