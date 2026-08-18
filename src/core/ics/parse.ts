@@ -16,7 +16,8 @@
  * The gate reads the text a second time and compares it with what the
  * library reports. The file jcal.ts holds the types and the narrowing.
  * The file lines.ts reads the lines. The file values.ts holds the lexical
- * rules of the value types.
+ * rules of the value types. The file parameters.ts holds the changes that
+ * the library makes to the text of a parameter value.
  *
  * What the gate checks:
  *
@@ -29,16 +30,31 @@
  *   are the same. The text holds nothing that the parser dropped. An END
  *   line names the component that its BEGIN line opened.
  * - Each property keeps its parameters. The count of parameters in the
- *   text equals the count that the parser reports. Each repeat rule keeps
- *   its parts, and the same rule of counts applies to those parts. VALUE
- *   is not counted, because the parser turns VALUE into the value type of
- *   the property.
+ *   text equals the count that the parser reports. VALUE is not counted,
+ *   because the parser turns VALUE into the value type of the property.
+ * - Each parameter keeps its bytes. The value that the parser reports for
+ *   a parameter equals the text of that parameter after the changes that
+ *   keep the meaning. The file parameters.ts states those changes.
  * - The text of a value obeys the lexical rules of the value type that the
  *   parser gave to that value. These types are the boolean, the date, the
- *   date-time, the duration, the float, the integer, the period, the
- *   repeat rule, the time, and the offset from universal time.
+ *   date-time, the duration, the float, the integer, the period, the time,
+ *   and the offset from universal time.
+ * - A number that the parser read equals the number that the text writes.
+ *   The parser holds a number in a form that carries fewer digits than
+ *   iCalendar permits, and a text past that width comes back changed.
+ * - A repeat rule keeps its parts, and each part obeys the rules of the
+ *   format: the frequency and the start of the week take their names, the
+ *   end takes a date or a date-time, the count and the interval take a
+ *   whole number, and each selection part takes its list of days or
+ *   numbers. A part whose name no standard states keeps its text in the
+ *   parser, so the gate gives it no rule.
  * - No line holds a control character. The format permits the horizontal
  *   tab only. The parser keeps every other control character in the value.
+ *
+ * The gate removes one byte-order mark from the head of the text before
+ * the parse. A byte-order mark is common on a file that a calendar
+ * application exported, and the library cannot read a text that starts
+ * with one.
  *
  * What the gate deliberately does not check:
  *
@@ -52,10 +68,26 @@
  *   no time zone passes the gate. A repeat rule that selects no day passes
  *   the gate.
  * - The changes of spelling that the round trip makes and that keep the
- *   meaning. The parser raises the case of a name. The parser drops a
- *   value type that is the default one. The parser removes quotation marks
- *   that nothing needs. The parser writes a parameter escape in the form
- *   that the format states. The gate accepts every one of these changes.
+ *   meaning. The list is complete, and the tests hold one text for each
+ *   item:
+ *     - the parser raises the case of a property name and of a parameter
+ *       name;
+ *     - the parser drops a value type that is the default one;
+ *     - the parser removes quotation marks that nothing needs, and the
+ *       serializer adds quotation marks that the format requires;
+ *     - the parser decodes a parameter escape, and the serializer writes
+ *       the same escape again;
+ *     - the serializer encodes a caret and a quotation mark inside a
+ *       parameter value as the format states;
+ *     - the parser reads a backslash and the letter n inside a parameter
+ *       value as a line break, and the serializer writes that line break
+ *       as a parameter escape;
+ *     - the serializer writes a backslash before a character that a text
+ *       value must escape, and it writes two backslashes for one;
+ *     - the serializer writes a number in its plain form, so a leading
+ *       plus sign, a leading zero, and a trailing zero after a decimal
+ *       point are gone;
+ *     - the serializer moves VALUE to the end of the parameter list.
  * - The one change of meaning that this project accepts: a vendor
  *   parameter that carries more than one value becomes one value that
  *   holds the commas.
@@ -64,8 +96,9 @@
 import ICAL from 'ical.js';
 import type { JCalComponent } from './jcal';
 import { jcalListLength, jcalValues, readJCalComponent } from './jcal';
-import type { ContentLine } from './lines';
+import type { ContentLine, ContentParameter } from './lines';
 import { hasControlCharacter, logicalLines, readContentLine } from './lines';
+import { parameterTextProblem } from './parameters';
 import { valueTextProblem } from './values';
 
 /** Why the boundary refused the text. */
@@ -83,7 +116,11 @@ export type IcsParseProblem =
 	 * reports disagrees with the text.
 	 */
 	| 'structure'
-	/** A value disobeys the lexical rules of its value type. */
+	/**
+	 * A value does not come through the parse whole. The value disobeys
+	 * the lexical rules of its type, or the parser read a different number,
+	 * or the value of a parameter lost bytes.
+	 */
 	| 'value';
 
 /** One failure of the boundary. Every refused text gives this shape. */
@@ -104,13 +141,14 @@ export type IcsParseResult =
  * comment at the head of this file states what the refusal covers.
  */
 export function parseIcs(text: string): IcsParseResult {
+	const source = text.startsWith(BYTE_ORDER_MARK) ? text.slice(1) : text;
 	let parsed: unknown;
 	try {
-		parsed = ICAL.parse(text);
+		parsed = ICAL.parse(source);
 	} catch (error) {
 		return refuse({
 			problem: 'unreadable',
-			message: `ics parse: the library cannot read the text; ${describe(error)}`,
+			message: 'ics parse: the library cannot read the text',
 			cause: error,
 		});
 	}
@@ -118,14 +156,14 @@ export function parseIcs(text: string): IcsParseResult {
 	const listLength = jcalListLength(parsed);
 	if (listLength !== null) {
 		return refuse(
-			listLength > 1
+			listLength === 0
 				? {
-						problem: 'many-calendars',
-						message: `ics parse: the text holds ${String(listLength)} calendars; one resource holds one calendar`,
-					}
-				: {
 						problem: 'no-calendar',
 						message: 'ics parse: the text holds no calendar',
+					}
+				: {
+						problem: 'many-calendars',
+						message: `ics parse: the text holds ${String(listLength)} calendars; one resource holds one calendar`,
 					},
 		);
 	}
@@ -145,19 +183,17 @@ export function parseIcs(text: string): IcsParseResult {
 		});
 	}
 
-	const failure = gate(calendar, text);
+	const failure = gate(calendar, source);
 	if (failure !== null) {
 		return refuse(failure);
 	}
 	return { ok: true, calendar };
 }
 
+const BYTE_ORDER_MARK = '\uFEFF';
+
 function refuse(failure: IcsParseFailure): IcsParseResult {
 	return { ok: false, failure };
-}
-
-function describe(error: unknown): string {
-	return error instanceof Error ? error.message : String(error);
 }
 
 function structureFailure(message: string): IcsParseFailure {
@@ -197,12 +233,13 @@ function gate(calendar: JCalComponent, text: string): IcsParseFailure | null {
 				`the line ${quote(line)} holds a character that iCalendar does not permit`,
 			);
 		}
-		const content = readContentLine(line);
-		if (content === null) {
+		const reading = readContentLine(line);
+		if (!reading.ok) {
 			return structureFailure(
-				`the line ${quote(line)} holds no separator between the name and the value`,
+				`the line ${quote(line)} ${reading.problem}`,
 			);
 		}
+		const content = reading.line;
 		if (walk.rootClosed) {
 			return structureFailure(
 				`the line ${quote(line)} stands after the calendar ends`,
@@ -210,7 +247,7 @@ function gate(calendar: JCalComponent, text: string): IcsParseFailure | null {
 		}
 		const keyword = content.name.toUpperCase();
 		if (keyword === 'BEGIN' || keyword === 'END') {
-			if (content.parameterNames.length > 0) {
+			if (content.parameters.length > 0) {
 				return structureFailure(
 					`the line ${quote(line)} opens or closes a component and carries parameters`,
 				);
@@ -316,12 +353,23 @@ function takeProperty(
 		);
 	}
 	current.propertyIndex += 1;
-	const written = countedParameterNames(content.parameterNames).length;
+	const written = countedParameters(content.parameters);
 	const reported = Object.keys(property[1]).length;
-	if (written !== reported) {
+	if (written.length !== reported) {
 		return structureFailure(
-			`the property ${content.name} carries ${String(written)} parameters, and the parser reports ${String(reported)}`,
+			`the property ${content.name} carries ${String(written.length)} parameters, and the parser reports ${String(reported)}`,
 		);
+	}
+	for (const parameter of written) {
+		const problem = parameterTextProblem(
+			parameter,
+			property[1][parameter.name.toLowerCase()],
+		);
+		if (problem !== null) {
+			return valueFailure(
+				`the property ${content.name} holds ${problem}`,
+			);
+		}
 	}
 	const problem = valueTextProblem(
 		property[2],
@@ -344,8 +392,12 @@ function sameName(left: string, right: string): boolean {
 // The parser turns VALUE into the value type of the property, and it keeps
 // no parameter of that name. The count of parameters therefore leaves
 // VALUE out.
-function countedParameterNames(names: readonly string[]): readonly string[] {
-	return names.filter((name) => name.toUpperCase() !== 'VALUE');
+function countedParameters(
+	parameters: readonly ContentParameter[],
+): readonly ContentParameter[] {
+	return parameters.filter(
+		(parameter) => parameter.name.toUpperCase() !== 'VALUE',
+	);
 }
 
 function quote(text: string): string {

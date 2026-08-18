@@ -107,10 +107,23 @@ describe('the parse boundary and the errors of the library', () => {
 		expect(classes.has('none')).toBe(false);
 	});
 
-	it('keeps the error of the library as the cause', () => {
+	it('keeps the error of the library as the cause and not in the message', () => {
 		const failure = failureOf('BEGIN:VCALENDAR\r\nVERSION:2.0\r\n');
 		expect(failure.cause).toBeInstanceOf(Error);
-		expect(failure.message).toContain('component began but did not end');
+		expect((failure.cause as Error).message).toContain(
+			'component began but did not end',
+		);
+		expect(failure.message).toBe(
+			'ics parse: the library cannot read the text',
+		);
+	});
+
+	it('writes no text of the library into the message', () => {
+		for (const [, text] of THROWING) {
+			expect(failureOf(text).message).toBe(
+				'ics parse: the library cannot read the text',
+			);
+		}
 	});
 });
 
@@ -216,6 +229,94 @@ const REFUSED: [string, string, IcsParseProblem][] = [
 		` ${calendar('X-NOTE:one')}`,
 		'structure',
 	],
+	[
+		'a parameter with no equals sign before the value',
+		calendar('X-NOTE;X-KEY=one;X-OTHER:value'),
+		'structure',
+	],
+	[
+		'two quoted values on a parameter that carries one',
+		calendar('X-NOTE;X-KEY="one","two":value'),
+		'value',
+	],
+	[
+		'a series end that holds no date',
+		event('RRULE:FREQ=DAILY;UNTIL=garbage'),
+		'value',
+	],
+	[
+		'a series end in the extended form',
+		event('RRULE:FREQ=DAILY;UNTIL=2026-12-31'),
+		'value',
+	],
+	[
+		'an interval with a fraction',
+		event('RRULE:FREQ=DAILY;INTERVAL=1.5'),
+		'value',
+	],
+	['an interval below one', event('RRULE:FREQ=DAILY;INTERVAL=-3'), 'value'],
+	['an interval of zero', event('RRULE:FREQ=DAILY;INTERVAL=0'), 'value'],
+	['a count with a fraction', event('RRULE:FREQ=DAILY;COUNT=1.9'), 'value'],
+	[
+		'a count past the width of a number',
+		event('RRULE:FREQ=DAILY;COUNT=99999999999999999999'),
+		'value',
+	],
+	[
+		'an exclusion rule with a fraction',
+		event('EXRULE:FREQ=DAILY;INTERVAL=2.7'),
+		'value',
+	],
+	[
+		'a day that a list repeats',
+		event('RRULE:FREQ=WEEKLY;BYDAY=MO,MO'),
+		'value',
+	],
+	[
+		'a day of the month that holds letters',
+		event('RRULE:FREQ=MONTHLY;BYMONTHDAY=5x'),
+		'value',
+	],
+	[
+		'a sequence past the width of a number',
+		event('SEQUENCE:9007199254740993'),
+		'value',
+	],
+	[
+		'an integer past the width of a number',
+		calendar('X-COUNT;VALUE=INTEGER:99999999999999999999'),
+		'value',
+	],
+	[
+		'a float past the width of a number',
+		calendar('X-RATIO;VALUE=FLOAT:1.0000000000000001'),
+		'value',
+	],
+	[
+		'coordinates past the width of a number',
+		event('GEO:46.18100000000000001;6.156'),
+		'value',
+	],
+	[
+		'a backslash before a comma in a parameter',
+		calendar('X-PLACE;X-NAME=Foo\\, Bar:value'),
+		'value',
+	],
+	[
+		'a backslash before a comma in a name',
+		event('ATTENDEE;CN=Foo\\, Bar:mailto:someone@example.test'),
+		'value',
+	],
+	[
+		'two backslashes in a parameter',
+		calendar('X-PLACE;X-NAME=a\\\\b:value'),
+		'value',
+	],
+	[
+		'a backslash before a semicolon in a quoted parameter',
+		calendar('X-PLACE;X-NAME="a\\;b":value'),
+		'value',
+	],
 ];
 
 describe('the parse boundary and the values that the library repairs', () => {
@@ -271,6 +372,75 @@ const ACCEPTED: [string, string][] = [
 		'a component that no standard names',
 		calendar('BEGIN:X-BLOCK', 'X-NOTE:one', 'END:X-BLOCK'),
 	],
+	[
+		'an inch mark in a parameter value',
+		calendar('X-NOTE;X-SIZE=5" pipe:value'),
+	],
+	[
+		'an inch mark in a structured location',
+		event('X-APPLE-STRUCTURED-LOCATION;X-TITLE=5" Pipe Room:geo:1,2'),
+	],
+	[
+		'an inch mark before a further parameter',
+		calendar('X-NOTE;X-SIZE=5" pipe;X-OTHER=2:value'),
+	],
+	['a quotation mark inside a word', calendar('X-NOTE;X-KEY=a"b:value')],
+	[
+		'a quotation mark that opens nothing',
+		calendar('X-NOTE;X-KEY=say "hi:value'),
+	],
+	[
+		'two quotation marks that enclose a semicolon',
+		calendar('X-NOTE;X-KEY=a"b;X-OTHER=c"d:value'),
+	],
+	[
+		'a name between quotation marks',
+		event('ATTENDEE;CN=John "Jack" Smith:mailto:jack@example.test'),
+	],
+	[
+		'a parameter that carries values in separate quotation marks',
+		event(
+			'ATTENDEE;MEMBER="mailto:a@example.test","mailto:b@example.test":mailto:c@example.test',
+		),
+	],
+	['a day with a positive ordinal', event('RRULE:FREQ=MONTHLY;BYDAY=2MO')],
+	['a day with an explicit plus', event('RRULE:FREQ=MONTHLY;BYDAY=+2MO')],
+	['a day with a negative ordinal', event('RRULE:FREQ=MONTHLY;BYDAY=-1FR')],
+	['a negative day of the month', event('RRULE:FREQ=MONTHLY;BYMONTHDAY=-1')],
+	[
+		'a series end as a date-time',
+		event('RRULE:FREQ=DAILY;UNTIL=20261231T000000Z'),
+	],
+	['a series end as a date', event('RRULE:FREQ=DAILY;UNTIL=20261231')],
+	[
+		'a rule with many parts',
+		event('RRULE:FREQ=YEARLY;BYMONTH=1,7;BYSETPOS=-1;WKST=SU;INTERVAL=2'),
+	],
+	['an integer with leading zeros', calendar('X-COUNT;VALUE=INTEGER:0012')],
+	['an integer with a leading plus', calendar('X-COUNT;VALUE=INTEGER:+12')],
+	['a float that ends in zeros', calendar('X-RATIO;VALUE=FLOAT:1.500')],
+	['the largest exact integer', event('SEQUENCE:9007199254740991')],
+	[
+		'a byte-order mark before the calendar',
+		`\uFEFF${event('SUMMARY:hello')}`,
+	],
+	['a text escape that no standard names', event('SUMMARY:bad\\q escape')],
+	['a backslash at the end of a text', event('SUMMARY:trailing\\')],
+	['a caret in a parameter value', calendar('X-PLACE;X-NAME=a^b:value')],
+	['a backslash before a letter', calendar('X-PLACE;X-NAME=a\\b:value')],
+	[
+		'a parameter escape for a quotation mark',
+		calendar("X-PLACE;X-NAME=a^'b:value"),
+	],
+	['a parameter escape for a caret', calendar('X-PLACE;X-NAME=a^^b:value')],
+	[
+		'a parameter escape for a line break',
+		calendar('X-PLACE;X-NAME=a^nb:value'),
+	],
+	[
+		'a parameter escape that no standard names',
+		calendar('X-PLACE;X-NAME=a^zb:value'),
+	],
 ];
 
 describe('the parse boundary and the values that the library keeps', () => {
@@ -312,5 +482,51 @@ describe('the failure of the parse boundary', () => {
 			'unreadable',
 			'value',
 		]);
+	});
+});
+
+describe('the messages of the parse boundary', () => {
+	it('names the type of a value that disobeys its rules', () => {
+		expect(
+			failureOf(calendar('X-COUNT;VALUE=INTEGER:zz')).message,
+		).toContain('does not obey the rules of the type integer');
+	});
+
+	it('points at the value and never at the whole text', () => {
+		const texts = [
+			event('DTSTART:garbage'),
+			calendar('X-COUNT;VALUE=INTEGER:zz'),
+			event('RDATE;VALUE=PERIOD:garbage'),
+		];
+		for (const text of texts) {
+			expect(failureOf(text).message).not.toContain('this text');
+		}
+	});
+
+	it('says what a line holds that the two readings disagree about', () => {
+		expect(
+			failureOf(calendar('X-NOTE;X-KEY=one;X-OTHER:value')).message,
+		).toContain('holds text between its last parameter and its value');
+	});
+
+	it('names the number that the parser read', () => {
+		expect(failureOf(event('SEQUENCE:9007199254740993')).message).toContain(
+			'the parser read the number 9007199254740992',
+		);
+	});
+
+	it('names the rule part that carries a value it cannot hold', () => {
+		expect(
+			failureOf(event('RRULE:FREQ=DAILY;UNTIL=garbage')).message,
+		).toContain('in the rule part UNTIL');
+	});
+
+	it('says that a text holds no calendar only when it holds none', () => {
+		expect(failureOf('').message).toBe(
+			'ics parse: the text holds no calendar',
+		);
+		expect(
+			failureOf(calendar('X-NOTE:one') + calendar('X-NOTE:two')).problem,
+		).not.toBe('no-calendar');
 	});
 });
