@@ -59,15 +59,19 @@ these files, because `.gitattributes` prevents the conversion. `ics-corpus.ts`
 indexes the files by the adversarial property that each file carries.
 
 `test/harness/obsidian-fake/` is the vault behind the vault port. The
-constructor of `FakeVault` takes a filesystem profile as its second
-argument, and the default profile is permissive. A permissive vault takes
-every name and keeps every name apart. `filesystem-profile.ts` holds three
-other profiles, and each one models one hostile behavior of a real disk:
-two names that differ only in case land on one file; the vault refuses the
-names that Windows keeps for devices; the two Unicode spellings of one name
-land on one file. A profile changes only the behavior that its name states.
-Therefore a suite runs one scenario two times, against a hostile filesystem
-and against a permissive filesystem, and the suite asserts what diverges.
+constructor of `FakeVault` receives a filesystem profile as its second
+argument. The default profile is permissive. A permissive vault accepts
+every name, and it tells every name apart. `filesystem-profile.ts` holds
+three other profiles. Each one models one hostile behavior of a real disk:
+
+- two names that differ only in case land on one file;
+- the vault refuses the names that Windows reserves for devices;
+- the NFC spelling and the NFD spelling of one name land on one file.
+
+A profile changes only the behavior that its name states. A suite
+therefore runs one scenario two times. The first run uses a hostile
+filesystem, and the second run uses the permissive filesystem. The suite
+then asserts what diverges.
 
 `test/harness/feed-fixture/` is the ICS feed server behind the transport
 port. A feed is a script. Poll N serves the variant that is declared for it.

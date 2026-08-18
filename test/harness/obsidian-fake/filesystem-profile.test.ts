@@ -12,7 +12,7 @@ import {
 
 /** The name with the accent as one code point. */
 const NFC_NAME = 'caf\u00e9.md';
-/** The same name with the letter e and a separate accent. */
+/** The same name, with the letter e and a separate accent after it. */
 const NFD_NAME = 'cafe\u0301.md';
 
 const NOTE = noteFixture('minimal').content;
@@ -152,7 +152,7 @@ describe('the permissive filesystem is the default', () => {
 });
 
 describe('each profile changes only the behavior that it names', () => {
-	it('keeps two spellings of one name apart on the case-insensitive filesystem', async () => {
+	it('tells two spellings of one name apart on the case-insensitive filesystem', async () => {
 		const [hostile, baseline] = await runBoth(
 			CASE_INSENSITIVE_FILESYSTEM,
 			{},
@@ -172,12 +172,14 @@ describe('each profile changes only the behavior that it names', () => {
 				{},
 				writeReservedName,
 			);
-			expect(hostile.outcomes).toEqual(baseline.outcomes);
-			expect(hostile.paths).toEqual(['CON.md']);
+			expect(hostile.outcomes, filesystem.name).toEqual(
+				baseline.outcomes,
+			);
+			expect(hostile.paths, filesystem.name).toEqual(['CON.md']);
 		}
 	});
 
-	it('keeps two names that differ in case apart on the reserved-name filesystem and on the normalizing filesystem', async () => {
+	it('tells two names that differ in case apart on the reserved-name filesystem and on the normalizing filesystem', async () => {
 		for (const filesystem of [
 			RESERVED_NAME_FILESYSTEM,
 			NORMALIZING_FILESYSTEM,
@@ -187,12 +189,17 @@ describe('each profile changes only the behavior that it names', () => {
 				{},
 				writeBothCases,
 			);
-			expect(hostile.outcomes).toEqual(baseline.outcomes);
-			expect(hostile.paths).toEqual(['Note.md', 'note.md']);
+			expect(hostile.outcomes, filesystem.name).toEqual(
+				baseline.outcomes,
+			);
+			expect(hostile.paths, filesystem.name).toEqual([
+				'Note.md',
+				'note.md',
+			]);
 		}
 	});
 
-	it('keeps two spellings of one name apart on the reserved-name filesystem', async () => {
+	it('tells two spellings of one name apart on the reserved-name filesystem', async () => {
 		const [hostile, baseline] = await runBoth(
 			RESERVED_NAME_FILESYSTEM,
 			{},
@@ -204,7 +211,7 @@ describe('each profile changes only the behavior that it names', () => {
 });
 
 describe('the case-insensitive filesystem', () => {
-	it('gives two names that differ only in case one file, and the permissive filesystem gives two files', async () => {
+	it('puts two names that differ only in case on one file, and the permissive filesystem holds two files', async () => {
 		const [hostile, baseline] = await runBoth(
 			CASE_INSENSITIVE_FILESYSTEM,
 			{},
@@ -251,7 +258,7 @@ describe('the case-insensitive filesystem', () => {
 		expect(baseline.paths).toEqual(['Note.md', 'note.md']);
 	});
 
-	it('reaches the seeded file through another case on every operation, and reports the name that made the file', async () => {
+	it('reaches the seeded file through another case on every operation, and reports the spelling that created the file', async () => {
 		const script: Script = async (step) => {
 			await step('read NOTE.md', (vault) => vault.read('NOTE.md'));
 			await step('exists NOTE.md', (vault) => vault.exists('NOTE.md'));
@@ -280,6 +287,81 @@ describe('the case-insensitive filesystem', () => {
 		}
 	});
 
+	it('reports the stored spelling as the old path of a rename', async () => {
+		const script: Script = async (step) => {
+			await step('rename NOTE.md to Other.md', (vault) =>
+				vault.rename('NOTE.md', 'Other.md'),
+			);
+		};
+		const [hostile, baseline] = await runBoth(
+			CASE_INSENSITIVE_FILESYSTEM,
+			{ 'Note.md': 'one' },
+			script,
+		);
+		expect(hostile.outcomes).toEqual(['rename NOTE.md to Other.md -> ok']);
+		expect(hostile.events).toEqual([
+			{ kind: 'renamed', path: 'Other.md', oldPath: 'Note.md' },
+		]);
+		expect(hostile.paths).toEqual(['Other.md']);
+		expect(baseline.outcomes).toEqual([
+			'rename NOTE.md to Other.md -> refused: fake vault: this vault holds no file at NOTE.md',
+		]);
+		expect(baseline.events).toEqual([]);
+		expect(baseline.paths).toEqual(['Note.md']);
+	});
+
+	it('refuses a rename onto the stored spelling of the same file', async () => {
+		const cases: readonly (readonly [FilesystemProfile, string, string])[] =
+			[
+				[CASE_INSENSITIVE_FILESYSTEM, 'Note.md', 'NOTE.md'],
+				[NORMALIZING_FILESYSTEM, NFC_NAME, NFD_NAME],
+			];
+		for (const [filesystem, stored, other] of cases) {
+			const script: Script = async (step) => {
+				await step('rename onto the stored spelling', (vault) =>
+					vault.rename(other, stored),
+				);
+			};
+			const [hostile, baseline] = await runBoth(
+				filesystem,
+				{ [stored]: 'one' },
+				script,
+			);
+			expect(hostile.outcomes, filesystem.name).toEqual([
+				`rename onto the stored spelling -> refused: fake vault: the new path is the same path as the old path: ${other}`,
+			]);
+			expect(hostile.events, filesystem.name).toEqual([]);
+			expect(baseline.outcomes, filesystem.name).toEqual([
+				`rename onto the stored spelling -> refused: fake vault: this vault holds no file at ${other}`,
+			]);
+		}
+	});
+
+	it('refuses a rename where the two paths are the same string, on every filesystem', async () => {
+		const cases: readonly (readonly [FilesystemProfile, string, string])[] =
+			[
+				[CASE_INSENSITIVE_FILESYSTEM, 'Note.md', 'note.md'],
+				[NORMALIZING_FILESYSTEM, NFC_NAME, NFD_NAME],
+				[RESERVED_NAME_FILESYSTEM, 'Note.md', 'Note.md'],
+				[PERMISSIVE_FILESYSTEM, 'Note.md', 'Note.md'],
+			];
+		for (const [filesystem, stored, requested] of cases) {
+			const run = await runScript(
+				filesystem,
+				{ [stored]: 'one' },
+				async (step) => {
+					await step('rename to the same string', (vault) =>
+						vault.rename(requested, requested),
+					);
+				},
+			);
+			expect(run.outcomes, filesystem.name).toEqual([
+				`rename to the same string -> refused: fake vault: the new path is the same path as the old path: ${requested}`,
+			]);
+			expect(run.events, filesystem.name).toEqual([]);
+		}
+	});
+
 	it('refuses a rename onto a name that another file holds under another case', async () => {
 		const script: Script = async (step) => {
 			await step('rename a.md to b.md', (vault) =>
@@ -302,7 +384,7 @@ describe('the case-insensitive filesystem', () => {
 		]);
 	});
 
-	it('refuses a rename that changes only the case, and takes that change through a third name', async () => {
+	it('refuses a rename that changes only the case, and accepts the same change through a third name', async () => {
 		const script: Script = async (step) => {
 			await step('rename note.md to Note.md', (vault) =>
 				vault.rename('note.md', 'Note.md'),
@@ -312,9 +394,6 @@ describe('the case-insensitive filesystem', () => {
 			);
 			await step('rename temp.md to Note.md', (vault) =>
 				vault.rename('temp.md', 'Note.md'),
-			);
-			await step('rename Note.md to Note.md', (vault) =>
-				vault.rename('Note.md', 'Note.md'),
 			);
 		};
 		const [hostile, baseline] = await runBoth(
@@ -326,7 +405,6 @@ describe('the case-insensitive filesystem', () => {
 			'rename note.md to Note.md -> refused: fake vault: the rename target exists: Note.md',
 			'rename note.md to temp.md -> ok',
 			'rename temp.md to Note.md -> ok',
-			'rename Note.md to Note.md -> refused: fake vault: the new path is the same path as the old path: Note.md',
 		]);
 		expect(hostile.events).toEqual([
 			{ kind: 'renamed', path: 'temp.md', oldPath: 'note.md' },
@@ -336,7 +414,6 @@ describe('the case-insensitive filesystem', () => {
 			'rename note.md to Note.md -> ok',
 			'rename note.md to temp.md -> refused: fake vault: this vault holds no file at note.md',
 			'rename temp.md to Note.md -> refused: fake vault: this vault holds no file at temp.md',
-			'rename Note.md to Note.md -> refused: fake vault: the new path is the same path as the old path: Note.md',
 		]);
 		expect(baseline.events).toEqual([
 			{ kind: 'renamed', path: 'Note.md', oldPath: 'note.md' },
@@ -345,7 +422,7 @@ describe('the case-insensitive filesystem', () => {
 		expect(baseline.paths).toEqual(['Note.md']);
 	});
 
-	it('refuses two seeded names that differ only in case, and the permissive filesystem takes both', async () => {
+	it('refuses two seeded names that differ only in case, and the permissive filesystem accepts both', async () => {
 		const [hostile, baseline] = await runBoth(
 			CASE_INSENSITIVE_FILESYSTEM,
 			{ 'Note.md': 'one', 'note.md': 'two' },
@@ -354,29 +431,38 @@ describe('the case-insensitive filesystem', () => {
 			},
 		);
 		expect(hostile.outcomes).toEqual([
-			'seed -> refused: fake vault: this filesystem gives Note.md and note.md one name',
+			'seed -> refused: fake vault: this filesystem uses one name for Note.md and for note.md',
 		]);
 		expect(baseline.paths).toEqual(['Note.md', 'note.md']);
 	});
 });
 
+const reservedDevice = (name: string): string =>
+	`Windows reserves the name "${name}" for a device`;
+
 const REFUSED_NAMES: readonly (readonly [string, string])[] = [
-	['CON.md', 'the system keeps this name for a device'],
-	['con.md', 'the system keeps this name for a device'],
-	['NUL', 'the system keeps this name for a device'],
-	['PRN.md', 'the system keeps this name for a device'],
-	['AUX.md', 'the system keeps this name for a device'],
-	['COM1.md', 'the system keeps this name for a device'],
-	['COM9.md', 'the system keeps this name for a device'],
-	['LPT1.md', 'the system keeps this name for a device'],
-	['LPT9.md', 'the system keeps this name for a device'],
-	['CON.md.bak', 'the system keeps this name for a device'],
-	['notes/CON.md', 'the system keeps this name for a device'],
-	['AUX/notes.md', 'the system keeps this name for a device'],
-	['notes.', 'the name ends with a dot'],
-	['notes/note.md.', 'the name ends with a dot'],
-	['note.md ', 'the name ends with a space'],
-	['notes /note.md', 'the name ends with a space'],
+	['CON.md', reservedDevice('CON')],
+	['con.md', reservedDevice('CON')],
+	['NUL', reservedDevice('NUL')],
+	['PRN.md', reservedDevice('PRN')],
+	['AUX.md', reservedDevice('AUX')],
+	['COM1.md', reservedDevice('COM1')],
+	['COM9.md', reservedDevice('COM9')],
+	['COM\u00b9.md', reservedDevice('COM\u00b9')],
+	['COM\u00b2.md', reservedDevice('COM\u00b2')],
+	['COM\u00b3.md', reservedDevice('COM\u00b3')],
+	['LPT1.md', reservedDevice('LPT1')],
+	['LPT9.md', reservedDevice('LPT9')],
+	['LPT\u00b9.md', reservedDevice('LPT\u00b9')],
+	['LPT\u00b2.md', reservedDevice('LPT\u00b2')],
+	['LPT\u00b3.md', reservedDevice('LPT\u00b3')],
+	['CON.md.bak', reservedDevice('CON')],
+	['notes/CON.md', reservedDevice('CON')],
+	['AUX/notes.md', reservedDevice('AUX')],
+	['notes.', 'the part "notes." ends with a dot'],
+	['notes/note.md.', 'the part "note.md." ends with a dot'],
+	['note.md ', 'the part "note.md " ends with a space'],
+	['notes /note.md', 'the part "notes " ends with a space'],
 ];
 
 const ACCEPTED_NAMES: readonly string[] = [
@@ -388,10 +474,17 @@ const ACCEPTED_NAMES: readonly string[] = [
 	'a.CON.md',
 	' note.md',
 	'note..md',
+	'.hidden.md',
+	'.',
+	'..',
+	'./a.md',
+	'a/../b.md',
 ];
 
+const RELATIVE_NAMES: readonly string[] = ['.', '..', './a.md', 'a/../b.md'];
+
 describe('the reserved-name filesystem', () => {
-	it('refuses each name that Windows keeps, and the permissive filesystem takes each one', async () => {
+	it('refuses each name that Windows reserves, and the permissive filesystem accepts each one', async () => {
 		const script: Script = async (step) => {
 			for (const [name] of REFUSED_NAMES) {
 				await step(`write ${name}`, (vault) =>
@@ -418,7 +511,7 @@ describe('the reserved-name filesystem', () => {
 		expect(baseline.paths).toHaveLength(REFUSED_NAMES.length);
 	});
 
-	it('takes a name that only looks like a name that Windows keeps', async () => {
+	it('accepts a name that only looks like a name that Windows reserves', async () => {
 		const script: Script = async (step) => {
 			for (const name of ACCEPTED_NAMES) {
 				await step(`write ${name}`, (vault) =>
@@ -434,6 +527,52 @@ describe('the reserved-name filesystem', () => {
 		expect(hostile.outcomes).toEqual(baseline.outcomes);
 		expect(hostile.paths).toEqual(baseline.paths);
 		expect(hostile.paths).toHaveLength(ACCEPTED_NAMES.length);
+	});
+
+	it('accepts the parts "." and ".." in a path, on both filesystems', async () => {
+		const script: Script = async (step) => {
+			for (const name of RELATIVE_NAMES) {
+				await step(`write ${name}`, (vault) =>
+					vault.write(name, 'one'),
+				);
+				await step(`read ${name}`, (vault) => vault.read(name));
+			}
+		};
+		const [hostile, baseline] = await runBoth(
+			RESERVED_NAME_FILESYSTEM,
+			{},
+			script,
+		);
+		expect(hostile.outcomes).toEqual(baseline.outcomes);
+		expect(hostile.outcomes).toHaveLength(RELATIVE_NAMES.length * 2);
+		for (const outcome of hostile.outcomes) {
+			expect(outcome).not.toContain('refused');
+		}
+		expect(hostile.paths).toEqual(['.', '..', './a.md', 'a/../b.md']);
+		expect(hostile.events).toEqual(baseline.events);
+	});
+
+	it('reports the first problem in the path, from left to right', async () => {
+		const cases: readonly (readonly [string, string])[] = [
+			['notes./CON.md', 'the part "notes." ends with a dot'],
+			['a /CON.md', 'the part "a " ends with a space'],
+			['CON.md/a ', reservedDevice('CON')],
+			['NUL.', 'the part "NUL." ends with a dot'],
+		];
+		const script: Script = async (step) => {
+			for (const [name] of cases) {
+				await step(`write ${name}`, (vault) =>
+					vault.write(name, 'one'),
+				);
+			}
+		};
+		const hostile = await runScript(RESERVED_NAME_FILESYSTEM, {}, script);
+		expect(hostile.outcomes).toEqual(
+			cases.map(
+				([name, reason]) =>
+					`write ${name} -> refused: fake vault: ${reason}: ${name}`,
+			),
+		);
 	});
 
 	it('refuses the reserved name on every path that reaches the vault', async () => {
@@ -462,7 +601,7 @@ describe('the reserved-name filesystem', () => {
 		);
 		for (const outcome of hostile.outcomes) {
 			expect(outcome).toContain(
-				'refused: fake vault: the system keeps this name for a device: CON.md',
+				`refused: fake vault: ${reservedDevice('CON')}: CON.md`,
 			);
 		}
 		expect(hostile.outcomes).toHaveLength(8);
@@ -486,7 +625,7 @@ describe('the reserved-name filesystem', () => {
 		]);
 	});
 
-	it('refuses a seeded reserved name, and the permissive filesystem takes it', async () => {
+	it('refuses a seeded reserved name, and the permissive filesystem accepts it', async () => {
 		const [hostile, baseline] = await runBoth(
 			RESERVED_NAME_FILESYSTEM,
 			{ 'notes/COM3.md': 'one' },
@@ -497,7 +636,7 @@ describe('the reserved-name filesystem', () => {
 			},
 		);
 		expect(hostile.outcomes).toEqual([
-			'seed -> refused: fake vault: the system keeps this name for a device: notes/COM3.md',
+			`seed -> refused: fake vault: ${reservedDevice('COM3')}: notes/COM3.md`,
 		]);
 		expect(baseline.paths).toEqual(['notes/COM3.md']);
 	});
@@ -510,7 +649,7 @@ describe('the normalizing filesystem', () => {
 		expect(NFD_NAME.normalize('NFC')).toBe(NFC_NAME);
 	});
 
-	it('gives the NFC spelling and the NFD spelling of one name one file, and the permissive filesystem gives two files', async () => {
+	it('puts the NFC spelling and the NFD spelling of one name on one file, and the permissive filesystem holds two files', async () => {
 		const [hostile, baseline] = await runBoth(
 			NORMALIZING_FILESYSTEM,
 			{},
@@ -540,17 +679,17 @@ describe('the normalizing filesystem', () => {
 		]);
 	});
 
-	it('keeps the spelling that made the file, and reads and writes through both spellings', async () => {
+	it('keeps the spelling that created the file, and reads and writes through both spellings', async () => {
 		const script: Script = async (step) => {
 			await step('write the NFD name', (vault) =>
 				vault.write(NFD_NAME, NOTE),
 			);
 			await step('read the NFC name', (vault) => vault.read(NFC_NAME));
-			await step('frontmatter through NFC', (vault) =>
-				vault.frontmatter(NFC_NAME),
-			);
 			await step('update through NFC', (vault) =>
 				vault.updateFrontmatter(NFC_NAME, setTitle),
+			);
+			await step('frontmatter through NFC', (vault) =>
+				vault.frontmatter(NFC_NAME),
 			);
 			await step('frontmatter through NFD', (vault) =>
 				vault.frontmatter(NFD_NAME),
@@ -563,9 +702,10 @@ describe('the normalizing filesystem', () => {
 			{ kind: 'created', path: NFD_NAME },
 			{ kind: 'modified', path: NFD_NAME },
 		]);
-		expect(hostile.outcomes[4]).toBe(
-			'frontmatter through NFD -> {"title":"Changed","start":"2026-03-04T09:00"}',
-		);
+		const throughNfc = hostile.outcomes[3]?.split(' -> ')[1];
+		const throughNfd = hostile.outcomes[4]?.split(' -> ')[1];
+		expect(throughNfd).toBe(throughNfc);
+		expect(throughNfd).toContain('"title":"Changed"');
 	});
 
 	it('refuses a rename onto the other spelling of a name that a file holds', async () => {
@@ -587,7 +727,7 @@ describe('the normalizing filesystem', () => {
 		expect(baseline.paths).toEqual([NFD_NAME, NFC_NAME]);
 	});
 
-	it('refuses a rename between the two spellings of one name, and takes that change through a third name', async () => {
+	it('refuses a rename between the two spellings of one name, and accepts the same change through a third name', async () => {
 		const script: Script = async (step) => {
 			await step('rename NFC to NFD', (vault) =>
 				vault.rename(NFC_NAME, NFD_NAME),
@@ -625,7 +765,7 @@ describe('the normalizing filesystem', () => {
 		expect(baseline.paths).toEqual([NFD_NAME]);
 	});
 
-	it('refuses two seeded spellings of one name, and the permissive filesystem takes both', async () => {
+	it('refuses two seeded spellings of one name, and the permissive filesystem accepts both', async () => {
 		const [hostile, baseline] = await runBoth(
 			NORMALIZING_FILESYSTEM,
 			{ [NFC_NAME]: 'one', [NFD_NAME]: 'two' },
@@ -636,7 +776,7 @@ describe('the normalizing filesystem', () => {
 			},
 		);
 		expect(hostile.outcomes).toEqual([
-			`seed -> refused: fake vault: this filesystem gives ${NFC_NAME} and ${NFD_NAME} one name`,
+			`seed -> refused: fake vault: this filesystem uses one name for ${NFC_NAME} and for ${NFD_NAME}`,
 		]);
 		expect(baseline.paths).toHaveLength(2);
 	});

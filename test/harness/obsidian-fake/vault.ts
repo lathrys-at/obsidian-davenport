@@ -12,12 +12,22 @@
  * does not claim that a real Obsidian vault writes those bytes. Runs
  * against real installations measure that equivalence.
  *
- * A filesystem profile decides which names this vault refuses, and which
- * names this vault cannot tell apart. The default profile is
- * permissive: it refuses no name, and each path names its own file. Under
- * another profile, two paths can name one file. The vault then keeps the
- * spelling that made the file, and the events of the vault carry that
- * spelling and not the spelling that the caller passed.
+ * A filesystem profile decides two things. The profile decides which
+ * names this vault refuses. The profile also decides which paths land on
+ * one file. The default profile is permissive. It accepts every name,
+ * and each path lands on its own file. Under another profile, two paths
+ * can land on one file.
+ *
+ * The vault stores one spelling for each file, and that spelling is the
+ * spelling that created the file. Every operation reports the stored
+ * spelling, and not the spelling that the caller passed. A rename is the
+ * one operation that replaces the stored spelling. The renamed event
+ * therefore reports the new path of the caller as `path`. That event
+ * reports the spelling from before the rename as `oldPath`.
+ *
+ * The vault applies the refusal of the profile before the identity of
+ * the profile. Therefore a name that the filesystem refuses never
+ * reaches a file that the vault holds.
  */
 
 import type {
@@ -48,9 +58,9 @@ export class FakeVault implements VaultPort {
 	/**
 	 * Seeds the vault with the given files. A seed is setup and not an
 	 * operation. Therefore the constructor emits no event. The filesystem
-	 * profile applies to the seed too: the constructor refuses a name that
-	 * the profile refuses, and the constructor refuses two seeded paths
-	 * that name one file, because no disk can hold that pair.
+	 * profile applies to the seed. The constructor refuses a name that the
+	 * profile refuses. The constructor also refuses two seeded paths that
+	 * land on one file, because no disk holds that pair.
 	 */
 	constructor(
 		initialFiles: Readonly<Record<string, string>> = {},
@@ -61,7 +71,7 @@ export class FakeVault implements VaultPort {
 			const held = this.files.get(identity);
 			if (held !== undefined) {
 				throw new Error(
-					`fake vault: this filesystem gives ${held.path} and ${path} one name`,
+					`fake vault: this filesystem uses one name for ${held.path} and for ${path}`,
 				);
 			}
 			this.files.set(identity, { path, content });
@@ -79,9 +89,9 @@ export class FakeVault implements VaultPort {
 	 * whether or not the bytes changed. The constructor puts the given
 	 * files into the vault. Therefore the first write to a path that the
 	 * constructor supplied emits `modified`. The filesystem profile
-	 * decides which paths the vault already holds: a write to a name that
-	 * the profile cannot tell apart from a name in the vault reaches that
-	 * file, and it keeps the spelling of that file.
+	 * decides which paths the vault already holds. A write to a path that
+	 * lands on a file of the vault reaches that file. The write keeps the
+	 * stored spelling of that file.
 	 */
 	write(path: string, content: string): Promise<void> {
 		return settle(() => {
@@ -102,11 +112,18 @@ export class FakeVault implements VaultPort {
 	}
 
 	/**
-	 * Moves the file to the new path. The operation refuses a new path
-	 * that the vault already holds, and the filesystem profile decides
-	 * which paths the vault holds. A rename that changes only the
+	 * Moves the file to the new path, and stores the new path as the
+	 * spelling of that file. The renamed event reports the new path as
+	 * `path`. That event reports the spelling from before the rename as
+	 * `oldPath`.
+	 *
+	 * The operation refuses a call where the new path is the same string
+	 * as the old path. The operation also refuses a call where the new
+	 * path is the stored spelling of the file. The operation refuses a
+	 * new path that the vault already holds, and the filesystem profile
+	 * decides which paths the vault holds. A rename that changes only the
 	 * spelling of the name therefore refuses on a filesystem that cannot
-	 * tell the two spellings apart. To get the new spelling on such a
+	 * tell the two spellings apart. To store the new spelling on such a
 	 * filesystem, rename the file two times, and use a third name in
 	 * between.
 	 */
@@ -114,7 +131,7 @@ export class FakeVault implements VaultPort {
 		return settle(() => {
 			const { identity, file } = this.requireFile(path);
 			const target = this.checkPath(newPath);
-			if (newPath === file.path) {
+			if (newPath === path || newPath === file.path) {
 				throw new Error(
 					`fake vault: the new path is the same path as the old path: ${path}`,
 				);
@@ -214,9 +231,9 @@ export class FakeVault implements VaultPort {
 	}
 
 	/**
-	 * Checks the path against the rules of the vault and against the
-	 * filesystem profile, and gives back the identity of the path. Every
-	 * operation starts here.
+	 * Checks the path against the rules of the vault, and then against
+	 * the filesystem profile. The function gives the identity of the
+	 * path. Every operation that receives a path starts here.
 	 */
 	private checkPath(path: string): string {
 		assertPath(path);
