@@ -1,9 +1,10 @@
 /**
  * The wording of everything that the bundle-size check prints. The check
- * prints two kinds of line. The report says what the build weighs, where the
- * weight comes from, and what moved against the baseline. The failure names
- * each output file that the build no longer makes. The failure also says
- * which size went past the step, and it names the modules that grew.
+ * prints two kinds of line. The report says what the build weighs. The
+ * report also says where the weight comes from, and what moved against the
+ * baseline. The failure names each output file that the build no longer
+ * makes. The failure also says which size went past the step, and it names
+ * the modules that grew.
  *
  * Each line that states a fact carries the name of the check, so that the
  * line stays legible in a log that holds the output of many steps. A line
@@ -86,12 +87,10 @@ function moduleLines(
 			'the modules that hold the most bytes. The overhead is what the bundler puts around them.',
 		),
 	];
-	const row = (name: string, size: number): string => {
-		const change = changed.get(name);
-		return `  ${name}  ${bytes(size)}  ${change === undefined ? 'no change' : moved(change)}`;
-	};
+	const row = (name: string, size: number, change: number | undefined) =>
+		`  ${name}  ${bytes(size)}  ${change === undefined || change === 0 ? 'no change' : moved(change)}`;
 	for (const module of report.modules.slice(0, TABLE_ROWS)) {
-		lines.push(row(module.name, module.bytes));
+		lines.push(row(module.name, module.bytes, changed.get(module.name)));
 	}
 	if (rest.length > 0) {
 		const total = rest.reduce((sum, module) => sum + module.bytes, 0);
@@ -99,7 +98,7 @@ function moduleLines(
 			`  the other ${count(rest.length, 'module')} hold ${bytes(total)} together`,
 		);
 	}
-	lines.push(row(OVERHEAD, report.overhead));
+	lines.push(row(OVERHEAD, report.overhead, comparison.overhead.change));
 	return lines;
 }
 
@@ -108,14 +107,7 @@ export function failureLines(comparison: Comparison): readonly string[] {
 	if (!comparison.fails) {
 		return [];
 	}
-	const lines: string[] = [];
-	for (const path of comparison.gone) {
-		lines.push(
-			say(
-				`the build no longer produces ${path}, and the baseline holds that output file. A payload that stops loading lazily moves into another output file, and the total stays the same.`,
-			),
-		);
-	}
+	const lines = [...goneLines(comparison)];
 	if (comparison.raw.past || comparison.compressed.past) {
 		if (comparison.raw.past) {
 			lines.push(say(pastStep('raw', comparison.raw)));
@@ -124,12 +116,52 @@ export function failureLines(comparison: Comparison): readonly string[] {
 			lines.push(say(pastStep('compressed', comparison.compressed)));
 		}
 		lines.push(...grewLines(comparison.grew));
+		if (comparison.overhead.change !== 0) {
+			lines.push(
+				say(
+					`the build overhead is ${moved(comparison.overhead.change)}. The overhead is what the bundler puts around the modules.`,
+				),
+			);
+		}
 	}
 	lines.push(
 		say(
-			'accept this change in the pull request that causes it, and write the new numbers into the baseline in the same change. The command `node scripts/bundle-size.mjs --write-baseline` writes the file.',
+			'accept this change in the pull request that causes it. Write the new numbers into the baseline in that same pull request. The command `node scripts/bundle-size.mjs --write-baseline` writes the file.',
 		),
 	);
+	return lines;
+}
+
+/**
+ * The lines that name each output file that the build no longer makes. The
+ * second line says what the totals did. A payload that stops loading lazily
+ * moves into another output file, and the totals then hold. The rule exists
+ * for that case, and the totals can also move for another reason. Therefore
+ * these lines state the numbers of this run, and they do not assume the
+ * case.
+ */
+function goneLines(comparison: Comparison): readonly string[] {
+	if (comparison.gone.length === 0) {
+		return [];
+	}
+	const lines = comparison.gone.map((path) =>
+		say(
+			`the build no longer produces ${path}, and the baseline holds that output file`,
+		),
+	);
+	if (comparison.raw.change === 0 && comparison.compressed.change === 0) {
+		lines.push(
+			say(
+				'the totals did not move. A payload can stop loading lazily and move into another output file. The totals do not show that move, and a missing output file does.',
+			),
+		);
+	} else {
+		lines.push(
+			say(
+				`the raw size is ${moved(comparison.raw.change)}, and the compressed size is ${moved(comparison.compressed.change)}`,
+			),
+		);
+	}
 	return lines;
 }
 
@@ -140,11 +172,7 @@ function pastStep(name: string, change: Change): string {
 /** The lines that name the modules that grew. */
 function grewLines(grew: readonly Move[]): readonly string[] {
 	if (grew.length === 0) {
-		return [
-			say(
-				'no module grew. The bundler added the bytes around the modules.',
-			),
-		];
+		return [say('no module grew')];
 	}
 	const lines = [say(`the ${count(grew.length, 'module')} that grew`)];
 	for (const move of grew) {

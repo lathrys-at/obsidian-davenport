@@ -4,7 +4,9 @@
  * - what the check reads out of the metafile of a build;
  * - which module gets the bytes of one input;
  * - what the measurement of the built files adds up to;
+ * - whether the numbers of a baseline agree with each other;
  * - how much growth past the baseline the check accepts;
+ * - which output files the check requires the build to keep making;
  * - what the comparison says, and the wording that the check prints;
  * - what the check does when the metafile or the baseline is absent.
  *
@@ -203,10 +205,24 @@ describe('the module that gets the bytes of an input', () => {
 		);
 	});
 
-	it('counts a nested copy against the package that holds the file', () => {
+	it('names a nested copy for the whole chain of packages', () => {
 		expect(
 			contributorName('node_modules/a/node_modules/b/lib/index.js'),
-		).toBe('b');
+		).toBe('a/node_modules/b');
+	});
+
+	it('keeps the scope of each package of a chain', () => {
+		expect(
+			contributorName(
+				'node_modules/@one/a/node_modules/@two/b/lib/index.js',
+			),
+		).toBe('@one/a/node_modules/@two/b');
+	});
+
+	it('passes over a directory whose name only ends in node_modules', () => {
+		expect(contributorName('src/my_node_modules/thing.ts')).toBe(
+			'src/my_node_modules/thing.ts',
+		);
 	});
 });
 
@@ -239,6 +255,23 @@ describe('the measurement of a build', () => {
 			},
 		]);
 		expect(report.modules).toStrictEqual([{ name: 'ical.js', bytes: 500 }]);
+	});
+
+	it('gives a package that the build holds two times two rows', () => {
+		const report = reportOf([
+			{
+				path: 'main.js',
+				bytes: 20_000,
+				modules: {
+					'node_modules/a/node_modules/b/lib/index.js': 5000,
+					'node_modules/b/lib/index.js': 7000,
+				},
+			},
+		]);
+		expect(report.modules).toStrictEqual([
+			{ name: 'b', bytes: 7000 },
+			{ name: 'a/node_modules/b', bytes: 5000 },
+		]);
 	});
 
 	it('sorts the modules by size, and ties by name', () => {
@@ -290,7 +323,7 @@ describe('the measurement of a build', () => {
 
 describe('the step that the check accepts', () => {
 	it('is 50 kB beside a bundle of a few hundred bytes', () => {
-		expect(stepFor(662)).toBe(51_200);
+		expect(stepFor(662)).toBe(50_000);
 	});
 
 	it('is half of a bundle that is larger than 100 kB', () => {
@@ -338,13 +371,59 @@ describe('the comparison against the baseline', () => {
 		const comparison = compare(grown, baseline);
 		expect(comparison.fails).toBe(true);
 		expect(comparison.raw.past).toBe(true);
-		expect(comparison.grew[0]).toStrictEqual({
-			name: 'ical.js',
-			baseline: 400,
-			now: 190_000,
-			change: 189_600,
-		});
+		expect(comparison.grew).toStrictEqual([
+			{
+				name: 'ical.js',
+				baseline: 400,
+				now: 190_000,
+				change: 189_600,
+			},
+		]);
 		expect(failureLines(comparison).join('\n')).toContain('ical.js');
+	});
+
+	it('keeps the build overhead out of the modules that grew', () => {
+		const grown = reportOf([
+			{
+				path: 'main.js',
+				bytes: 200_000,
+				modules: {
+					'src/main.ts': 100,
+					'node_modules/ical.js/a.js': 190_000,
+				},
+			},
+		]);
+		const comparison = compare(grown, baseline);
+		expect(comparison.grew.map((move) => move.name)).not.toContain(
+			OVERHEAD,
+		);
+		expect(comparison.overhead).toStrictEqual({
+			name: OVERHEAD,
+			baseline: 400,
+			now: 9900,
+			change: 9500,
+		});
+		const lines = failureLines(comparison).join('\n');
+		expect(lines).toContain('the 1 module that grew');
+		expect(lines).toContain(
+			'the build overhead is 9500 bytes (9.5 kB) more',
+		);
+	});
+
+	it('says that no module grew when only the overhead moved', () => {
+		const grown = reportOf([
+			{
+				path: 'main.js',
+				bytes: 200_000,
+				modules: {
+					'src/main.ts': 100,
+					'node_modules/ical.js/a.js': 400,
+				},
+			},
+		]);
+		const lines = failureLines(compare(grown, baseline)).join('\n');
+		expect(lines).toContain('no module grew');
+		expect(lines).toContain('the build overhead is');
 	});
 
 	it('names a module that the baseline does not hold', () => {
@@ -378,8 +457,8 @@ describe('the comparison against the baseline', () => {
 		expect(comparison.raw.change).toBe(-600);
 		expect(comparison.shrank.map((move) => move.name)).toStrictEqual([
 			'ical.js',
-			OVERHEAD,
 		]);
+		expect(comparison.overhead.change).toBe(-200);
 	});
 
 	/** A build of one entry file and one chunk beside it. */
@@ -399,8 +478,21 @@ describe('the comparison against the baseline', () => {
 			raw: 900,
 			compressed: 300,
 		});
-		expect(failureLines(comparison).join('\n')).toContain(
-			'the build no longer produces chunk-A.js',
+		const lines = failureLines(comparison).join('\n');
+		expect(lines).toContain('the build no longer produces chunk-A.js');
+		expect(lines).toContain('the totals did not move');
+	});
+
+	it('states the real change when a file goes and the totals move', () => {
+		const smaller = reportOf([{ path: 'main.js', bytes: 900 }]);
+		const comparison = compare(smaller, split);
+		expect(comparison.gone).toStrictEqual(['chunk-A.js']);
+		expect(comparison.fails).toBe(true);
+		const lines = failureLines(comparison).join('\n');
+		expect(lines).toContain('the build no longer produces chunk-A.js');
+		expect(lines).not.toContain('the totals did not move');
+		expect(lines).toContain(
+			'the raw size is 300 bytes less, and the compressed size is 100 bytes less',
 		);
 	});
 
@@ -436,7 +528,7 @@ describe('the wording of the check', () => {
 	it('says the size, the baseline, the step and each output file', () => {
 		const lines = reportLines(report, compare(report, report)).join('\n');
 		expect(lines).toContain('900 bytes raw and 300 bytes compressed');
-		expect(lines).toContain('51200 bytes (51.2 kB) raw');
+		expect(lines).toContain('50000 bytes (50.0 kB) raw');
 		expect(lines).toContain('main.js  entry');
 		expect(lines).toContain('(build overhead)  800 bytes');
 	});
@@ -490,6 +582,34 @@ describe('the committed baseline', () => {
 		],
 	])('refuses %s', (_name, text) => {
 		expect(refusal(readBaseline(text))).toContain('baseline');
+	});
+
+	/** The record that `--write-baseline` writes for one build. */
+	const sound = reportOf([
+		{ path: 'main.js', bytes: 900, modules: { 'src/main.ts': 100 } },
+	]);
+
+	/** That record, with one number replaced. */
+	function tampered(key: string, value: number): string {
+		return JSON.stringify({ ...sound, [key]: value });
+	}
+
+	it('refuses a raw size that the output files do not add up to', () => {
+		expect(refusal(readBaseline(tampered('raw', 600_000)))).toBe(
+			'the baseline gives the whole build 600000 bytes raw, and its output files add up to 900 bytes',
+		);
+	});
+
+	it('refuses a compressed size that the output files do not add up to', () => {
+		expect(refusal(readBaseline(tampered('compressed', 5)))).toBe(
+			'the baseline gives the whole build 5 bytes compressed, and its output files add up to 300 bytes',
+		);
+	});
+
+	it('refuses an overhead that does not close the raw size', () => {
+		expect(refusal(readBaseline(tampered('overhead', 0)))).toBe(
+			'the baseline gives the whole build 900 bytes raw, and its modules and its build overhead add up to 100 bytes',
+		);
 	});
 });
 
@@ -602,6 +722,40 @@ describe('the check as a process', () => {
 		expect(result.status).toBe(1);
 		expect(result.output).toContain('goes past the step');
 		expect(result.output).toContain('ical.js  from 0 bytes to 190000');
+	});
+
+	it.each([
+		[
+			'a raw size that the output files do not add up to',
+			'raw',
+			600_000,
+			'600000 bytes raw, and its output files add up to 900 bytes',
+		],
+		[
+			'a compressed size that the output files do not add up to',
+			'compressed',
+			5,
+			'5 bytes compressed, and its output files add up to',
+		],
+		[
+			'an overhead that does not close the raw size',
+			'overhead',
+			0,
+			'900 bytes raw, and its modules and its build overhead add up to 100 bytes',
+		],
+	])('fails on a baseline with %s', (_name, key, value, said) => {
+		const outputs = [
+			{ path: `${key}.js`, bytes: 900, modules: { 'src/main.ts': 100 } },
+		];
+		const meta = build(key, outputs);
+		const path = join(directory, `${key}-tampered.json`);
+		writeFileSync(
+			path,
+			JSON.stringify({ ...reportOf(outputs), [key]: value }),
+		);
+		const result = run(meta, path);
+		expect(result.status).toBe(1);
+		expect(result.output).toContain(said);
 	});
 
 	it('fails when the build stops making an output file of the baseline', () => {

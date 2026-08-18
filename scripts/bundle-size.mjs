@@ -1,25 +1,28 @@
 /**
  * The release carries `main.js`, and nothing else measured that file. This
- * check measures it. The check reports the raw size, the compressed size,
- * the size of each output file, and the modules that hold the most bytes. A
- * module under node_modules counts against the package that holds it.
- * Therefore the report answers the question of what each dependency costs.
+ * check measures it. The check reports four things: the raw size, the
+ * compressed size, the size of each output file, and the modules that hold
+ * the most bytes. A module under node_modules counts against the package
+ * that holds it. Therefore the report says what each dependency costs.
  *
- * The check compares the sizes against `bundle-baseline.json`. The check
- * fails when the raw size or the compressed size grows past the baseline by
- * more than a generous step, and the failure names the modules that grew.
- * The check also fails when the baseline holds an output file that the build
- * no longer makes, because a payload that stops loading lazily moves into
- * another output file and keeps the total the same.
+ * The check compares the sizes against `bundle-baseline.json`. Two things
+ * fail the check:
+ *
+ * - the raw size or the compressed size grows past the baseline by more
+ *   than a generous step. The failure then names the modules that grew;
+ * - the baseline holds an output file that the build no longer makes. A
+ *   payload that stops loading lazily moves into another output file, and
+ *   the totals do not show that move.
  *
  * The check is an instrument for attribution, and it is not a budget. A
  * build that is smaller than the baseline is a report, and never a failure.
- * A move of bytes between the output files that keeps the totals is a report
+ * A move of bytes between the output files that the build keeps is a report
  * too. The baseline moves only when a person writes the new numbers into it.
  *
  * The production build writes the metafile that this check reads. Run
- * `npm run build` first. The check fails when the metafile is absent, and it
- * fails when the baseline is absent. It never writes a baseline by itself.
+ * `npm run build` first. The check fails when the metafile is absent. The
+ * check also fails when the baseline is absent, and it never writes a
+ * baseline by itself.
  *
  *     node scripts/bundle-size.mjs
  *     node scripts/bundle-size.mjs <metafile> <baseline>
@@ -47,7 +50,9 @@ const BASELINE = 'bundle-baseline.json';
 
 /**
  * The compression that the report measures. The level is the strongest one,
- * so that the number stays the same on every machine that runs this check.
+ * so that the number is the smallest that gzip reaches. The number comes
+ * from the zlib library that Node carries. Therefore the number can move by
+ * a few bytes when the version of Node changes.
  */
 const LEVEL = constants.Z_BEST_COMPRESSION;
 

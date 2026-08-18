@@ -43,6 +43,10 @@ const context = await esbuild.context({
 	// The metafile says which module holds which bytes of the output.
 	// `scripts/bundle-size.mjs` reads it. The watch build never writes it.
 	metafile: prod,
+	// A content hash in the name of a chunk makes each rebuild of that chunk
+	// read as an output file that went away, and the timezone data will
+	// rebuild its chunk several times a year.
+	chunkNames: '[name]',
 });
 
 if (prod) {

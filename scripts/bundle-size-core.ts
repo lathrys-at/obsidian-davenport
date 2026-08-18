@@ -15,18 +15,20 @@
  * the wording that the check prints.
  *
  * This check is an instrument for attribution, and it is not a budget. The
- * report is the point. The report says which module cost how many bytes, and
- * it gives each output file a line of its own. A chunk that loads lazily is
- * an output file of its own. Therefore a claim about lazy loading is
- * checkable here. The comparison fails on growth of the order of magnitude,
- * and `stepFor` states that limit in bytes. The comparison also fails on an
- * output file that the baseline holds and the build no longer makes, because
- * a payload that stops loading lazily can keep the total the same.
+ * report is the point. The report says which module cost how many bytes.
+ * The report also gives each output file a line of its own. A chunk that
+ * loads lazily is an output file of its own. Therefore a claim about lazy
+ * loading is checkable here.
  *
- * A build that gives this module nothing to measure is a fault, and the
- * check fails on it. A metafile that does not describe the files on disk is
- * also a fault. Such a change never leaves a check that measures nothing and
- * reports success.
+ * Two things fail the comparison. The first is growth past the step, and
+ * `stepFor` states that step in bytes. The second is an output file that
+ * the baseline holds and the build no longer makes.
+ *
+ * A build that gives this module nothing to measure is a fault. A metafile
+ * that does not describe the files on disk is a fault. A baseline whose own
+ * numbers disagree with each other is a fault. The check fails on each of
+ * these faults. Such a change never leaves a check that measures nothing
+ * and reports success.
  */
 
 /** A value that the text gave, or the reason that the text cannot give it. */
@@ -37,18 +39,21 @@ export type Reading<T> =
 /** The name that the report gives to the bytes that no module accounts for. */
 export const OVERHEAD = '(build overhead)';
 
-/** The smallest growth that fails this check, in bytes. */
-const STEP_FLOOR = 51_200;
+/** The smallest growth that fails this check, in bytes. This is 50 kB. */
+const STEP_FLOOR = 50_000;
 
 /** The part of the baseline that the check accepts as growth. */
 const STEP_SHARE = 0.5;
 
 /**
  * The growth past the baseline that the check accepts. The step is the
- * larger of 50 kB and half of the baseline, because half of a large bundle
- * is many kilobytes of intended growth, while 50 kB beside a bundle of a few
- * hundred bytes is the accident of the order of magnitude that this check
- * exists to find.
+ * larger of two numbers. The first number is 50 kB. The second number is
+ * half of the baseline.
+ *
+ * Half of a large bundle is many kilobytes, and growth of that size is
+ * intended growth. A bundle of a few hundred bytes that grows by 50 kB
+ * changes by a whole order of magnitude. This check exists to find that
+ * kind of accident.
  */
 export function stepFor(baseline: number): number {
 	return Math.max(STEP_FLOOR, Math.floor(baseline * STEP_SHARE));
@@ -152,25 +157,44 @@ function readOutput(path: string, value: unknown): Reading<OutputMeta> {
 	};
 }
 
+/** The directory that holds the installed packages. */
+const PACKAGES = 'node_modules';
+
 /**
- * The name that the report gives to the bytes of one input. A file under
- * node_modules counts against the package that holds the file, because this
- * report answers the question of what each dependency costs. Any other file
- * counts against its own path.
+ * The name that the report gives to the bytes of one input. A file that is
+ * not under node_modules counts against its own path.
+ *
+ * A file under node_modules counts against the package that holds the file,
+ * because this report answers the question of what each dependency costs.
+ * The name is the whole chain of packages down to that file. A package that
+ * npm installed at the top level therefore gets a different name from a copy
+ * of the same package inside another package. The two names never add up
+ * into one number, and a package that the build holds two times has two rows
+ * in the report.
  */
 export function contributorName(input: string): string {
-	const marker = 'node_modules/';
-	const last = input.lastIndexOf(marker);
-	if (last < 0) {
-		return input;
+	const segments = input.split('/');
+	const chain: string[] = [];
+	let index = 0;
+	while (index < segments.length) {
+		if (segments[index] !== PACKAGES) {
+			index += 1;
+			continue;
+		}
+		const name = segments[index + 1];
+		if (name === undefined || name === '') {
+			break;
+		}
+		const scoped = segments[index + 2];
+		if (name.startsWith('@') && scoped !== undefined && scoped !== '') {
+			chain.push(`${name}/${scoped}`);
+			index += 3;
+		} else {
+			chain.push(name);
+			index += 2;
+		}
 	}
-	const parts = input.slice(last + marker.length).split('/');
-	const first = parts[0] ?? '';
-	const second = parts[1];
-	if (first.startsWith('@') && second !== undefined && second !== '') {
-		return `${first}/${second}`;
-	}
-	return first;
+	return chain.length === 0 ? input : chain.join(`/${PACKAGES}/`);
 }
 
 /** One output file, as the caller measured the file on disk. */
@@ -271,7 +295,21 @@ export function measure(
 	};
 }
 
-/** The record that the committed file holds. */
+/**
+ * The record that the committed file holds.
+ *
+ * A person writes this file, and this file is the ratchet. Therefore the
+ * numbers in it must agree with each other. `measure` builds a report in
+ * which three sums always hold. The raw size of the whole build is the sum
+ * of the raw sizes of the output files. The compressed size of the whole
+ * build is the sum of the compressed sizes of the output files. The raw size
+ * of the whole build is also the sum of the module bytes and the build
+ * overhead.
+ *
+ * This function refuses a baseline that breaks any of the three sums, and it
+ * names the number that disagrees. A hand edit of one number therefore
+ * cannot raise the ratchet in silence.
+ */
 export function readBaseline(text: string): Reading<Baseline> {
 	const parsed = parseJson(text);
 	if (!parsed.ok) {
@@ -300,6 +338,16 @@ export function readBaseline(text: string): Reading<Baseline> {
 	if (!modules.ok) {
 		return modules;
 	}
+	const sums = checkSums(
+		raw,
+		compressed,
+		overhead,
+		outputs.value,
+		modules.value,
+	);
+	if (!sums.ok) {
+		return sums;
+	}
 	return {
 		ok: true,
 		value: {
@@ -310,6 +358,42 @@ export function readBaseline(text: string): Reading<Baseline> {
 			modules: modules.value,
 		},
 	};
+}
+
+/** Whether the numbers of a baseline agree with each other. */
+function checkSums(
+	raw: number,
+	compressed: number,
+	overhead: number,
+	outputs: readonly OutputSize[],
+	modules: readonly ModuleShare[],
+): Reading<true> {
+	const outputRaw = total(outputs.map((output) => output.raw));
+	if (outputRaw !== raw) {
+		return {
+			ok: false,
+			reason: `the baseline gives the whole build ${String(raw)} bytes raw, and its output files add up to ${String(outputRaw)} bytes`,
+		};
+	}
+	const outputCompressed = total(outputs.map((output) => output.compressed));
+	if (outputCompressed !== compressed) {
+		return {
+			ok: false,
+			reason: `the baseline gives the whole build ${String(compressed)} bytes compressed, and its output files add up to ${String(outputCompressed)} bytes`,
+		};
+	}
+	const moduleRaw = total(modules.map((module) => module.bytes)) + overhead;
+	if (moduleRaw !== raw) {
+		return {
+			ok: false,
+			reason: `the baseline gives the whole build ${String(raw)} bytes raw, and its modules and its build overhead add up to ${String(moduleRaw)} bytes`,
+		};
+	}
+	return { ok: true, value: true };
+}
+
+function total(counts: readonly number[]): number {
+	return counts.reduce((sum, count) => sum + count, 0);
 }
 
 function readOutputSizes(value: unknown): Reading<readonly OutputSize[]> {
@@ -403,24 +487,34 @@ export interface Comparison {
 	readonly grew: readonly Move[];
 	/** Every module that got smaller, largest fall first. */
 	readonly shrank: readonly Move[];
+	/**
+	 * What the build overhead did. The overhead is not a module, and it
+	 * therefore stands apart from the two lists above.
+	 */
+	readonly overhead: Move;
 	/** Whether the check fails. */
 	readonly fails: boolean;
 }
 
 /**
  * The comparison of the build against the baseline. Two things fail the
- * check. The first is the raw size or the compressed size of the whole
- * build, and each one gets the step of its own baseline. The second is an
- * output file that the baseline holds and the build no longer makes: a
- * payload that stops loading lazily moves into another output file and
- * leaves the total the same, and only the missing file shows it.
+ * check.
  *
- * Nothing else fails the check. Growth of a single module never fails the
- * check by itself. A new output file never fails the check. A move of bytes
- * between output files that keeps the totals never fails the check. A build
- * that is smaller than the baseline never fails the check. The comparison
- * reports every move that it finds, because the report is what makes the
- * numbers legible.
+ * The first is the size of the whole build. The raw size and the compressed
+ * size each get the step of their own baseline.
+ *
+ * The second is an output file that the baseline holds and the build no
+ * longer makes. A payload that stops loading lazily moves into another
+ * output file. The totals do not change when the payload moves, and the
+ * missing output file is the only sign of the move.
+ *
+ * Nothing else fails the check. Growth of one module never fails the check.
+ * A new output file never fails the check. A move of bytes between the
+ * output files that the build keeps never fails the check. A build that is
+ * smaller than the baseline never fails the check.
+ *
+ * The comparison reports every move that it finds. The report is what makes
+ * the numbers legible.
  */
 export function compare(report: Report, baseline: Baseline): Comparison {
 	const raw = changeOf(baseline.raw, report.raw);
@@ -457,6 +551,12 @@ export function compare(report: Report, baseline: Baseline): Comparison {
 		shrank: moves
 			.filter((move) => move.change < 0)
 			.sort((left, right) => left.change - right.change),
+		overhead: {
+			name: OVERHEAD,
+			baseline: baseline.overhead,
+			now: report.overhead,
+			change: report.overhead - baseline.overhead,
+		},
 		fails: raw.past || compressed.past || gone.length > 0,
 	};
 }
@@ -472,7 +572,11 @@ function changeOf(baseline: number, now: number): Change {
 	};
 }
 
-/** Every module whose count of bytes differs, and the overhead with them. */
+/**
+ * Every module whose count of bytes differs. The build overhead is not a
+ * module, and this function passes over it. `compare` reports the overhead
+ * on its own.
+ */
 function movesOf(report: Report, baseline: Baseline): readonly Move[] {
 	const before = new Map(
 		baseline.modules.map((module) => [module.name, module.bytes]),
@@ -492,14 +596,6 @@ function movesOf(report: Report, baseline: Baseline): readonly Move[] {
 	}
 	for (const [name, was] of before) {
 		moves.push({ name, baseline: was, now: 0, change: -was });
-	}
-	if (report.overhead !== baseline.overhead) {
-		moves.push({
-			name: OVERHEAD,
-			baseline: baseline.overhead,
-			now: report.overhead,
-			change: report.overhead - baseline.overhead,
-		});
 	}
 	return moves;
 }

@@ -64,9 +64,11 @@ sweeps.
   `scripts/bundle-size.mjs`:
     - what the check reads out of the metafile that the build writes;
     - which module gets the bytes of one input, and how a file under
-      `node_modules` counts against the package that holds it;
+      `node_modules` counts against the chain of packages that holds it;
     - what the measurement of the built files adds up to;
+    - whether the numbers of a committed baseline agree with each other;
     - how much growth past the committed baseline the check accepts;
+    - which output files the check requires the build to keep making;
     - what the comparison says, and the wording that the check prints.
 
   One case reads `bundle-baseline.json` itself, because that file is the
