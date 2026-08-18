@@ -8,6 +8,13 @@
 
 export { FakeVault } from './vault';
 export {
+	CASE_INSENSITIVE_FILESYSTEM,
+	NORMALIZING_FILESYSTEM,
+	PERMISSIVE_FILESYSTEM,
+	RESERVED_NAME_FILESYSTEM,
+} from './filesystem-profile';
+export type { FilesystemProfile } from './filesystem-profile';
+export {
 	FrontmatterError,
 	readFrontmatter,
 	splitNote,

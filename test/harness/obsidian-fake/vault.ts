@@ -11,6 +11,23 @@
  * files with the same bytes, and always emits the same events. The fake
  * does not claim that a real Obsidian vault writes those bytes. Runs
  * against real installations measure that equivalence.
+ *
+ * A filesystem profile decides two things. The profile decides which
+ * names this vault refuses. The profile also decides which paths land on
+ * one file. The default profile is permissive. It accepts every name,
+ * and each path lands on its own file. Under another profile, two paths
+ * can land on one file.
+ *
+ * The vault stores one spelling for each file, and that spelling is the
+ * spelling that created the file. Every operation reports the stored
+ * spelling, and not the spelling that the caller passed. A rename is the
+ * one operation that replaces the stored spelling. The renamed event
+ * therefore reports the new path of the caller as `path`. That event
+ * reports the spelling from before the rename as `oldPath`.
+ *
+ * The vault applies the refusal of the profile before the identity of
+ * the profile. Therefore a name that the filesystem refuses never
+ * reaches a file that the vault holds.
  */
 
 import type {
@@ -18,26 +35,51 @@ import type {
 	VaultFileEvent,
 	VaultPort,
 } from '../../../src/core/ports/vault';
+import type { FilesystemProfile } from './filesystem-profile';
+import { PERMISSIVE_FILESYSTEM } from './filesystem-profile';
 import { readFrontmatter, writeFrontmatter } from './frontmatter';
 
 type FileEventHandler = (event: VaultFileEvent) => void;
 
+interface StoredFile {
+	readonly path: string;
+	readonly content: string;
+}
+
+interface FoundFile {
+	readonly identity: string;
+	readonly file: StoredFile;
+}
+
 export class FakeVault implements VaultPort {
-	private readonly files = new Map<string, string>();
+	private readonly files = new Map<string, StoredFile>();
 	private readonly handlers = new Set<FileEventHandler>();
 
 	/**
 	 * Seeds the vault with the given files. A seed is setup and not an
-	 * operation. Therefore the constructor emits no event.
+	 * operation. Therefore the constructor emits no event. The filesystem
+	 * profile applies to the seed. The constructor refuses a name that the
+	 * profile refuses. The constructor also refuses two seeded paths that
+	 * land on one file, because no disk holds that pair.
 	 */
-	constructor(initialFiles: Readonly<Record<string, string>> = {}) {
+	constructor(
+		initialFiles: Readonly<Record<string, string>> = {},
+		private readonly filesystem: FilesystemProfile = PERMISSIVE_FILESYSTEM,
+	) {
 		for (const [path, content] of Object.entries(initialFiles)) {
-			this.files.set(assertPath(path), content);
+			const identity = this.checkPath(path);
+			const held = this.files.get(identity);
+			if (held !== undefined) {
+				throw new Error(
+					`fake vault: this filesystem uses one name for ${held.path} and for ${path}`,
+				);
+			}
+			this.files.set(identity, { path, content });
 		}
 	}
 
 	read(path: string): Promise<string> {
-		return settle(() => this.requireFile(path));
+		return settle(() => this.requireFile(path).file.content);
 	}
 
 	/**
@@ -46,42 +88,62 @@ export class FakeVault implements VaultPort {
 	 * write to a path that the vault already holds emits `modified`,
 	 * whether or not the bytes changed. The constructor puts the given
 	 * files into the vault. Therefore the first write to a path that the
-	 * constructor supplied emits `modified`.
+	 * constructor supplied emits `modified`. The filesystem profile
+	 * decides which paths the vault already holds. A write to a path that
+	 * lands on a file of the vault reaches that file. The write keeps the
+	 * stored spelling of that file.
 	 */
 	write(path: string, content: string): Promise<void> {
 		return settle(() => {
-			assertPath(path);
-			const existed = this.files.has(path);
-			this.files.set(path, content);
+			const identity = this.checkPath(path);
+			const held = this.files.get(identity);
+			const stored = held?.path ?? path;
+			this.files.set(identity, { path: stored, content });
 			this.emit(
-				existed
-					? { kind: 'modified', path }
-					: { kind: 'created', path },
+				held === undefined
+					? { kind: 'created', path: stored }
+					: { kind: 'modified', path: stored },
 			);
 		});
 	}
 
 	exists(path: string): Promise<boolean> {
-		return settle(() => this.files.has(assertPath(path)));
+		return settle(() => this.files.has(this.checkPath(path)));
 	}
 
+	/**
+	 * Moves the file to the new path, and stores the new path as the
+	 * spelling of that file. The renamed event reports the new path as
+	 * `path`. That event reports the spelling from before the rename as
+	 * `oldPath`.
+	 *
+	 * The operation refuses a call where the new path is the same string
+	 * as the old path. The operation also refuses a call where the new
+	 * path is the stored spelling of the file. The operation refuses a
+	 * new path that the vault already holds, and the filesystem profile
+	 * decides which paths the vault holds. A rename that changes only the
+	 * spelling of the name therefore refuses on a filesystem that cannot
+	 * tell the two spellings apart. To store the new spelling on such a
+	 * filesystem, rename the file two times, and use a third name in
+	 * between.
+	 */
 	rename(path: string, newPath: string): Promise<void> {
 		return settle(() => {
-			const content = this.requireFile(path);
-			assertPath(newPath);
-			if (newPath === path) {
+			const { identity, file } = this.requireFile(path);
+			const target = this.checkPath(newPath);
+			if (newPath === path || newPath === file.path) {
 				throw new Error(
 					`fake vault: the new path is the same path as the old path: ${path}`,
 				);
 			}
-			if (this.files.has(newPath)) {
+			if (this.files.has(target)) {
 				throw new Error(
 					`fake vault: the rename target exists: ${newPath}`,
 				);
 			}
-			this.files.delete(path);
-			this.files.set(newPath, content);
-			this.emit({ kind: 'renamed', path: newPath, oldPath: path });
+			this.files.delete(identity);
+			this.files.set(target, { path: newPath, content: file.content });
+			this.emit({ kind: 'renamed', path: newPath, oldPath: file.path });
 		});
 	}
 
@@ -92,9 +154,9 @@ export class FakeVault implements VaultPort {
 	 */
 	trash(path: string): Promise<void> {
 		return settle(() => {
-			this.requireFile(path);
-			this.files.delete(path);
-			this.emit({ kind: 'deleted', path });
+			const { identity, file } = this.requireFile(path);
+			this.files.delete(identity);
+			this.emit({ kind: 'deleted', path: file.path });
 		});
 	}
 
@@ -102,7 +164,7 @@ export class FakeVault implements VaultPort {
 		path: string,
 	): Promise<Readonly<Record<string, unknown>> | null> {
 		return settle(() => {
-			const read = readFrontmatter(this.requireFile(path));
+			const read = readFrontmatter(this.requireFile(path).file.content);
 			return read.kind === 'mapping' ? read.data : null;
 		});
 	}
@@ -119,9 +181,12 @@ export class FakeVault implements VaultPort {
 		update: (frontmatter: Record<string, unknown>) => void,
 	): Promise<void> {
 		return settle(() => {
-			const content = this.requireFile(path);
-			this.files.set(path, writeFrontmatter(content, update));
-			this.emit({ kind: 'modified', path });
+			const { identity, file } = this.requireFile(path);
+			this.files.set(identity, {
+				path: file.path,
+				content: writeFrontmatter(file.content, update),
+			});
+			this.emit({ kind: 'modified', path: file.path });
 		});
 	}
 
@@ -145,7 +210,9 @@ export class FakeVault implements VaultPort {
 
 	/** The paths in the vault now, in the order of their code units. */
 	paths(): readonly string[] {
-		return [...this.files.keys()].sort(comparePaths);
+		return [...this.files.values()]
+			.map((file) => file.path)
+			.sort(comparePaths);
 	}
 
 	/**
@@ -154,21 +221,36 @@ export class FakeVault implements VaultPort {
 	 * vaults hold the same bytes exactly when their snapshots are equal.
 	 */
 	snapshot(): string {
-		return [...this.files.entries()]
-			.sort(([left], [right]) => comparePaths(left, right))
+		return [...this.files.values()]
+			.sort((left, right) => comparePaths(left.path, right.path))
 			.map(
-				([path, content]) =>
-					`=== ${path} (${String(content.length)} chars) ===\n${content}`,
+				(file) =>
+					`=== ${file.path} (${String(file.content.length)} chars) ===\n${file.content}`,
 			)
 			.join('\n');
 	}
 
-	private requireFile(path: string): string {
-		const content = this.files.get(assertPath(path));
-		if (content === undefined) {
+	/**
+	 * Checks the path against the rules of the vault, and then against
+	 * the filesystem profile. The function gives the identity of the
+	 * path. Every operation that receives a path starts here.
+	 */
+	private checkPath(path: string): string {
+		assertPath(path);
+		const refusal = this.filesystem.refusal(path);
+		if (refusal !== null) {
+			throw new Error(`fake vault: ${refusal}: ${path}`);
+		}
+		return this.filesystem.identity(path);
+	}
+
+	private requireFile(path: string): FoundFile {
+		const identity = this.checkPath(path);
+		const file = this.files.get(identity);
+		if (file === undefined) {
 			throw new Error(`fake vault: this vault holds no file at ${path}`);
 		}
-		return content;
+		return { identity, file };
 	}
 
 	private emit(event: VaultFileEvent): void {
@@ -190,7 +272,7 @@ function settle<T>(operation: () => T): Promise<T> {
 	}
 }
 
-function assertPath(path: string): string {
+function assertPath(path: string): void {
 	if (path === '') {
 		throw new Error('fake vault: the path is empty');
 	}
@@ -202,7 +284,6 @@ function assertPath(path: string): string {
 	if (path.includes('\n')) {
 		throw new Error('fake vault: the path holds a line break');
 	}
-	return path;
 }
 
 function comparePaths(left: string, right: string): number {
