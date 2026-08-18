@@ -35,7 +35,8 @@ npm run build
 
 - The project comes with ESLint already configured with `eslint-plugin-obsidianmd` and typescript-eslint strict-type-checked. ESLint also applies invariant guards. The guards forbid the global `fetch` everywhere. The guards also prevent `src/core/` from importing platform modules and from using ambient time. The clock port supplies the time.
 - Run `npm run lint` to lint the project. Run `npm run format` to run Prettier.
-- CI runs the lint, the typecheck, the tests, and the build with a bundle scan. CI does this on every commit on all branches. CI aggregates these jobs into the required `ci-ok` check.
+- CI runs the lint, the typecheck, the tests, and the build with a bundle scan and a bundle-size check. CI does this on every commit on all branches. CI aggregates these jobs into the required `ci-ok` check.
+- The build writes `bundle-meta.json`, and `scripts/bundle-size.mjs` reads it. The script reports the raw size, the compressed size, and the modules that hold the most bytes. The script compares these numbers against the committed `bundle-baseline.json`. Two things fail the script. The first is growth past the baseline by more than a generous step. The second is an output file that the baseline holds and the build no longer makes. Accept an intended change in the pull request that causes it: run `node scripts/bundle-size.mjs --write-baseline` and commit the new file.
 
 ## File & folder conventions
 

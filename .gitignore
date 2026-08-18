@@ -15,6 +15,11 @@ coverage/
 # They should be uploaded to GitHub releases instead.
 main.js
 
+# The build writes this record of the bundle. scripts/bundle-size.mjs reads
+# the record, measures the built files, and compares the sizes against the
+# committed bundle-baseline.json.
+bundle-meta.json
+
 # Exclude sourcemaps
 *.map
 

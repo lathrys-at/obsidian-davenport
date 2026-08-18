@@ -55,6 +55,7 @@ jobs:
             - run: npm ci
             - run: npm run build
             - run: node scripts/scan-bundle.mjs
+            - run: node scripts/bundle-size.mjs
             - run: npm run probe:build
             - run: node scripts/scan-bundle.mjs tools/frontmatter-probe/dist/main.js
 
