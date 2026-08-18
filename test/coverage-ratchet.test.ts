@@ -482,6 +482,26 @@ describe('the comparison against the baseline', () => {
 	);
 
 	it('never fails on the numbers of the whole run', () => {
+		// The whole run falls because the file with the lower percentage
+		// grows and takes a larger share of the counts. Each file holds its
+		// own floor, and the run reports the same two files.
+		const comparison = against(
+			[
+				{ path: 'src/a.ts', statements: [10, 10] },
+				{ path: 'src/b.ts', statements: [45, 90] },
+			],
+			[
+				{ path: 'src/a.ts', statements: [10, 10] },
+				{ path: 'src/b.ts', statements: [450, 900] },
+			],
+		);
+		expect(comparison.total[0]?.floor).toBe(55);
+		expect(comparison.total[0]?.now).toBe(50.54);
+		expect(comparison.changed).toStrictEqual([]);
+		expect(comparison.fails).toBe(false);
+	});
+
+	it('fails when the run reports a file that the baseline does not hold', () => {
 		const comparison = against(
 			[{ path: 'src/a.ts', statements: [4, 4] }],
 			[
@@ -489,9 +509,9 @@ describe('the comparison against the baseline', () => {
 				{ path: 'src/new.ts', statements: [0, 96] },
 			],
 		);
-		expect(comparison.total[0]?.change).toBe(-96);
 		expect(comparison.fresh).toStrictEqual(['src/new.ts']);
-		expect(comparison.fails).toBe(false);
+		expect(comparison.changed).toStrictEqual([]);
+		expect(comparison.fails).toBe(true);
 	});
 
 	it('fails when the run does not report a file of the baseline', () => {
@@ -590,13 +610,54 @@ describe('the wording of the check', () => {
 		);
 	});
 
-	it('names a file that the baseline does not hold', () => {
+	it('names a file that the baseline does not hold, in both parts', () => {
 		const said = lines(
 			[{ path: 'src/a.ts' }],
 			[{ path: 'src/a.ts' }, { path: 'src/new.ts', statements: [0, 4] }],
-		).report.join('\n');
-		expect(said).toContain('the baseline holds no floor for 1 file');
-		expect(said).toContain('the baseline does not hold this file');
+		);
+		expect(said.report.join('\n')).toContain(
+			'the baseline does not hold this file',
+		);
+		expect(said.failure.join('\n')).toContain(
+			'the run reports src/new.ts, and the baseline holds no floor for that file',
+		);
+	});
+
+	it('does not assume a deletion when the run also reports a new path', () => {
+		// A change that moves a file makes both lines, and the wording of
+		// the failure states what this run reports.
+		const said = lines(
+			[{ path: 'src/a.ts' }, { path: 'src/old.ts', statements: [1, 4] }],
+			[{ path: 'src/a.ts' }, { path: 'src/new.ts', statements: [1, 4] }],
+		).failure.join('\n');
+		expect(said).toContain(
+			'the run also reports 1 file that the baseline does not hold. A change that moves a file makes both of these lines.',
+		);
+		expect(said).toContain(
+			'a change that deletes a file or moves a file writes the baseline in that same change.',
+		);
+		expect(said).not.toContain('the run reports no file');
+	});
+
+	it('says that nothing arrived when only a file left the report', () => {
+		const said = lines(
+			[{ path: 'src/a.ts' }, { path: 'src/old.ts', statements: [1, 4] }],
+			[{ path: 'src/a.ts' }],
+		).failure.join('\n');
+		expect(said).toContain(
+			'the run reports no file that the baseline does not hold',
+		);
+		expect(said).not.toContain('A change that moves a file makes both');
+	});
+
+	it('agrees in number when one file holds a statement', () => {
+		const steady = [
+			{ path: 'src/a.ts', statements: [3, 4] as Pair },
+			{ path: 'src/b.ts' },
+		];
+		const said = lines(steady, steady).report.join('\n');
+		expect(said).toContain('the run reports 2 files, and 1 of them holds');
+		expect(said).toContain('the other file holds no statement');
 	});
 });
 
@@ -708,6 +769,51 @@ describe('the check as a process', () => {
 		);
 		expect(result.status).toBe(1);
 		expect(result.output).toContain('the run does not report src/gone.ts');
+	});
+
+	it('fails on a new file that the tests do not reach', () => {
+		const result = run(
+			summary('arrival', [
+				{ path: 'src/a.ts', statements: [4, 4] },
+				{
+					path: 'src/engine.ts',
+					statements: [0, 300],
+					branches: [0, 120],
+					functions: [0, 40],
+					lines: [0, 300],
+				},
+			]),
+			record('arrival', [{ path: 'src/a.ts', statements: [4, 4] }]),
+		);
+		expect(result.status).toBe(1);
+		expect(result.output).toContain(
+			'the run reports src/engine.ts, and the baseline holds no floor for that file',
+		);
+		// No file that the baseline holds moved. The arrival is the whole
+		// of the fall, and the first rule of the check cannot see it.
+		expect(result.output).toContain('no file moved against its floor');
+	});
+
+	it('fails on a baseline that drops one file and keeps its sums true', () => {
+		// The three consistency rules accept this baseline: the entry of
+		// src/a.ts is gone, and the counts of that file left the whole run
+		// with it. That file then has no floor. The third rule of the
+		// check refuses the run, and no rule of the reader does.
+		const dropped = record('dropped', [
+			{ path: 'src/kept.ts', statements: [2, 2] },
+		]);
+		const result = run(
+			summary('dropped', [
+				{ path: 'src/a.ts', statements: [3, 4] },
+				{ path: 'src/kept.ts', statements: [2, 2] },
+			]),
+			dropped,
+		);
+		expect(result.status).toBe(1);
+		expect(result.output).not.toContain('add up to');
+		expect(result.output).toContain(
+			'the run reports src/a.ts, and the baseline holds no floor for that file',
+		);
 	});
 
 	it('passes on coverage that rises, and moves no baseline', () => {

@@ -22,10 +22,11 @@
  * module passes over that percentage. Therefore the rounding rule of the
  * report tool cannot move a floor.
  *
- * Two things fail the comparison. The first is a fall past the grace, and
- * `GRACE` states that grace in percentage points. The second is a file that
- * the baseline holds and the run no longer reports. Such a file keeps no
- * floor, and the numbers of the run give no other sign of the loss.
+ * Three things fail the comparison. The first is a fall past the grace,
+ * and `GRACE` states that grace in percentage points. The second is a file
+ * that the baseline holds and the run no longer reports. The third is a
+ * file that the run reports and the baseline does not hold. `compare`
+ * states what each rule is for.
  *
  * A summary that is absent is a fault. A baseline that is absent is a
  * fault. A baseline whose own numbers disagree with each other is a fault.
@@ -81,13 +82,16 @@ export type Baseline = Report;
  * The fall below a floor that the check accepts, in percentage points.
  *
  * Two points is less than the fall that three untested lines make in each
- * file that this repository holds, and more than the drift that a move of
- * covered code out of a file makes.
+ * file that this repository holds today.
+ *
+ * A move of covered code out of a file also lowers the percentage of that
+ * file. The grace accepts a small move. A large move goes past the grace,
+ * and then the baseline moves in that same change.
  *
  * The baseline never moves by itself. Therefore this grace is a band around
- * a fixed floor, and it is not an allowance for each pull request: two
- * falls of one point each stand two points below the same floor, and the
- * second one fails.
+ * a fixed floor, and it is not an allowance for each pull request. A run
+ * that stands more than two points below the recorded floor fails. The
+ * count of steps that took it there does not change that result.
  */
 export const GRACE = 2;
 
@@ -103,10 +107,9 @@ export function percentOf(count: Count): number {
 	if (count.total === 0) {
 		return 100;
 	}
-	// The multiplication comes before the division. The other order divides
-	// two whole numbers into a fraction that binary arithmetic cannot hold,
-	// and the floor of that fraction is then one hundredth too small: 57 of
-	// 100 gives 56.99.
+	// The multiplication comes before the division. The other order makes a
+	// fraction that binary arithmetic cannot hold. The floor of that
+	// fraction is then one hundredth too small, and 57 of 100 gives 56.99.
 	return Math.floor((count.covered * 10_000) / count.total) / 100;
 }
 
@@ -254,6 +257,11 @@ function recordedCount(count: Count): RecordedCount {
  *
  * A person who edits one number by hand therefore cannot lower the ratchet
  * in silence.
+ *
+ * These three rules bound one number at a time. An edit that moves counts
+ * from one file to another keeps all three rules true, and it lowers the
+ * floor of the first file. The reader of the diff catches that edit, and
+ * these rules do not.
  */
 export function readBaseline(text: string): Reading<Baseline> {
 	const parsed = objectOf(text, 'the coverage baseline');
@@ -438,27 +446,42 @@ export interface Comparison {
 	 * one fails the check.
 	 */
 	readonly gone: readonly string[];
-	/** The files that the run reports and the baseline does not hold. */
+	/**
+	 * The files that the run reports and the baseline does not hold. Each
+	 * one fails the check.
+	 */
 	readonly fresh: readonly string[];
 	/** Whether the check fails. */
 	readonly fails: boolean;
 }
 
 /**
- * The comparison of a run against the baseline. Two things fail the check.
+ * The comparison of a run against the baseline. Three things fail the
+ * check.
  *
  * The first is a metric of a file that falls more than the grace below the
  * floor of that metric.
  *
- * The second is a file that the baseline holds and the run does not report.
- * A file that leaves the coverage report keeps no floor, and the numbers of
- * the run give no other sign of that loss. A file that a change deletes
- * therefore leaves the baseline in the same change.
+ * The second is a file that the baseline holds and the run does not
+ * report. A file that leaves the coverage report keeps no floor. The
+ * numbers of the run give no other sign of that loss.
  *
- * Nothing else fails the check. A file that the run reports and the
- * baseline does not hold never fails the check, and that file gets its
- * floor when a person writes the baseline. The numbers of the whole run
- * never fail the check. Coverage that rises never fails the check.
+ * The third is a file that the run reports and the baseline does not hold.
+ * Such a file has no floor, so no rule measures it. A file that arrives
+ * with no tests would otherwise pass, and coverage would then fall through
+ * each new file.
+ *
+ * The second rule and the third rule also close one edit that the three
+ * consistency rules of the baseline accept. A person can delete the entry
+ * of a file and subtract the counts of that file from the whole run. The
+ * sums still hold, and that file loses its floor. The third rule fails the
+ * next run.
+ *
+ * A change that adds a file, moves a file, or deletes a file therefore
+ * writes the baseline in that same change.
+ *
+ * Nothing else fails the check. The numbers of the whole run never fail
+ * the check. Coverage that rises never fails the check.
  *
  * The comparison reports every move that it finds. The report is what makes
  * the numbers legible.
@@ -493,7 +516,10 @@ export function compare(report: Report, baseline: Baseline): Comparison {
 		changed: changed.sort(byWorstFall),
 		gone,
 		fresh,
-		fails: changed.some((file) => file.past) || gone.length > 0,
+		fails:
+			changed.some((file) => file.past) ||
+			gone.length > 0 ||
+			fresh.length > 0,
 	};
 }
 

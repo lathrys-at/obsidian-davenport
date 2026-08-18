@@ -1,23 +1,25 @@
 /**
  * Coverage was report-only, and nothing stopped a slow fall. This check is
  * the ratchet. The check reads the coverage summary of a run, and it
- * compares that run against `coverage-baseline.json`. Two things fail the
+ * compares that run against `coverage-baseline.json`. Three things fail the
  * check:
  *
  * - one metric of one file falls more than a small grace below the floor
  *   that the baseline holds for that metric;
  * - the baseline holds a file, and the run does not report that file. Such
  *   a file keeps no floor, and the numbers of the run give no other sign
- *   of the loss.
+ *   of the loss;
+ * - the run reports a file, and the baseline holds no floor for that file.
+ *   Such a file has no floor, so no rule measures it.
  *
  * The baseline holds a floor for each file, and not one floor for the whole
  * repository. One number for the whole repository hides a file with no
  * tests behind a file with many tests.
  *
  * The ratchet is not a target. A run that covers more than the baseline is
- * a report, and never a failure. A file that the baseline does not hold is
- * a report too. The baseline moves only when a person writes the new
- * numbers into it, in the pull request that causes the change.
+ * a report, and never a failure. The baseline moves only when a person
+ * writes the new numbers into it, in the pull request that causes the
+ * change.
  *
  * The coverage run writes the summary that this check reads. Run
  * `npm run coverage` first. The check fails when the summary is absent. The
@@ -88,9 +90,9 @@ const summaryPath = given[0] ?? join(ROOT, SUMMARY);
 const baselinePath = given[1] ?? join(ROOT, BASELINE);
 
 // The summary names each file by an absolute path. The coverage run writes
-// the summary into a directory at the top of the repository, so the
-// directory above the summary is the root that the paths of the baseline
-// are relative to.
+// the summary into a directory at the top of the repository. Therefore the
+// directory above the summary is the root, and the baseline names each
+// file relative to that root.
 const root = resolve(dirname(summaryPath), '..');
 
 const report = taken(

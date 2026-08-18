@@ -28,15 +28,18 @@ node scripts/coverage-ratchet.mjs
 ```
 
 The baseline holds a floor for each file, and not one floor for the whole
-repository. One number for the whole repository hides a file with no tests
-behind a file with many tests. The check reports the numbers of the whole run,
-and it never fails on those numbers.
+repository. The check reports the numbers of the whole run, and it never fails
+on those numbers.
 
-Two things fail the check. The first is one metric of one file that falls more
-than two percentage points below its floor. The second is a file that the
-baseline holds and the run does not report, because such a file keeps no
-floor. A file that the run reports and the baseline does not hold is a report,
-and that file gets a floor when a person writes the baseline.
+Three things fail the check:
+
+- one metric of one file falls more than two percentage points below its
+  floor;
+- the baseline holds a file, and the run does not report that file;
+- the run reports a file, and the baseline holds no floor for that file.
+
+A change that adds a file, moves a file, or deletes a file therefore writes
+the baseline in that same change.
 
 The check never writes the baseline by itself. Accept an intended change in
 the pull request that causes it: run

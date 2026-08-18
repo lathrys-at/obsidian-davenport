@@ -2,13 +2,13 @@
  * The wording of everything that the coverage ratchet prints. The check
  * prints two kinds of line. The report says what the tests cover, and what
  * each file does against its floor. The failure names each metric that fell
- * past the grace, and each file that the baseline holds and the run does not
- * report.
+ * past the grace. The failure also names each file that the run and the
+ * baseline do not agree about.
  *
- * Each line that states a fact carries the name of the check, so that the
- * line stays legible in a log that holds the output of many steps. A line
- * that continues a statement carries no name, and it stands indented under
- * the line that it continues.
+ * Each line that states a fact carries the name of the check. A log holds
+ * the output of many steps, and the name keeps the line legible there. A
+ * line that continues a statement carries no name. Such a line stands
+ * indented under the line that it continues.
  */
 
 import type {
@@ -33,11 +33,13 @@ export function reportLines(
 			`the whole run against the baseline: ${movesText(comparison.total)}. The check reports the whole run, and it never fails on the whole run.`,
 		),
 		say(
-			`the grace is ${points(GRACE)}. The check fails when one metric of one file falls more than the grace below the floor of that file. The check also fails when the run does not report a file that the baseline holds.`,
+			`the grace is ${points(GRACE)}. The check fails when one metric of one file falls more than the grace below the floor of that file.`,
+		),
+		say(
+			'the check also fails when the baseline holds a file that the run does not report. The check also fails when the run reports a file that the baseline does not hold.',
 		),
 		...fileLines(report, comparison),
 		...changeLines(comparison),
-		...freshLines(comparison),
 	];
 }
 
@@ -57,8 +59,8 @@ function movesText(moves: readonly Move[]): string {
 
 /**
  * The lines that name each file of the run. A file that holds no statement
- * gets no row of its own, because every floor of such a file is 100 percent
- * and the row says nothing.
+ * gets no row of its own. Every floor of such a file is 100 percent, and
+ * the row says nothing.
  */
 function fileLines(report: Report, comparison: Comparison): readonly string[] {
 	const changed = new Map(
@@ -70,7 +72,7 @@ function fileLines(report: Report, comparison: Comparison): readonly string[] {
 	);
 	const lines = [
 		say(
-			`the run reports ${count(report.files.length, 'file')}, and ${String(withCode.length)} of them hold a statement`,
+			`the run reports ${count(report.files.length, 'file')}, and ${String(withCode.length)} of them ${holds(withCode.length)} a statement`,
 		),
 	];
 	for (const file of withCode) {
@@ -82,7 +84,9 @@ function fileLines(report: Report, comparison: Comparison): readonly string[] {
 		);
 	}
 	const rest = report.files.length - withCode.length;
-	if (rest > 0) {
+	if (rest === 1) {
+		lines.push('  the other file holds no statement');
+	} else if (rest > 1) {
 		lines.push(`  the other ${count(rest, 'file')} hold no statement`);
 	}
 	return lines;
@@ -123,17 +127,25 @@ function moveText(move: Move): string {
 	return `${move.metric}  from ${percent(move.floor)} to ${percent(move.now)}  ${moved(move.change)}`;
 }
 
-/** The lines that name each file that the baseline does not hold. */
+/**
+ * The lines that name each file that the baseline does not hold. Such a
+ * file has no floor, so no rule of this check measures it.
+ */
 function freshLines(comparison: Comparison): readonly string[] {
 	if (comparison.fresh.length === 0) {
 		return [];
 	}
-	return [
+	const lines = comparison.fresh.map((path) =>
 		say(
-			`the baseline holds no floor for ${count(comparison.fresh.length, 'file')} of this run. Write the baseline to give these files a floor.`,
+			`the run reports ${path}, and the baseline holds no floor for that file`,
 		),
-		...comparison.fresh.map((path) => `  ${path}`),
-	];
+	);
+	lines.push(
+		say(
+			'the ratchet holds a file only after the baseline records a floor for that file. A change that adds a file writes the baseline in that same change.',
+		),
+	);
+	return lines;
 }
 
 /** The lines of the failure. The check fails after it says these lines. */
@@ -141,7 +153,11 @@ export function failureLines(comparison: Comparison): readonly string[] {
 	if (!comparison.fails) {
 		return [];
 	}
-	const lines = [...goneLines(comparison), ...fellLines(comparison)];
+	const lines = [
+		...goneLines(comparison),
+		...freshLines(comparison),
+		...fellLines(comparison),
+	];
 	lines.push(
 		say(
 			'accept this change in the pull request that causes it. Write the new numbers into the baseline in that same pull request. The command `node scripts/coverage-ratchet.mjs --write-baseline` writes the file.',
@@ -150,7 +166,13 @@ export function failureLines(comparison: Comparison): readonly string[] {
 	return lines;
 }
 
-/** The lines that name each file that the run does not report. */
+/**
+ * The lines that name each file that the run does not report. The last
+ * line says what else this run did. A change that moves a file makes a
+ * line here and a line for the new path. A change that deletes a file
+ * makes a line here alone. Therefore these lines state what this run
+ * reports, and they do not assume the cause.
+ */
 function goneLines(comparison: Comparison): readonly string[] {
 	if (comparison.gone.length === 0) {
 		return [];
@@ -162,7 +184,14 @@ function goneLines(comparison: Comparison): readonly string[] {
 	);
 	lines.push(
 		say(
-			'a file that leaves the coverage report keeps no floor, and the numbers of the run give no other sign of that loss. A change that deletes a file writes the baseline in that same change.',
+			comparison.fresh.length > 0
+				? `the run also reports ${count(comparison.fresh.length, 'file')} that the baseline does not hold. A change that moves a file makes both of these lines.`
+				: 'the run reports no file that the baseline does not hold. A file that leaves the coverage report keeps no floor, and the numbers of the run give no other sign of that loss.',
+		),
+	);
+	lines.push(
+		say(
+			'a change that deletes a file or moves a file writes the baseline in that same change.',
 		),
 	);
 	return lines;
@@ -212,6 +241,11 @@ function moved(change: number): string {
 /** A count and the thing that it counts, with the plural of that thing. */
 function count(value: number, thing: string): string {
 	return `${String(value)} ${thing}${value === 1 ? '' : 's'}`;
+}
+
+/** The verb "hold", in the form that agrees with a count. */
+function holds(value: number): string {
+	return value === 1 ? 'holds' : 'hold';
 }
 
 /** Several phrases, with a comma between them and "and" before the last. */
