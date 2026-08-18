@@ -10,6 +10,27 @@ import {
 } from './time-poison';
 import type { FrameOwner } from './time-poison';
 
+/**
+ * The switch that makes the conversion of a file URL fail. The conversion
+ * fails on a windows host for a file URL that carries no drive letter, and
+ * these tests run on linux and on macos too. One test sets this switch, and
+ * the conversion then fails on every platform.
+ */
+const conversion = vi.hoisted(() => ({ fails: false }));
+
+vi.mock('node:url', async (importOriginal) => {
+	const real = await importOriginal<typeof import('node:url')>();
+	return {
+		...real,
+		fileURLToPath: (url: string | URL): string => {
+			if (conversion.fails) {
+				throw new TypeError('the conversion of the file URL failed');
+			}
+			return real.fileURLToPath(url);
+		},
+	};
+});
+
 const ALIASES = ['window', 'self', 'global'] as const;
 const TIMERS = ['setTimeout', 'setInterval', 'setImmediate'] as const;
 
@@ -300,6 +321,11 @@ describe('the rule that reads the caller of a time function', () => {
 		],
 		['a file URL', '    at file:///repo/test/x.ts:1:1', '/repo'],
 		[
+			'a file URL that holds an encoded separator',
+			'    at now (file:///repo/test/a%2Fb/x.ts:1:1)',
+			'/repo',
+		],
+		[
 			'a path that holds round brackets',
 			'    at now (/repo/My (Repo) Files/test/x.ts:1:1)',
 			'/repo',
@@ -353,8 +379,23 @@ describe('the rule that reads the caller of a time function', () => {
 			'/repo',
 		],
 		[
-			'an installed dependency behind a file URL',
+			'an installed dependency behind a file URL that carries no drive letter',
 			'    at now (file:///repo/node_modules/fast-check/lib/fast-check.js:1:1)',
+			'/repo',
+		],
+		[
+			'an installed dependency behind a file URL that carries a drive letter',
+			'    at now (file:///C:/repo/node_modules/pkg/i.js:1:1)',
+			'C:\\repo',
+		],
+		[
+			'an installed dependency behind a file URL that holds an encoded separator',
+			'    at now (file:///repo/node_modules/pkg/a%2Fb/i.js:1:1)',
+			'/repo',
+		],
+		[
+			'a file URL that names a host',
+			'    at now (file://build/share/pkg/i.js:1:1)',
 			'/repo',
 		],
 		[
@@ -452,6 +493,39 @@ describe('the rule that reads the caller of a time function', () => {
 			expect(frameOwner(frame, '/repo')).toBe<FrameOwner>('unparseable');
 		},
 	);
+
+	/**
+	 * The conversion of a file URL fails on a windows host for a file URL that
+	 * carries no drive letter. This test makes that conversion fail on every
+	 * platform, and it states what the rule answers for the two frames that
+	 * decide the run: a file of this repository, and a file of an installed
+	 * dependency.
+	 *
+	 * The mock of `node:url` reaches a fresh copy of the poison module only.
+	 * The setup file of vitest loads that module before this file runs, and
+	 * the copy that holds the poison keeps the real conversion. The rule
+	 * computes its answer from its two arguments alone, so the fresh copy
+	 * answers the same question as the copy that holds the poison.
+	 */
+	it('reads the path of a file URL whose conversion fails', async () => {
+		vi.resetModules();
+		const fresh = await import('./time-poison');
+		const owner = fresh.timePoisonInternalsForTests.frameOwner;
+		conversion.fails = true;
+		try {
+			expect(
+				owner('    at now (file:///repo/test/x.ts:1:1)', '/repo'),
+			).toBe<FrameOwner>('repository');
+			expect(
+				owner(
+					'    at now (file:///repo/node_modules/pkg/i.js:1:1)',
+					'/repo',
+				),
+			).toBe<FrameOwner>('outside');
+		} finally {
+			conversion.fails = false;
+		}
+	});
 
 	it('throws for a path that it cannot read, under a dependency frame', () => {
 		const read = functionAtPath(
