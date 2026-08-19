@@ -806,4 +806,35 @@ describe('the files that the lane mutates', () => {
 			...['src/**/*.test.ts'].map((pattern) => `!${pattern}`),
 		]);
 	});
+
+	/**
+	 * The case above pins the list. This case pins the configuration to that
+	 * list. A `mutate` field written out in the configuration would take the
+	 * lane off the list, and the score would then measure the files that the
+	 * field names. No other gate reads the configuration file: ESLint ignores
+	 * it, and the TypeScript project does not hold it.
+	 *
+	 * The case reads the configuration the way Stryker reads it. Node imports
+	 * the file and prints the value of `mutate`. A comparison of the text of
+	 * the file would instead pin the shape of the source, and the formatter
+	 * moves that shape.
+	 */
+	it('gives Stryker the list that this repository pins', () => {
+		const url = new URL('../stryker.config.mjs', import.meta.url).href;
+		const result = spawnSync(
+			process.execPath,
+			[
+				'--input-type=module',
+				'-e',
+				`import config from ${JSON.stringify(url)};
+				process.stdout.write(JSON.stringify(config.mutate));`,
+			],
+			{ encoding: 'utf8' },
+		);
+		expect(result.stderr).toBe('');
+		expect(result.status).toBe(0);
+		expect(JSON.parse(result.stdout) as unknown).toStrictEqual([
+			...MUTATED,
+		]);
+	});
 });
