@@ -268,8 +268,7 @@ function recordedCount(count: Count): RecordedCount {
  * does not report.
  *
  * The report states the numbers. The report does not state a cause. A
- * person who reviews a change to this file therefore reads the diff of that
- * file.
+ * person who reviews a change to this file therefore reads the diff.
  */
 export function readBaseline(text: string): Reading<Baseline> {
 	const parsed = objectOf(text, 'the coverage baseline');

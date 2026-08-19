@@ -16,7 +16,7 @@
  * the baseline that moves counts from one file to another.
  *
  * The row of a file states the counts of the run. A second line under that
- * row states the counts of the floor, and it comes when the two differ. A
+ * row states the counts of the floor for each metric whose counts differ. A
  * row with no second line therefore has a floor that holds the counts of
  * the run.
  */
@@ -50,7 +50,7 @@ export function reportLines(
 			'the check also fails when the baseline holds a file that the run does not report. The check also fails when the run reports a file that the baseline does not hold.',
 		),
 		say(
-			'a row states the counts of the run. A second line under a row states the counts of the floor, and it comes when the two differ. Two different pairs of counts can give one percentage.',
+			'a row states the counts of the run. A second line under a row states the counts of the floor for each metric whose counts differ. Two different pairs of counts can give one percentage.',
 		),
 		...fileLines(report, comparison),
 		...changeLines(comparison),
