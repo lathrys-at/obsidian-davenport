@@ -578,8 +578,29 @@ describe('the wording of the check', () => {
 		const said = lines(steady, steady).report.join('\n');
 		expect(said).toContain('3 of 4 statements (75%)');
 		expect(said).toContain('the grace is 2 percentage points');
-		expect(said).toContain('src/a.ts  statements 75%');
+		expect(said).toContain('src/a.ts  statements 3 of 4 (75%)');
 		expect(said).toContain('no file moved against its floor');
+	});
+
+	it('gives the counts of the floor and the counts of the run', () => {
+		// The three consistency rules of the baseline accept an edit that
+		// moves counts from one file to another. The baseline then holds a
+		// floor with counts that the run does not report. The report gives
+		// both pairs of counts, and not the percentages alone.
+		const said = lines(
+			[
+				{ path: 'src/a.ts', statements: [20, 50] },
+				{ path: 'src/b.ts', statements: [4, 4] },
+			],
+			[
+				{ path: 'src/a.ts', statements: [3, 4] },
+				{ path: 'src/b.ts', statements: [4, 4] },
+			],
+		).report.join('\n');
+		expect(said).toContain('src/a.ts  statements 3 of 4 (75%)');
+		expect(said).toContain(
+			'src/a.ts  statements  from 20 of 50 (40%) to 3 of 4 (75%)  35 percentage points more',
+		);
 	});
 
 	it('says nothing about a failure when nothing failed', () => {
@@ -593,7 +614,7 @@ describe('the wording of the check', () => {
 			[{ path: 'src/a.ts', statements: [90, 100] }],
 		).failure.join('\n');
 		expect(said).toContain(
-			'the statements of src/a.ts fell from 98% to 90%. The fall of 8 percentage points goes past the grace of 2 percentage points.',
+			'the statements of src/a.ts fell from 98 of 100 (98%) to 90 of 100 (90%). The fall of 8 percentage points goes past the grace of 2 percentage points.',
 		);
 		expect(said).toContain(
 			'node scripts/coverage-ratchet.mjs --write-baseline',
@@ -723,7 +744,7 @@ describe('the check as a process', () => {
 		);
 		expect(again.status).toBe(0);
 		expect(again.output).toContain('no file moved against its floor');
-		expect(again.output).toContain('src/a.ts  statements 75%');
+		expect(again.output).toContain('src/a.ts  statements 3 of 4 (75%)');
 	});
 
 	it('fails when the summary is absent, and says to run the coverage', () => {
@@ -758,7 +779,7 @@ describe('the check as a process', () => {
 		);
 		expect(result.status).toBe(1);
 		expect(result.output).toContain(
-			'the statements of src/a.ts fell from 98% to 50%',
+			'the statements of src/a.ts fell from 98 of 100 (98%) to 50 of 100 (50%)',
 		);
 	});
 

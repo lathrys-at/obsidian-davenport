@@ -9,6 +9,11 @@
  * the output of many steps, and the name keeps the line legible there. A
  * line that continues a statement carries no name. Such a line stands
  * indented under the line that it continues.
+ *
+ * Every percentage stands beside the two counts that give it. The check
+ * computes each percentage from those counts. A person can edit the
+ * baseline and move counts from one file to another. A percentage alone
+ * hides such an edit. The counts show it.
  */
 
 import type {
@@ -45,11 +50,17 @@ export function reportLines(
 
 /** The counts of a whole run, with the percentage of each count. */
 function countsText(counts: Counts): string {
-	return list(METRICS.map((metric) => countText(counts[metric], metric)));
+	return list(METRICS.map((metric) => amount(counts[metric], metric)));
 }
 
-function countText(count: Count, metric: Metric): string {
-	return `${String(count.covered)} of ${String(count.total)} ${metric} (${percent(percentOf(count))})`;
+/**
+ * The two counts of one metric, with the percentage that they give. The
+ * name of the metric stands between the counts and the percentage. A caller
+ * that names the metric on the line gives no metric to this function.
+ */
+function amount(count: Count, metric?: Metric): string {
+	const name = metric === undefined ? '' : ` ${metric}`;
+	return `${String(count.covered)} of ${String(count.total)}${name} (${percent(percentOf(count))})`;
 }
 
 /** What four metrics did, in one phrase. */
@@ -77,7 +88,7 @@ function fileLines(report: Report, comparison: Comparison): readonly string[] {
 	];
 	for (const file of withCode) {
 		const numbers = METRICS.map(
-			(metric) => `${metric} ${percent(percentOf(file.counts[metric]))}`,
+			(metric) => `${metric} ${amount(file.counts[metric])}`,
 		).join('  ');
 		lines.push(
 			`  ${file.path}  ${numbers}  ${note(file.path, changed, fresh)}`,
@@ -124,7 +135,7 @@ function changeLines(comparison: Comparison): readonly string[] {
 }
 
 function moveText(move: Move): string {
-	return `${move.metric}  from ${percent(move.floor)} to ${percent(move.now)}  ${moved(move.change)}`;
+	return `${move.metric}  from ${amount(move.floorCount)} to ${amount(move.nowCount)}  ${moved(move.change)}`;
 }
 
 /**
@@ -205,7 +216,7 @@ function fellLines(comparison: Comparison): readonly string[] {
 			if (move.past) {
 				lines.push(
 					say(
-						`the ${move.metric} of ${file.path} fell from ${percent(move.floor)} to ${percent(move.now)}. The fall of ${points(-move.change)} goes past the grace of ${points(GRACE)}.`,
+						`the ${move.metric} of ${file.path} fell from ${amount(move.floorCount)} to ${amount(move.nowCount)}. The fall of ${points(-move.change)} goes past the grace of ${points(GRACE)}.`,
 					),
 				);
 			}

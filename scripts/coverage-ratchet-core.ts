@@ -260,8 +260,10 @@ function recordedCount(count: Count): RecordedCount {
  *
  * These three rules bound one number at a time. An edit that moves counts
  * from one file to another keeps all three rules true, and it lowers the
- * floor of the first file. The reader of the diff catches that edit, and
- * these rules do not.
+ * floor of the first file. These rules do not catch that edit. The report
+ * prints the counts of each floor beside the counts of the run. Therefore
+ * the report shows the counts that such an edit moved, and the reader does
+ * not depend on the diff of this file alone.
  */
 export function readBaseline(text: string): Reading<Baseline> {
 	const parsed = objectOf(text, 'the coverage baseline');
@@ -415,10 +417,23 @@ function checkSums(report: Report, what: string): Reading<true> {
 	return { ok: true, value: true };
 }
 
-/** One metric of one file, and what that metric does against its floor. */
+/**
+ * One metric of one file, and what that metric does against its floor.
+ *
+ * A move carries the counts that the baseline holds. A move also carries
+ * the counts that the run reports. Each pair of counts comes with the
+ * percentage of that pair. The report prints the counts beside the
+ * percentage, because a percentage alone hides the counts that give it.
+ */
 export interface Move {
 	readonly metric: Metric;
+	/** The counts that the baseline holds. */
+	readonly floorCount: Count;
+	/** The percentage of the counts that the baseline holds. */
 	readonly floor: number;
+	/** The counts that the run reports. */
+	readonly nowCount: Count;
+	/** The percentage of the counts that the run reports. */
 	readonly now: number;
 	/** The points that the percentage gains. A fall is negative. */
 	readonly change: number;
@@ -526,12 +541,16 @@ export function compare(report: Report, baseline: Baseline): Comparison {
 /** What the four metrics of one file do against four floors. */
 function movesOf(floors: Counts, now: Counts): readonly Move[] {
 	return METRICS.map((metric) => {
-		const floor = percentOf(floors[metric]);
-		const reached = percentOf(now[metric]);
+		const held = floors[metric];
+		const ran = now[metric];
+		const floor = percentOf(held);
+		const reached = percentOf(ran);
 		const fall = hundredths(floor) - hundredths(reached);
 		return {
 			metric,
+			floorCount: held,
 			floor,
+			nowCount: ran,
 			now: reached,
 			change: -fall / 100,
 			past: fall > GRACE_HUNDREDTHS,
