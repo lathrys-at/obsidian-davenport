@@ -6,7 +6,14 @@
  * - which words in a title are IDs, and which words only look like IDs;
  * - which titles the check reads out of a suite file;
  * - what the comparison of the two sets says;
- * - the wording that the check prints around all of that.
+ * - the wording that the check prints around all of that;
+ * - which files the check reads for the citations.
+ *
+ * The last of these decides where the rules of the suites hold. The check
+ * reads every file under the suite root whose name ends in `.test.ts`. The
+ * check reads no other file. A title that the check cannot read fails the
+ * check inside that set. The same title outside that set changes nothing,
+ * because the check never reads the file that carries the title.
  *
  * The grammar tests run against the real plan, and not against a copy of it.
  * A copy would drift, and then the tests would prove the copy. The control is
@@ -19,7 +26,13 @@
  */
 
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+	mkdirSync,
+	mkdtempSync,
+	readFileSync,
+	rmSync,
+	writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -52,6 +65,13 @@ const SCRIPT = fileURLToPath(
 const MOCK_ATTACHMENTS = fileURLToPath(
 	new URL('./harness/caldav-mock/attachments.ts', import.meta.url),
 );
+/** A harness test that builds a title with a template. The check reads no title of this file. */
+const FOLD_ROUND_TRIP = fileURLToPath(
+	new URL('./harness/ics-fold-round-trip.test.ts', import.meta.url),
+);
+
+/** A title that a template builds. The check cannot read a title of this shape. */
+const COMPUTED = 'it(`the case ${name} makes`, () => {});\n';
 
 const PLAN = readPlan(readFileSync(PLAN_PATH, 'utf8'));
 
@@ -615,13 +635,13 @@ describe('what the citations and the plan say about each other', () => {
 
 describe('what the check prints', () => {
 	it('names the file, the line, the title and the ID that failed', () => {
-		const { result } = run(
+		const { found, result } = run(
 			[
 				"it('FM-1 one', () => {});",
 				"it('FM-99 invents an ID', () => {});",
 			].join('\n'),
 		);
-		const lines = failureLines(result).join('\n');
+		const lines = failureLines(found, result).join('\n');
 		expect(lines).toContain('test/suites/example.test.ts:2 cites FM-99');
 		expect(lines).toContain('title: FM-99 invents an ID');
 		expect(lines).toContain(
@@ -630,8 +650,8 @@ describe('what the check prints', () => {
 	});
 
 	it('says nothing when every citation is in the plan', () => {
-		const { result } = run("it('FM-1 one', () => {});");
-		expect(failureLines(result)).toEqual([]);
+		const { found, result } = run("it('FM-1 one', () => {});");
+		expect(failureLines(found, result)).toEqual([]);
 	});
 
 	it('states the counts of the plan', () => {
@@ -688,14 +708,38 @@ describe('what the check prints', () => {
 		expect(lines).toContain('This check does not compare the stages');
 	});
 
-	it('names the titles that it cannot read', () => {
+	// A title that the check cannot read carries no citation. The check fails
+	// on such a title. Therefore the lines that name the title belong to the
+	// failure, and the report says nothing about the title.
+	it('names the titles that it cannot read among the failures', () => {
 		const { found, result } = run('it(titleFor(item), () => {});');
-		const lines = reportLines(PLAN, found, result).join('\n');
+		const lines = failureLines(found, result).join('\n');
+		expect(lines).toContain(
+			'test/suites/example.test.ts:1 holds a title that the check cannot read',
+		);
+		expect(lines).toContain('title: titleFor(item)');
 		expect(lines).toContain(
 			'the count of titles that the check cannot read is 1',
 		);
+		expect(reportLines(PLAN, found, result).join('\n')).not.toContain(
+			'titleFor(item)',
+		);
+	});
+
+	it('names every title that it cannot read, and not the first alone', () => {
+		const { found, result } = run(
+			[
+				"it('FM-1 one', () => {});",
+				'it(titleFor(item), () => {});',
+				"it('FM-' + number + ' two', () => {});",
+			].join('\n'),
+		);
+		const lines = failureLines(found, result).join('\n');
+		expect(lines).toContain('test/suites/example.test.ts:2');
+		expect(lines).toContain('test/suites/example.test.ts:3');
+		expect(lines).toContain("title: 'FM-' + number + ' two'");
 		expect(lines).toContain(
-			'test/suites/example.test.ts:1  titleFor(item)',
+			'the count of titles that the check cannot read is 2',
 		);
 	});
 
@@ -754,6 +798,82 @@ describe('the check as a process', () => {
 		expect(result.status).toBe(1);
 		expect(result.err).toContain('cites FM-99');
 		expect(result.err).toContain('invented.test.ts:1');
+	});
+
+	// The titles of the suites carry the traceability. A title that the check
+	// cannot read drops out of that traceability. The run must stop there. A
+	// report line on a run that passes states the loss and changes nothing.
+	it('fails on a title of a suite file that it cannot read', () => {
+		const suites = mkdtempSync(join(scratch, 'suites-'));
+		writeFileSync(join(suites, 'computed.test.ts'), COMPUTED, 'utf8');
+		const result = check([PLAN_PATH, suites]);
+		expect(result.status).toBe(1);
+		expect(result.err).toContain(
+			'computed.test.ts:1 holds a title that the check cannot read',
+		);
+		expect(result.err).toContain('title: `the case ${name} makes`');
+		expect(result.err).toContain(
+			'the count of titles that the check cannot read is 1',
+		);
+	});
+
+	it('fails on such a title in a directory under the suite root', () => {
+		const suites = mkdtempSync(join(scratch, 'suites-'));
+		const nested = join(suites, 'feed');
+		mkdirSync(nested);
+		writeFileSync(join(nested, 'computed.test.ts'), COMPUTED, 'utf8');
+		const result = check([PLAN_PATH, suites]);
+		expect(result.status).toBe(1);
+		expect(result.err).toContain('feed/computed.test.ts:1');
+	});
+
+	// The check reads the test files under the suite root and no other file.
+	// The set that it reads is the set that the rule holds for.
+	it('passes over such a title in a file beside the suite root', () => {
+		const tree = mkdtempSync(join(scratch, 'tree-'));
+		const suites = join(tree, 'suites');
+		const harness = join(tree, 'harness');
+		mkdirSync(suites);
+		mkdirSync(harness);
+		writeFileSync(
+			join(suites, 'good.test.ts'),
+			"it('FM-1 reads the vocabulary', () => {});\n",
+			'utf8',
+		);
+		writeFileSync(join(harness, 'helper.test.ts'), COMPUTED, 'utf8');
+		const result = check([PLAN_PATH, suites]);
+		expect(result.err).toBe('');
+		expect(result.status).toBe(0);
+		expect(result.out).toContain(
+			'the count of titles in the suite files is 1',
+		);
+	});
+
+	it('passes over such a title in a file of the suite root that holds no test', () => {
+		const suites = mkdtempSync(join(scratch, 'suites-'));
+		writeFileSync(
+			join(suites, 'good.test.ts'),
+			"it('FM-1 reads the vocabulary', () => {});\n",
+			'utf8',
+		);
+		writeFileSync(join(suites, 'rows.ts'), COMPUTED, 'utf8');
+		const result = check([PLAN_PATH, suites]);
+		expect(result.err).toBe('');
+		expect(result.status).toBe(0);
+	});
+
+	// The harness holds titles of this shape today. Those tests take their
+	// names from what they cover, and the check never opens their files.
+	it('passes over the tree of this repository, which holds such a title in the harness', () => {
+		const held = readTitles(
+			readFileSync(FOLD_ROUND_TRIP, 'utf8'),
+			'ics-fold-round-trip.test.ts',
+		);
+		expect(held.unreadable.length).toBeGreaterThan(0);
+		const result = check([]);
+		expect(result.err).toBe('');
+		expect(result.status).toBe(0);
+		expect(result.out).not.toContain('ics-fold-round-trip');
 	});
 
 	it('says one line when it cannot read the plan', () => {
