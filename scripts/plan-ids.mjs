@@ -24,7 +24,8 @@
  * that a program builds from parts is one example. A template with an
  * expression in it is another example. Such a title carries no ID that the
  * check can read, and the title loses its trace to the plan. The check names
- * the file, the line, and the text that stands in the title. This rule holds
+ * the file, the line, and the text that stands in the title. A call of a
+ * suite file that gives no title at all also fails the check. This rule holds
  * for the files that the check reads, and for no other file.
  *
  * The check reads the plan and the suite directory of this repository. If you

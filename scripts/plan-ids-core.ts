@@ -146,11 +146,15 @@ export interface Citation {
 	readonly id: string;
 }
 
-/** One title that the check cannot read, and the place that carries it. */
+/**
+ * One title that the check cannot read, and the place that carries it. The
+ * text is what stands where the title was expected. A call that gives no
+ * argument at all has no such text, and the text is then undefined.
+ */
 export interface Unreadable {
 	readonly path: string;
 	readonly line: number;
-	readonly text: string;
+	readonly text: string | undefined;
 }
 
 /** What the titles of the suite files cite. */

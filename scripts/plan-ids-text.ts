@@ -2,9 +2,9 @@
  * The wording of everything that the plan-ID traceability check prints. The
  * check prints three kinds of line. The fault names what the check needs from
  * the plan and did not find. The report says what the check found. The
- * failure names each title that fails the check. A title fails the check when
- * the check cannot read the title. A title also fails the check when the
- * title cites an ID that the plan does not contain.
+ * failure names each title that fails the check. Three things fail the check.
+ * The check cannot read the title. The call gives no title at all. The title
+ * cites an ID that the plan does not contain.
  *
  * Each line that states a fact carries the name of the check, so that the
  * line stays legible in a log that holds the output of many steps. A line
@@ -108,12 +108,21 @@ function uncitedLines(result: Reconciliation): readonly string[] {
 	return lines;
 }
 
-/** The lines of the failure. The failure names each title that fails. */
+/**
+ * The lines of the failure. The failure names each title that fails. The
+ * titles that the check cannot read come first, then the calls that give no
+ * title, then the citations that the plan does not contain. A run that holds
+ * more than one of these kinds prints each kind, in that order.
+ */
 export function failureLines(
 	scan: SuiteScan,
 	result: Reconciliation,
 ): readonly string[] {
-	return [...unreadableLines(scan), ...unknownLines(result)];
+	return [
+		...computedLines(scan),
+		...titlelessLines(scan),
+		...unknownLines(result),
+	];
 }
 
 /**
@@ -122,22 +131,47 @@ export function failureLines(
  * title that is not a plain string carries no citation that the check can
  * read. Therefore the check fails on each of these titles.
  */
-function unreadableLines(scan: SuiteScan): readonly string[] {
-	if (scan.unreadable.length === 0) {
+function computedLines(scan: SuiteScan): readonly string[] {
+	const sites = scan.unreadable.filter((site) => site.text !== undefined);
+	if (sites.length === 0) {
 		return [];
 	}
 	const lines: string[] = [];
-	for (const site of scan.unreadable) {
+	for (const site of sites) {
 		lines.push(
 			say(
 				`${site.path}:${String(site.line)} holds a title that the check cannot read`,
 			),
-			`  title: ${site.text}`,
+			`  title: ${String(site.text)}`,
 		);
 	}
 	lines.push(
 		say(
-			`the count of titles that the check cannot read is ${String(scan.unreadable.length)}. The check reads a plain string, and the check cannot read a title that a program builds. Make each of these titles a plain string.`,
+			`the count of titles that the check cannot read is ${String(sites.length)}. The check reads a plain string, and the check cannot read a title that a program builds. Make each of these titles a plain string.`,
+		),
+	);
+	return lines;
+}
+
+/**
+ * The lines that name the calls that give no title. Such a call has no text
+ * that stands in the title, so these lines name the place alone. The remedy
+ * is also different: the call needs a title, and not a title of another
+ * shape.
+ */
+function titlelessLines(scan: SuiteScan): readonly string[] {
+	const sites = scan.unreadable.filter((site) => site.text === undefined);
+	if (sites.length === 0) {
+		return [];
+	}
+	const lines = sites.map((site) =>
+		say(
+			`${site.path}:${String(site.line)} holds a call that gives no title`,
+		),
+	);
+	lines.push(
+		say(
+			`the count of calls that give no title is ${String(sites.length)}. Give a title to each of these calls.`,
 		),
 	);
 	return lines;

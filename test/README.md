@@ -107,11 +107,11 @@ cannot read. A title that a program joins from parts is one example. A
 template with an expression in it is another example. The check names the
 file, the line, and the text that stands in the title.
 
-The check reads every file under `test/suites/` whose name ends in `.test.ts`,
-at any depth. The check reads no other file. The rule of the plain string
-therefore holds for those files, and for no other file. A test elsewhere under
-`test/` takes its name from what the test covers, and the check never reads
-that name.
+For the citations, the check reads every file under `test/suites/` whose name
+ends in `.test.ts`, at any depth. It reads no other file for the citations.
+The rule of the plain string therefore holds for those files, and for no other
+file. A test elsewhere under `test/` takes its name from what the test covers,
+and the check never reads that name.
 
 ## What the setup file blocks
 
