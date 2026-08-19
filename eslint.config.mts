@@ -51,7 +51,10 @@ export default defineConfig(
 		'dist',
 		'tools/*/dist',
 		'coverage',
+		'reports',
+		'.stryker-tmp',
 		'esbuild.config.mjs',
+		'stryker.config.mjs',
 		'version-bump.mjs',
 		'versions.json',
 		'main.js',
@@ -74,6 +77,14 @@ export default defineConfig(
 						'tools/frontmatter-probe/manifest.json',
 						'tools/frontmatter-probe/*.mjs',
 					],
+					// The patterns above match nine files today. Each of
+					// these files stands outside tsconfig.json, so the
+					// linter builds a program of its own for the file. The
+					// default limit is eight files, and the linter stops
+					// past that limit. The limit guards the run time of the
+					// lint. The number below gives room for a few more tool
+					// files.
+					maximumDefaultProjectFileMatchCount_THIS_WILL_SLOW_DOWN_LINTING: 12,
 				},
 				tsconfigRootDir: import.meta.dirname,
 				extraFileExtensions: ['.json'],
