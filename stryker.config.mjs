@@ -47,8 +47,8 @@ export default {
 	coverageAnalysis: 'perTest',
 
 	// Vitest runs only the test files that import the mutated file, through
-	// the module graph. This option holds the default of the runner, and it
-	// stands here because it explains the count of tests in the log.
+	// the module graph. This option holds the default of the runner. The
+	// option is written out because it explains the count of tests in the log.
 	vitest: { related: true },
 
 	// Stryker copies the repository into this directory, and it makes each
@@ -65,6 +65,7 @@ export default {
 		'.claude',
 		'.vaults',
 		'coverage',
+		'reports',
 		'main.js',
 		'bundle-meta.json',
 		'tools/*/dist',

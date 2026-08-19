@@ -1,24 +1,26 @@
 /**
  * The wording of everything that the mutation ratchet prints. The check
  * prints two kinds of line. The report says what the run did, and how the
- * score of the run stands against the floor. The failure names the score, the
+ * score of the run compares with the floor. The failure names the score, the
  * floor, the fall, and each file that holds a mutant that the tests do not
  * detect.
  *
  * Each line that states a fact carries the name of the check. A log holds the
  * output of many steps, and the name keeps the line legible there. A line
- * that continues a statement carries no name. Such a line stands indented
- * under the line that it continues.
+ * that continues a statement carries no name. Such a line is indented under
+ * the line that it continues.
  *
- * Every score stands beside the two counts that give it. The check computes
- * each score from those counts. The counts are the mutants that the tests
- * detect, and the mutants that the score counts.
+ * Every score is printed beside the two counts that give it. The check
+ * computes each score from those counts. The counts are the mutants that the
+ * tests detect, and the mutants that the score counts.
  *
- * The report names each file that holds a mutant that the tests do not
- * detect, and the file with the lowest score stands first. Under each file
- * stand the first mutants of that file, with the line and the rule that made
- * the change. The HTML report holds every mutant, and each line of the check
- * that names work points at that report.
+ * The list of files that hold a mutant that the tests do not detect prints one
+ * time. A run that passes prints the list in the report. A run that fails
+ * prints the list in the failure, and the report then leaves it out. The list
+ * starts with the file that has the lowest score. Under each file are the
+ * first mutants of that file, with the line and the rule that made the change.
+ * The HTML report holds every mutant, and each line of the check that names
+ * work points at that report.
  */
 
 import type {
@@ -31,10 +33,11 @@ import type {
 import {
 	countedOf,
 	detectedOf,
+	excludedOf,
 	mutantsOf,
 	scoreOf,
-	uncountedOf,
 	undetectedOf,
+	untestedOf,
 } from './mutation-ratchet-core.ts';
 
 /** Where the run writes the report that a person reads. */
@@ -55,16 +58,18 @@ export function reportLines(
 	return [
 		say(`the run holds ${tallyText(report.total)}`),
 		say(
-			`the score is ${scoreText(report.total)}, and the floor is ${percent(comparison.floor)}. ${standing(comparison)}`,
+			`the score is ${scoreText(report.total)}, and the floor is ${percent(comparison.floor)}. ${floorComparison(comparison)}`,
 		),
 		say(
-			'the check fails when the score stands below the floor. The check gives no grace.',
+			'the check fails when the score is less than the floor. A fall of one hundredth of a point fails the check.',
 		),
 		say(
-			'the score counts the mutants that the tests detect and the mutants that the tests do not detect. The score passes over a mutant that the run could not test.',
+			'the score counts the mutants that the tests detect and the mutants that the tests do not detect. The score does not count a mutant that a rule of the configuration takes out of the run.',
 		),
 		...fileLines(report),
-		...weakLines(comparison),
+		// A run that fails prints this list in the failure. Two copies of one
+		// list in one log make the reader compare them.
+		...(comparison.fails ? [] : weakLines(comparison)),
 	];
 }
 
@@ -76,9 +81,13 @@ function tallyText(tally: Tally): string {
 		`${String(tally.Survived)} that survived`,
 		`${String(tally.NoCoverage)} that no test ran`,
 	];
-	const uncounted = uncountedOf(tally);
-	if (uncounted > 0) {
-		parts.push(`${String(uncounted)} that the run could not test`);
+	const excluded = excludedOf(tally);
+	if (excluded > 0) {
+		parts.push(`${String(excluded)} that a comment takes out of the run`);
+	}
+	const untested = untestedOf(tally);
+	if (untested > 0) {
+		parts.push(`${String(untested)} that the run could not test`);
 	}
 	return `${count(mutantsOf(tally), 'mutant')}: ${list(parts)}`;
 }
@@ -88,14 +97,14 @@ function scoreText(tally: Tally): string {
 	return `${percent(scoreOf(tally))} (${String(detectedOf(tally))} of ${String(countedOf(tally))})`;
 }
 
-/** What the score of the run does against the floor. */
-function standing(comparison: Comparison): string {
+/** How the score of the run compares with the floor. */
+function floorComparison(comparison: Comparison): string {
 	if (comparison.change === 0) {
-		return 'The score stands at the floor.';
+		return 'The score is equal to the floor.';
 	}
 	return comparison.change > 0
-		? `The score stands ${points(comparison.change)} above the floor.`
-		: `The score stands ${points(-comparison.change)} below the floor.`;
+		? `The score is ${points(comparison.change)} more than the floor.`
+		: `The score is ${points(-comparison.change)} less than the floor.`;
 }
 
 /** The lines that name each file that the run mutated. */
@@ -106,6 +115,11 @@ function fileLines(report: Report): readonly string[] {
 	for (const file of report.files) {
 		lines.push(`  ${file.path}  ${scoreText(file.tally)}`);
 	}
+	lines.push(
+		say(
+			'the check computes each score from the two counts beside it, and it removes the decimal places after the second one. The table that Stryker prints rounds the same numbers, so the last digit of a row can differ.',
+		),
+	);
 	return lines;
 }
 
@@ -120,7 +134,7 @@ function weakLines(comparison: Comparison): readonly string[] {
 	);
 	const lines = [
 		say(
-			`${count(undetected, 'mutant')} in ${count(comparison.weak.length, 'file')} stand against the tests. The file with the lowest score stands first.`,
+			`the tests do not detect ${count(undetected, 'mutant')} in ${count(comparison.weak.length, 'file')}. The list starts with the file that has the lowest score.`,
 		),
 	];
 	for (const file of comparison.weak) {
@@ -133,7 +147,11 @@ function weakLines(comparison: Comparison): readonly string[] {
 			lines.push(`    and ${count(rest, 'mutant')} more`);
 		}
 	}
-	lines.push(say(`the HTML report at ${HTML_REPORT} holds every mutant`));
+	lines.push(
+		say(
+			`the HTML report at ${HTML_REPORT} holds every mutant, with the line of the source that holds it`,
+		),
+	);
 	return lines;
 }
 
@@ -153,7 +171,11 @@ function survivorText(survivor: Survivor): string {
 	return `line ${String(survivor.line)}  ${survivor.mutator}  ${what}`;
 }
 
-/** The lines of the failure. The check fails after it says these lines. */
+/**
+ * The lines of the failure. The check fails after it says these lines. The
+ * failure carries the list of the files, because a person who reads a red run
+ * reads the error stream alone.
+ */
 export function failureLines(comparison: Comparison): readonly string[] {
 	if (!comparison.fails) {
 		return [];
@@ -162,8 +184,9 @@ export function failureLines(comparison: Comparison): readonly string[] {
 		say(
 			`the score fell to ${percent(comparison.score)}, and the floor is ${percent(comparison.floor)}. The fall is ${points(-comparison.change)}.`,
 		),
+		...weakLines(comparison),
 		say(
-			`read the HTML report at ${HTML_REPORT}. The report names each mutant that the tests do not detect, and the line of the source that holds it.`,
+			'the list above names the same files each week, and it does not say which file made the fall. The report of the run before this one is what names that file.',
 		),
 		say(
 			'a mutant that survives and shows a gap in the tests becomes an issue. A mutant that no test can kill gets a Stryker disable comment at the line, with one sentence that states why.',
@@ -179,9 +202,12 @@ export function say(text: string): string {
 	return `mutation ratchet: ${text}`;
 }
 
-/** A score, as the report says it. */
+/**
+ * A score, as the report says it. The number keeps two decimal places, and a
+ * column of these numbers therefore holds one shape.
+ */
 function percent(value: number): string {
-	return `${String(Math.round(value * 100) / 100)}%`;
+	return `${value.toFixed(2)}%`;
 }
 
 /** A count of percentage points, as the report says it. */

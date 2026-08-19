@@ -2,10 +2,11 @@
  * The decisions behind the mutation ratchet:
  *
  * - what the check reads out of the JSON report of a mutation run;
- * - which mutants the score counts, and which mutants it passes over;
+ * - which mutants the score counts, and which mutants it does not count;
+ * - which report says so little that the check refuses to score it;
  * - whether the number in a baseline is a score at all;
- * - how the score of a run stands against the floor, and where the check
- *   gives no grace;
+ * - how the score of a run compares with the floor, and that a fall of one
+ *   hundredth of a point fails;
  * - what the comparison says, and the wording that the check prints;
  * - what the check does when the report or the baseline is absent.
  *
@@ -44,13 +45,14 @@ import {
 	compare,
 	countedOf,
 	detectedOf,
+	excludedOf,
 	mutantsOf,
 	readBaseline,
 	readReport,
 	recordOf,
 	scoreOf,
-	uncountedOf,
 	undetectedOf,
+	untestedOf,
 } from '../scripts/mutation-ratchet-core';
 import { failureLines, reportLines } from '../scripts/mutation-ratchet-text';
 
@@ -239,25 +241,82 @@ describe('the mutation report reader', () => {
 	});
 });
 
-describe('the score of a run', () => {
-	it('gives a run that counts no mutant 100 percent', () => {
-		const report = reportOf([{ path: 'src/a.ts', ignored: 3 }]);
-		expect(countedOf(report.total)).toBe(0);
-		expect(scoreOf(report.total)).toBe(100);
+/**
+ * The score divides by the mutants that it counts. A mutant that leaves that
+ * division lifts the score, so a run that measures less scores more. These
+ * cases hold the two rules that stop a run from scoring on nothing. The two
+ * constructions are the two shapes that a degraded run takes: every mutant
+ * fails to compile, and the mutants that the tests do not detect break the
+ * run of the tests instead.
+ */
+describe('a run that measured too little to score', () => {
+	/** A report of the shape of the committed run, with these counts. */
+	function whole(counts: Omit<Sample, 'path'>): string {
+		return reportText([{ path: 'src/core/ics/values.ts', ...counts }]);
+	}
+
+	it('refuses a run whose every mutant failed to compile', () => {
+		const reason = refusal(readReport(whole({ compileError: 1245 })));
+		expect(reason).toContain(
+			'holds 1245 mutants that the run could not test',
+		);
+		expect(reason).toContain('1245 that did not compile');
 	});
 
-	it('passes over each mutant that the run could not test', () => {
+	it('refuses a run whose undetected mutants broke the tests', () => {
+		const reason = refusal(
+			readReport(whole({ killed: 1002, runtimeError: 243 })),
+		);
+		expect(reason).toContain(
+			'holds 243 mutants that the run could not test',
+		);
+		expect(reason).toContain('243 that broke the run of the tests');
+	});
+
+	it('refuses one mutant that the run could not test, and accepts none', () => {
+		expect(
+			refusal(readReport(whole({ killed: 99, compileError: 1 }))),
+		).toContain('holds 1 mutant that the run could not test');
+		expect(
+			refusal(readReport(whole({ killed: 99, runtimeError: 1 }))),
+		).toContain('holds 1 mutant that the run could not test');
+		const clean = taken(readReport(whole({ killed: 99, survived: 1 })));
+		expect(untestedOf(clean.total)).toBe(0);
+		expect(scoreOf(clean.total)).toBe(99);
+	});
+
+	it('refuses a run whose mutants a comment takes out of the run', () => {
+		const reason = refusal(readReport(whole({ ignored: 1245 })));
+		expect(reason).toContain(
+			'holds 1245 mutants, and the score counts none',
+		);
+	});
+
+	it('accepts a run that counts one mutant beside the excluded ones', () => {
+		const report = taken(readReport(whole({ killed: 1, ignored: 1244 })));
+		expect(countedOf(report.total)).toBe(1);
+		expect(excludedOf(report.total)).toBe(1244);
+		expect(scoreOf(report.total)).toBe(100);
+	});
+});
+
+describe('the score of a run', () => {
+	it('gives a file that counts no mutant 100 percent', () => {
+		// A comment at the site takes each mutant of the file out of the run.
+		// The whole run still counts a mutant, so the reader accepts it.
 		const report = reportOf([
-			{
-				path: 'src/a.ts',
-				killed: 1,
-				survived: 1,
-				compileError: 5,
-				runtimeError: 5,
-				ignored: 5,
-			},
+			{ path: 'src/a.ts', ignored: 3 },
+			{ path: 'src/b.ts', killed: 1 },
 		]);
-		expect(uncountedOf(report.total)).toBe(15);
+		expect(countedOf(tallyOf(report, 'src/a.ts'))).toBe(0);
+		expect(scoreOf(tallyOf(report, 'src/a.ts'))).toBe(100);
+	});
+
+	it('does not count a mutant that a comment takes out of the run', () => {
+		const report = reportOf([
+			{ path: 'src/a.ts', killed: 1, survived: 1, ignored: 5 },
+		]);
+		expect(excludedOf(report.total)).toBe(5);
 		expect(countedOf(report.total)).toBe(2);
 		expect(scoreOf(report.total)).toBe(50);
 	});
@@ -325,7 +384,7 @@ describe('the baseline reader', () => {
 		['above one hundred', 101],
 	])('refuses a score %s', (name, score) => {
 		expect(refusal(readBaseline(JSON.stringify({ score })))).toContain(
-			'stands between 0 and 100',
+			'a score is a number from 0 to 100',
 		);
 	});
 
@@ -339,7 +398,7 @@ describe('the baseline reader', () => {
 describe('the comparison against the floor', () => {
 	const run = reportOf([{ path: 'src/a.ts', killed: 8048, survived: 1952 }]);
 
-	it('reports a run that stands at the floor as no change', () => {
+	it('reports a run equal to the floor as no change', () => {
 		const comparison = compare(run, floorOf(80.48));
 		expect(comparison.score).toBe(80.48);
 		expect(comparison.change).toBe(0);
@@ -397,29 +456,40 @@ describe('the wording of the check', () => {
 			'the run holds 5 mutants: 3 that a test killed, 1 that ran past the time limit, 1 that survived and 0 that no test ran',
 		);
 		expect(said).toContain(
-			'the score is 80% (4 of 5), and the floor is 80%',
+			'the score is 80.00% (4 of 5), and the floor is 80.00%',
 		);
-		expect(said).toContain('The score stands at the floor.');
+		expect(said).toContain('The score is equal to the floor.');
 	});
 
-	it('names each mutant that the run could not test', () => {
+	it('names each mutant that a comment takes out of the run', () => {
 		const said = lines(
-			[{ path: 'src/a.ts', killed: 1, compileError: 2 }],
+			[{ path: 'src/a.ts', killed: 1, ignored: 2 }],
 			100,
 		).report.join('\n');
 		expect(said).toContain('3 mutants:');
-		expect(said).toContain('2 that the run could not test');
+		expect(said).toContain('2 that a comment takes out of the run');
 	});
 
-	it('says how far the score stands from the floor', () => {
+	it('says how far the score is from the floor', () => {
 		const above = lines([{ path: 'src/a.ts', killed: 3, survived: 1 }], 50);
 		expect(above.report.join('\n')).toContain(
-			'The score stands 25 percentage points above the floor.',
+			'The score is 25 percentage points more than the floor.',
 		);
 		const below = lines([{ path: 'src/a.ts', killed: 3, survived: 1 }], 76);
+		expect(below.failure.join('\n')).toContain('The fall is 1 percentage');
 		expect(below.report.join('\n')).toContain(
-			'The score stands 1 percentage point below the floor.',
+			'The score is 1 percentage point less than the floor.',
 		);
+	});
+
+	it('states the rounding rule beside the table of the files', () => {
+		const said = lines([{ path: 'src/a.ts', killed: 2 }], 100).report.join(
+			'\n',
+		);
+		expect(said).toContain(
+			'it removes the decimal places after the second one',
+		);
+		expect(said).toContain('the last digit of a row can differ');
 	});
 
 	it('gives the line and the rule of each mutant that survives', () => {
@@ -463,11 +533,54 @@ describe('the wording of the check', () => {
 			90,
 		).failure.join('\n');
 		expect(said).toContain(
-			'the score fell to 75%, and the floor is 90%. The fall is 15 percentage points.',
+			'the score fell to 75.00%, and the floor is 90.00%. The fall is 15 percentage points.',
 		);
 		expect(said).toContain('reports/mutation/mutation.html');
 		expect(said).toContain(
 			'node scripts/mutation-ratchet.mjs --write-baseline',
+		);
+	});
+
+	/**
+	 * A person who reads a failed run reads the error stream. The list of the
+	 * files therefore belongs in the failure, and the report of a run that
+	 * fails leaves the list out. One log then holds one copy of the list.
+	 */
+	it('names each weak file in the failure, and one time', () => {
+		const said = lines(
+			[
+				{ path: 'src/high.ts', killed: 9, survived: 1 },
+				{ path: 'src/low.ts', killed: 1, noCoverage: 3 },
+			],
+			99,
+		);
+		const failure = said.failure.join('\n');
+		expect(failure).toContain(
+			'the tests do not detect 4 mutants in 2 files. The list starts with the file that has the lowest score.',
+		);
+		expect(failure).toContain('src/low.ts  25.00% (1 of 4)');
+		expect(failure).toContain('line 2  EqualityOperator  no test ran it');
+		expect(failure.indexOf('src/low.ts  25.00% (1 of 4)')).toBeLessThan(
+			failure.indexOf('src/high.ts  90.00% (9 of 10)'),
+		);
+		expect(failure).toContain('it does not say which file made the fall');
+		// The report keeps its table of every mutated file. The list of the
+		// weak files, with the header and the mutants under each file, is
+		// what moves to the failure.
+		const rows = said.report.filter(
+			(line) =>
+				line.includes('the tests do not detect 4 mutants') ||
+				line.includes('EqualityOperator'),
+		);
+		expect(rows).toStrictEqual([]);
+		expect(said.report.join('\n')).toContain('src/low.ts  25.00% (1 of 4)');
+	});
+
+	it('keeps the list of weak files in the report when the run passes', () => {
+		const said = lines([{ path: 'src/a.ts', killed: 9, survived: 1 }], 90);
+		expect(said.failure).toStrictEqual([]);
+		expect(said.report.join('\n')).toContain(
+			'the tests do not detect 1 mutant in 1 file',
 		);
 	});
 });
@@ -522,8 +635,8 @@ describe('the check as a process', () => {
 		expect(readFileSync(path, 'utf8')).toBe('{\n\t"score": 75\n}\n');
 		const again = run(report('steady', samples), path);
 		expect(again.status).toBe(0);
-		expect(again.output).toContain('the score is 75% (3 of 4)');
-		expect(again.output).toContain('The score stands at the floor.');
+		expect(again.output).toContain('the score is 75.00% (3 of 4)');
+		expect(again.output).toContain('The score is equal to the floor.');
 	});
 
 	it('fails when the report is absent, and says to run the mutation', () => {
@@ -554,7 +667,7 @@ describe('the check as a process', () => {
 		);
 		expect(result.status).toBe(0);
 		expect(result.output).toContain(
-			'The score stands 25 percentage points above the floor.',
+			'The score is 25 percentage points more than the floor.',
 		);
 		expect(readFileSync(path, 'utf8')).toBe(before);
 	});
@@ -566,7 +679,7 @@ describe('the check as a process', () => {
 		);
 		expect(result.status).toBe(1);
 		expect(result.output).toContain(
-			'the score fell to 75%, and the floor is 75.01%',
+			'the score fell to 75.00%, and the floor is 75.01%',
 		);
 	});
 
@@ -580,7 +693,7 @@ describe('the check as a process', () => {
 		);
 		expect(result.status).toBe(1);
 		expect(result.output).toContain(
-			'src/weak.ts  25% (1 of 4)  3 survived',
+			'src/weak.ts  25.00% (1 of 4)  3 survived',
 		);
 		expect(result.output).toContain('The fall is 27.5 percentage points.');
 	});
@@ -594,7 +707,7 @@ describe('the check as a process', () => {
 		[
 			'gives a score above one hundred',
 			'{"score":101}',
-			'between 0 and 100',
+			'a score is a number from 0 to 100',
 		],
 		['gives no number', '{"score":"75"}', 'gives no score'],
 		['is not an object', '[75]', 'is not a JSON object'],
@@ -622,6 +735,57 @@ describe('the check as a process', () => {
 		const result = run(path, record('unknown', 50));
 		expect(result.status).toBe(1);
 		expect(result.output).toContain('knows no such status');
+	});
+
+	/**
+	 * These two cases hold the numbers of the committed run. The first is a
+	 * run whose sandbox stopped compiling. The second is a run where the
+	 * mutants that the tests do not detect broke the run of the tests instead.
+	 * Both scored 100 percent before, and both passed the floor of 80.48.
+	 */
+	it('fails on a run whose every mutant failed to compile', () => {
+		const result = run(
+			report('vacuous', [
+				{ path: 'src/core/ics/values.ts', compileError: 1245 },
+			]),
+			record('vacuous', 80.48),
+		);
+		expect(result.status).toBe(1);
+		expect(result.output).toContain(
+			'holds 1245 mutants that the run could not test',
+		);
+		expect(result.output).not.toContain('the score is 100');
+	});
+
+	it('fails on a run whose undetected mutants broke the tests', () => {
+		const result = run(
+			report('broken', [
+				{
+					path: 'src/core/ics/values.ts',
+					killed: 1002,
+					runtimeError: 243,
+				},
+			]),
+			record('broken', 80.48),
+		);
+		expect(result.status).toBe(1);
+		expect(result.output).toContain(
+			'holds 243 mutants that the run could not test',
+		);
+		expect(result.output).not.toContain('the score is 100');
+	});
+
+	it('fails on a run whose mutants a comment takes out of the run', () => {
+		const result = run(
+			report('excluded', [
+				{ path: 'src/core/ics/values.ts', ignored: 1245 },
+			]),
+			record('excluded', 80.48),
+		);
+		expect(result.status).toBe(1);
+		expect(result.output).toContain(
+			'holds 1245 mutants, and the score counts none of them',
+		);
 	});
 });
 

@@ -55,7 +55,7 @@ jobs:
                   path: reports/mutation/mutation.html
                   if-no-files-found: warn
 
-            # This step fails when the score stands below the floor. The
+            # This step fails when the score is less than the floor. The
             # upload above runs first, so the report of a failed run reaches
             # the artifacts of the run.
             - run: node scripts/mutation-ratchet.mjs

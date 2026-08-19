@@ -7,8 +7,15 @@
  *
  * This check is the ratchet of the score. The check reads the JSON report of
  * a mutation run, and it compares the score of that run against the floor in
- * `mutation-baseline.json`. One thing fails the check: a score that stands
- * below the floor. The check gives no grace.
+ * `mutation-baseline.json`. One thing fails the check: a score less than the
+ * floor. The check allows no tolerance, and a fall of one hundredth of a
+ * point fails.
+ *
+ * The check also refuses a run that measured too little to score. A mutant
+ * that the run could not test leaves the division that makes the score, so a
+ * run that tests less scores more. The check therefore refuses a report that
+ * holds a mutant with a compile error or a runtime error, and it refuses a
+ * report whose mutants the score counts none of.
  *
  * The baseline holds one number, and that number is the score of the whole
  * run. The report states the numbers of each file, and the check fails on no

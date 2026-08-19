@@ -64,10 +64,23 @@ the lane once a week and on request. The lane is not part of the required
 `ci-ok` check, and no merge waits for it.
 
 [`mutation-baseline.json`](../mutation-baseline.json) holds one number, and
-that number is the score of the whole run. A score below that floor fails the
-check. The check gives no grace, and the check never writes the baseline by
-itself. Accept an intended change in the pull request that causes it: run
-`node scripts/mutation-ratchet.mjs --write-baseline` and commit the new file.
+that number is the score of the whole run. A score less than that floor fails
+the check, even by one hundredth of a point. The check never writes the
+baseline by itself. Accept an intended change in the pull request that causes
+it: run `node scripts/mutation-ratchet.mjs --write-baseline` and commit the
+new file.
+
+The check also fails on a run that measured too little to score. The score
+divides by the mutants that it counts, and a mutant that the run could not
+test leaves that division. A run that tests less would therefore score more.
+The check refuses a report that holds a mutant with a compile error or a
+runtime error, and it refuses a report whose mutants the score counts none of.
+
+Read the score with its limit in mind. Stryker holds a set of rules, and each
+rule makes one kind of change. A rule of the source can be wrong in a way that
+no rule of Stryker writes, and the lane then says nothing about that mistake.
+The score is therefore a floor under the tests, and it is not a statement that
+the tests pin the behavior of a line.
 
 A mutant that survives is work, and not a broken build. A mutant that shows a
 gap in the tests becomes an issue. A mutant that no test can kill gets a

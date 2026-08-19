@@ -2,9 +2,10 @@
  * The decisions behind the mutation ratchet:
  *
  * - what the JSON report of a mutation run says about each file;
- * - which mutants the score counts, and which mutants the score passes over;
+ * - which mutants the score counts, and which mutants it does not count;
+ * - which report says so little that no score of it means anything;
  * - whether the number in a baseline is a score at all;
- * - how the score of a run stands against the floor.
+ * - how the score of a run compares with the floor.
  *
  * No function here reads a file. The caller reads the report, reads the
  * baseline, prints the report, and sets the exit status. Therefore a test can
@@ -23,8 +24,21 @@
  * would fail on the record and not on the tests. The score of the whole tree
  * moves in small steps. The report still states the numbers of each file.
  *
- * The check gives no grace. The score of a run must stand at the floor or
- * above the floor. A score below the floor fails the check.
+ * The check allows no tolerance. A score less than the floor fails the check,
+ * even by one hundredth of a point.
+ *
+ * The score is a fraction, and this module also guards what the fraction
+ * divides by. A mutant that the run could not test leaves the division. Such
+ * a mutant therefore lifts the score of a run that measures less, and a run
+ * that measures nothing at all would get the highest score of all. Two rules
+ * close that path, and `readReport` holds both:
+ *
+ * - a report that holds a mutant with a compile error or a runtime error is a
+ *   fault. Nobody asked for such a mutant. The run could not test it, and the
+ *   score of that run therefore covers less source than the floor covers;
+ * - a report whose mutants the score counts none of is a fault. A rule of the
+ *   configuration can take a mutant out of the run, and a report of nothing
+ *   but such mutants measures nothing.
  *
  * A report that is absent is a fault. A baseline that is absent is a fault. A
  * report that holds a status this module does not know is a fault, because a
@@ -87,14 +101,28 @@ const DETECTED: readonly Status[] = ['Killed', 'Timeout'];
 const UNDETECTED: readonly Status[] = ['Survived', 'NoCoverage'];
 
 /**
- * A mutant that the run could not test. The score passes over such a mutant,
- * because the mutant says nothing about the tests.
+ * The statuses that say that the run could not test the mutant. The change
+ * did not compile, or the run of the tests broke on it.
+ *
+ * The score does not count such a mutant, because the mutant says nothing
+ * about the tests. A run of this repository holds none of them, and
+ * `readReport` refuses a report that holds one. The reason is the arithmetic
+ * of the score: each of these mutants leaves the division, so a run that
+ * cannot test its mutants scores higher than a run that can.
  */
-const UNCOUNTED: readonly Status[] = [
-	'CompileError',
-	'RuntimeError',
-	'Ignored',
-];
+const UNTESTED: readonly Status[] = ['CompileError', 'RuntimeError'];
+
+/**
+ * The status of a mutant that a rule of the configuration takes out of the
+ * run. A person writes a Stryker disable comment at the line, with one
+ * sentence that states why. The comment is the remedy for a mutant that no
+ * test can kill.
+ *
+ * The score does not count such a mutant, and such a mutant fails no rule.
+ * The alternative punishes the remedy: each comment that a person writes
+ * would lower the score.
+ */
+const EXCLUDED: readonly Status[] = ['Ignored'];
 
 /**
  * A status that the run did not reach. A report of a run that ended holds no
@@ -161,12 +189,14 @@ export function countedOf(tally: Tally): number {
 	return detectedOf(tally) + undetectedOf(tally);
 }
 
-/**
- * How many mutants of a tally the score passes over. The run could not test
- * these mutants, and they therefore say nothing about the tests.
- */
-export function uncountedOf(tally: Tally): number {
-	return sum(tally, UNCOUNTED);
+/** How many mutants of a tally the run could not test. */
+export function untestedOf(tally: Tally): number {
+	return sum(tally, UNTESTED);
+}
+
+/** How many mutants of a tally a rule of the configuration takes out. */
+export function excludedOf(tally: Tally): number {
+	return sum(tally, EXCLUDED);
 }
 
 /** How many mutants of a tally the run holds, under every status. */
@@ -184,8 +214,13 @@ function sum(tally: Tally, statuses: readonly Status[]): number {
 
 /**
  * The part of the counted mutants that the tests detect, as a percentage. The
- * number keeps two decimal places, and the places after them go away. A tally
- * that counts no mutant gets 100.
+ * number keeps two decimal places, and the places after them go away.
+ *
+ * A tally that counts no mutant gets 100. One file can hold such a tally: a
+ * rule of the configuration can take out every mutant of that file, and the
+ * row of the file then says that nothing is left to detect. The whole run
+ * cannot reach this function with such a tally, because `readReport` refuses a
+ * report that counts no mutant.
  */
 export function scoreOf(tally: Tally): number {
 	const counted = countedOf(tally);
@@ -200,8 +235,8 @@ export function scoreOf(tally: Tally): number {
 
 /**
  * One score, in hundredths of a point. The check compares two whole numbers
- * of hundredths. Therefore a score that stands at the floor never falls below
- * the floor on the small error that binary arithmetic adds to a decimal
+ * of hundredths. Therefore a score that is equal to the floor never falls
+ * below the floor on the small error that binary arithmetic adds to a decimal
  * fraction.
  */
 function hundredths(score: number): number {
@@ -249,7 +284,51 @@ export function readReport(text: string): Reading<Report> {
 			reason: 'the mutation report holds no mutant. Run `npm run mutation`.',
 		};
 	}
-	return { ok: true, value: report };
+	const measured = measures(report.total);
+	return measured.ok ? { ok: true, value: report } : measured;
+}
+
+/**
+ * Whether a run measured the tests at all.
+ *
+ * The score divides by the mutants that it counts. A mutant that leaves that
+ * division lifts the score. Therefore a run that tests less scores more, and a
+ * run that tests nothing scores 100. These two rules stop that.
+ *
+ * The first rule refuses a mutant that the run could not test. A run of this
+ * repository holds none of them. Such a mutant is not a fact about the tests:
+ * it is a fault of the run, and the run must say so instead of dropping the
+ * mutant from the score.
+ *
+ * The second rule refuses a report whose mutants the score counts none of. A
+ * disable comment takes a mutant out of the run, and a comment at the top of
+ * each file takes out all of them. The first rule does not see that report,
+ * because such mutants are the deliberate kind.
+ *
+ * A bound on the share of such mutants needs a number that nothing measures.
+ * A run of this repository holds zero mutants that the run could not test, so
+ * zero is the bound that the repository already holds.
+ */
+function measures(total: Tally): Reading<true> {
+	const untested = untestedOf(total);
+	if (untested > 0) {
+		return {
+			ok: false,
+			reason: `the mutation report holds ${mutants(untested)} that the run could not test: ${String(total.CompileError)} that did not compile and ${String(total.RuntimeError)} that broke the run of the tests. The score does not count these mutants, so this run measures less source than the floor measures. Read the report and repair the run.`,
+		};
+	}
+	if (countedOf(total) === 0) {
+		return {
+			ok: false,
+			reason: `the mutation report holds ${mutants(mutantsOf(total))}, and the score counts none of them. A rule of the configuration takes each one out of the run, and a run of nothing but such mutants measures nothing.`,
+		};
+	}
+	return { ok: true, value: true };
+}
+
+/** A count of mutants, with the plural that agrees with the count. */
+function mutants(value: number): string {
+	return `${String(value)} mutant${value === 1 ? '' : 's'}`;
 }
 
 /** The mutants of one file of the report. */
@@ -389,7 +468,7 @@ export function readBaseline(text: string): Reading<Baseline> {
 	if (score < 0 || score > FULL) {
 		return {
 			ok: false,
-			reason: `the mutation baseline gives the score ${String(score)}, and a score stands between 0 and ${String(FULL)}`,
+			reason: `the mutation baseline gives the score ${String(score)}, and a score is a number from 0 to ${String(FULL)}`,
 		};
 	}
 	return { ok: true, value: { score } };
@@ -416,8 +495,9 @@ export interface Comparison {
 
 /**
  * The comparison of a run against the baseline. One thing fails the check: a
- * score that stands below the floor. The check gives no grace. A score that
- * stands at the floor passes, and a score above the floor passes.
+ * score less than the floor. The check allows no tolerance, and a fall of one
+ * hundredth of a point fails. A score equal to the floor passes, and a score
+ * more than the floor passes.
  *
  * A file that the run no longer mutates fails no rule here. The floor covers
  * the whole tree, and the score of the whole tree carries that loss. A file
@@ -443,7 +523,7 @@ export function compare(report: Report, baseline: Baseline): Comparison {
 	};
 }
 
-/** The file with the lowest score stands first. */
+/** The order that puts the file with the lowest score first. */
 function byWeakest(left: FileMutants, right: FileMutants): number {
 	return (
 		scoreOf(left.tally) - scoreOf(right.tally) ||
