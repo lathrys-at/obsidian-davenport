@@ -84,7 +84,8 @@ export interface OutputMeta {
 /**
  * One output file that the check does not count. The count of bytes is the
  * count that the metafile gives for that file. This count is absent when the
- * metafile gives none, because the check reads no other part of that entry.
+ * metafile gives no count of bytes. The check reads no other part of that
+ * entry.
  */
 export interface SkippedOutput {
 	readonly path: string;
@@ -96,8 +97,8 @@ export interface Metafile {
 	readonly outputs: readonly OutputMeta[];
 	/**
 	 * The output files that the check does not count. The report names each
-	 * one and its count of bytes. No total holds those bytes, and no rule
-	 * measures such a file.
+	 * one and its count of bytes. No total holds those bytes, and the
+	 * comparison against the baseline never reads this list.
 	 */
 	readonly skipped: readonly SkippedOutput[];
 }

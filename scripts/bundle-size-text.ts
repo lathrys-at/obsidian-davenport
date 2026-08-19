@@ -50,8 +50,9 @@ export function reportLines(
 
 /**
  * The lines that name each output file that the check does not count. Each
- * line gives the count of bytes that stays outside the totals. These lines
- * are absent when the build makes no such file.
+ * line gives the count of bytes that stays outside the totals, or it says
+ * that the metafile gives no such count. These lines are absent when the
+ * build makes no file of that kind.
  */
 function skippedLines(skipped: readonly SkippedOutput[]): readonly string[] {
 	return skipped.map((output) =>
