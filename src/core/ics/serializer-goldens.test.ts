@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { IcsGoldenSet } from '../../../test/harness/fixtures/ics-serializer';
 import {
+	icsGoldenInputs,
 	icsGoldenSet,
 	icsGoldenSetPath,
 	icsGoldenSets,
@@ -8,7 +9,6 @@ import {
 	icsGoldenWriteRequested,
 	writeIcsGoldenSet,
 } from '../../../test/harness/fixtures/ics-serializer';
-import { icsCorpus } from '../../../test/harness/fixtures/ics-corpus';
 import { serializeIcs } from './serializer';
 import { CORE_NORMALIZATION_VERSION } from './stamp';
 
@@ -17,12 +17,12 @@ const NEXT = CURRENT + 1;
 
 /**
  * The instruction that every failure of this file ends with. A change to
- * the bytes of the serializer and a change to the core component of the stamp
- * are one change, and this text says how to make it.
+ * the bytes of the serializer and a change to the core component of the
+ * stamp are one change, and this text says how to make it.
  */
 const HOW_TO_MOVE =
-	`Raise CORE_NORMALIZATION_VERSION in src/core/ics/stamp.ts to ${String(NEXT)}, ` +
-	'then write the new golden set with ' +
+	`Raise CORE_NORMALIZATION_VERSION in src/core/ics/stamp.ts to ${String(NEXT)}. ` +
+	'Then write the new golden set with ' +
 	'DAVENPORT_WRITE_ICS_GOLDENS=1 npm test -- serializer-goldens. ' +
 	`The set of ${String(CURRENT)} stays in the tree, and the closure test reads it.`;
 
@@ -37,9 +37,9 @@ function serialize(text: string): string {
 }
 
 function currentEntries(): { id: string; text: string }[] {
-	return icsCorpus().map((fixture) => ({
-		id: fixture.id,
-		text: serialize(fixture.content),
+	return icsGoldenInputs().map((input) => ({
+		id: input.id,
+		text: serialize(input.text),
 	}));
 }
 
@@ -60,7 +60,7 @@ if (icsGoldenWriteRequested()) {
 			const path = writeIcsGoldenSet(CURRENT, currentEntries());
 			expect.fail(
 				`the run wrote the golden set of the core component ${String(CURRENT)} to ${path}. ` +
-					'Read the difference, then run the tests again with the variable unset.',
+					'Read the difference. Then run the tests again with the variable unset.',
 			);
 		});
 	});
@@ -70,23 +70,23 @@ if (icsGoldenWriteRequested()) {
 			expect(icsGoldenSet(CURRENT)).toBeDefined();
 		});
 
-		it('holds one golden file for each file of the corpus', () => {
+		it('holds one golden file for each input of the gate', () => {
 			expect(requireCurrentSet().ids).toEqual(
-				icsCorpus()
-					.map((fixture) => fixture.id)
+				icsGoldenInputs()
+					.map((input) => input.id)
 					.sort(),
 			);
 		});
 
-		it.each(icsCorpus())(
+		it.each(icsGoldenInputs())(
 			'writes the committed bytes for $id',
-			(fixture) => {
+			(input) => {
 				const set = requireCurrentSet();
 				expect(
-					serialize(fixture.content),
-					`the serializer writes different bytes for ${fixture.id}, and the core component of the normalization stamp is still ${String(CURRENT)}. ` +
+					serialize(input.text),
+					`the serializer writes different bytes for ${input.id}, and the core component of the normalization stamp is still ${String(CURRENT)}. ` +
 						`A change to the bytes of the serializer moves that component in the same change. ${HOW_TO_MOVE}`,
-				).toBe(icsGoldenText(set, fixture.id));
+				).toBe(icsGoldenText(set, input.id));
 			},
 		);
 	});
@@ -100,16 +100,16 @@ if (icsGoldenWriteRequested()) {
 			const current = requireCurrentSet();
 			const shared = set.ids.filter((id) => current.ids.includes(id));
 
-			it(`shares files with the set of the core component ${String(set.core)}`, () => {
+			it(`shares files with the set that the build of the core component ${String(set.core)} wrote`, () => {
 				expect(shared.length).toBeGreaterThan(0);
 			});
 
 			it.each(shared)(
-				`gives the bytes of this build for %s from the set of the core component ${String(set.core)}`,
+				`gives the bytes of this build for %s from the set that the build of the core component ${String(set.core)} wrote`,
 				(id) => {
 					expect(
 						serialize(icsGoldenText(set, id)),
-						`the serializer of this build does not absorb the bytes that the core component ${String(set.core)} wrote for ${id}. ` +
+						`the serializer of this build does not absorb the bytes that the build of the core component ${String(set.core)} wrote for ${id}. ` +
 							'The serializer must map every earlier serialization of the same content onto the bytes of this build. ' +
 							'Without that property a device that runs an older build cannot tell a byte-only difference from a real one.',
 					).toBe(icsGoldenText(current, id));

@@ -2,7 +2,8 @@
 # line endings, and tests that count them. Keep git out of the conversion.
 test/harness/fixtures/ics/*.ics -text
 
-# The golden files hold the octets that the canonical serializer writes. A
+# The inputs of the golden gate hold the octets that a server would send, and
+# the golden files hold the octets that the canonical serializer writes. A
 # conversion of the line endings would change the bytes under the test that
 # compares them.
 test/harness/fixtures/ics-serializer/**/*.ics -text

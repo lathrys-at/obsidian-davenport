@@ -1,9 +1,18 @@
 /**
  * The golden corpus of the canonical serializer.
  *
- * The serializer writes one text for each file of the adversarial ICS corpus.
- * Those texts are committed here. A test compares each committed text
- * with the text that the serializer writes now.
+ * The gate holds the serializer to the bytes that it writes for a fixed
+ * set of inputs. The inputs come from two places. The adversarial ICS
+ * corpus supplies the details that a careless reader or a careless writer
+ * gets wrong. The directory `inputs/` beside the sets supplies the files
+ * of this gate, and those files exercise every rule that the serializer
+ * states. A rule that no input exercises can change without a failure
+ * here, so a new rule of the serializer lands together with an input that
+ * exercises the rule.
+ *
+ * The serializer writes one text for each input. Those texts are
+ * committed here. A test compares each committed text with the text that
+ * the serializer writes now.
  *
  * Each set of golden files sits in a directory. The name of the directory
  * carries the value of the core component of the normalization stamp. The
@@ -33,6 +42,7 @@ import {
 	writeFileSync,
 } from 'node:fs';
 import { join } from 'node:path';
+import { icsCorpus } from './ics-corpus';
 
 /** One committed set of golden files. */
 export interface IcsGoldenSet {
@@ -50,12 +60,51 @@ export interface IcsGoldenEntry {
 	readonly text: string;
 }
 
+/** One input of the gate, with its CRLF line endings. */
+export interface IcsGoldenInput {
+	/** The file name without its extension. No two inputs share an id. */
+	readonly id: string;
+	/** The text of the input file, decoded from UTF-8. */
+	readonly text: string;
+}
+
 const GOLDEN_ROOT = join(import.meta.dirname, 'ics-serializer');
+const INPUT_DIRECTORY = join(GOLDEN_ROOT, 'inputs');
 const SET_PREFIX = 'core-';
 const EXTENSION = '.ics';
 const WRITE_VARIABLE = 'DAVENPORT_WRITE_ICS_GOLDENS';
 
 const utf8 = new TextDecoder('utf-8', { fatal: true });
+
+/**
+ * Every input of the gate: the files of the corpus, and then the files of
+ * this gate. The function throws an error when one id stands in both
+ * places, because one id names one golden file.
+ */
+export function icsGoldenInputs(): readonly IcsGoldenInput[] {
+	const corpus = icsCorpus().map((fixture) => ({
+		id: fixture.id,
+		text: fixture.content,
+	}));
+	const owned = readdirSync(INPUT_DIRECTORY)
+		.filter((file) => file.endsWith(EXTENSION))
+		.sort()
+		.map((file) => ({
+			id: file.slice(0, -EXTENSION.length),
+			text: utf8.decode(readFileSync(join(INPUT_DIRECTORY, file))),
+		}));
+	const shared = owned.filter((input) =>
+		corpus.some((fixture) => fixture.id === input.id),
+	);
+	if (shared.length > 0) {
+		throw new Error(
+			`the ICS corpus and the inputs of the golden gate share these names: ${shared
+				.map((input) => input.id)
+				.join(', ')}; rename the file under ${INPUT_DIRECTORY}`,
+		);
+	}
+	return [...corpus, ...owned];
+}
 
 /** Every committed set, from the oldest component to the newest. */
 export function icsGoldenSets(): readonly IcsGoldenSet[] {

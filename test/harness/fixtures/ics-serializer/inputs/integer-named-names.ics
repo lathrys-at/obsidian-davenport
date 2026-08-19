@@ -1,0 +1,12 @@
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Davenport//golden inputs//EN
+BEGIN:VEVENT
+UID:integer-named-names
+DTSTART:20260302T090000Z
+RRULE:BYMONTHDAY=3;2=two;FREQ=DAILY;1=one
+X-VENDOR-KEYS;X-ZED=z;2=two;4294967295=big;X-ALPHA=a;1=one:a property whose p
+ arameter names read as whole numbers
+SUMMARY:parameter names and rule part names that read as whole numbers
+END:VEVENT
+END:VCALENDAR
