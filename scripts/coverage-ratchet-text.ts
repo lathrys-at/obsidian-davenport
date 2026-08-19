@@ -9,6 +9,16 @@
  * the output of many steps, and the name keeps the line legible there. A
  * line that continues a statement carries no name. Such a line stands
  * indented under the line that it continues.
+ *
+ * Every percentage stands beside the two counts that give it. The check
+ * computes each percentage from those counts. Two different pairs of counts
+ * can give one percentage. Therefore a percentage alone hides an edit of
+ * the baseline that moves counts from one file to another.
+ *
+ * The row of a file states the counts of the run. A second line under that
+ * row states the counts of the floor for each metric whose counts differ. A
+ * row with no second line therefore has a floor that holds the counts of
+ * the run.
  */
 
 import type {
@@ -16,6 +26,7 @@ import type {
 	Count,
 	Counts,
 	FileMove,
+	FileMoves,
 	Metric,
 	Move,
 	Report,
@@ -38,6 +49,9 @@ export function reportLines(
 		say(
 			'the check also fails when the baseline holds a file that the run does not report. The check also fails when the run reports a file that the baseline does not hold.',
 		),
+		say(
+			'a row states the counts of the run. A second line under a row states the counts of the floor for each metric whose counts differ. Two different pairs of counts can give one percentage.',
+		),
 		...fileLines(report, comparison),
 		...changeLines(comparison),
 	];
@@ -48,8 +62,14 @@ function countsText(counts: Counts): string {
 	return list(METRICS.map((metric) => countText(counts[metric], metric)));
 }
 
-function countText(count: Count, metric: Metric): string {
-	return `${String(count.covered)} of ${String(count.total)} ${metric} (${percent(percentOf(count))})`;
+/**
+ * The two counts of one metric, with the percentage that they give. The
+ * name of the metric stands between the counts and the percentage. A caller
+ * that names the metric on the line gives no metric to this function.
+ */
+function countText(count: Count, metric?: Metric): string {
+	const name = metric === undefined ? '' : ` ${metric}`;
+	return `${String(count.covered)} of ${String(count.total)}${name} (${percent(percentOf(count))})`;
 }
 
 /** What four metrics did, in one phrase. */
@@ -60,30 +80,41 @@ function movesText(moves: readonly Move[]): string {
 /**
  * The lines that name each file of the run. A file that holds no statement
  * gets no row of its own. Every floor of such a file is 100 percent, and
- * the row says nothing.
+ * the row says nothing. A file whose floor holds other counts gets a row,
+ * because those counts are what the reader must see.
  */
 function fileLines(report: Report, comparison: Comparison): readonly string[] {
 	const changed = new Map(
 		comparison.changed.map((file) => [file.path, file]),
 	);
+	const mismatched = new Map(
+		comparison.mismatched.map((file) => [file.path, file]),
+	);
 	const fresh = new Set(comparison.fresh);
 	const withCode = report.files.filter(
 		(file) => file.counts.statements.total > 0,
+	);
+	const rows = report.files.filter(
+		(file) => file.counts.statements.total > 0 || mismatched.has(file.path),
 	);
 	const lines = [
 		say(
 			`the run reports ${count(report.files.length, 'file')}, and ${String(withCode.length)} of them ${holds(withCode.length)} a statement`,
 		),
 	];
-	for (const file of withCode) {
+	for (const file of rows) {
 		const numbers = METRICS.map(
-			(metric) => `${metric} ${percent(percentOf(file.counts[metric]))}`,
+			(metric) => `${metric} ${countText(file.counts[metric])}`,
 		).join('  ');
+		const floors = mismatched.get(file.path);
 		lines.push(
-			`  ${file.path}  ${numbers}  ${note(file.path, changed, fresh)}`,
+			`  ${file.path}  ${numbers}  ${note(file.path, changed, fresh, floors !== undefined)}`,
 		);
+		if (floors !== undefined) {
+			lines.push(`    the floor holds ${floorText(floors)}`);
+		}
 	}
-	const rest = report.files.length - withCode.length;
+	const rest = report.files.length - rows.length;
 	if (rest === 1) {
 		lines.push('  the other file holds no statement');
 	} else if (rest > 1) {
@@ -92,17 +123,26 @@ function fileLines(report: Report, comparison: Comparison): readonly string[] {
 	return lines;
 }
 
+/** The counts of a floor, for each metric that differs from the run. */
+function floorText(file: FileMoves): string {
+	return list(file.moves.map((move) => countText(move.floor, move.metric)));
+}
+
 /** What one row of the table says about the floor of that file. */
 function note(
 	path: string,
 	changed: ReadonlyMap<string, FileMove>,
 	fresh: ReadonlySet<string>,
+	differs: boolean,
 ): string {
 	if (fresh.has(path)) {
 		return 'the baseline does not hold this file';
 	}
 	const move = changed.get(path);
-	return move === undefined ? 'no change' : movesText(move.moves);
+	if (move !== undefined) {
+		return movesText(move.moves);
+	}
+	return differs ? 'no percentage moved' : 'no change';
 }
 
 /** The lines that name each file whose coverage differs from its floor. */
@@ -124,7 +164,7 @@ function changeLines(comparison: Comparison): readonly string[] {
 }
 
 function moveText(move: Move): string {
-	return `${move.metric}  from ${percent(move.floor)} to ${percent(move.now)}  ${moved(move.change)}`;
+	return `${move.metric}  from ${countText(move.floor)} to ${countText(move.now)}  ${moved(move.change)}`;
 }
 
 /**
@@ -205,7 +245,7 @@ function fellLines(comparison: Comparison): readonly string[] {
 			if (move.past) {
 				lines.push(
 					say(
-						`the ${move.metric} of ${file.path} fell from ${percent(move.floor)} to ${percent(move.now)}. The fall of ${points(-move.change)} goes past the grace of ${points(GRACE)}.`,
+						`the ${move.metric} of ${file.path} fell from ${countText(move.floor)} to ${countText(move.now)}. The fall of ${points(-move.change)} goes past the grace of ${points(GRACE)}.`,
 					),
 				);
 			}
