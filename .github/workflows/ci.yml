@@ -88,13 +88,27 @@ jobs:
             - run: npm run probe:build
             - run: node scripts/scan-bundle.mjs tools/frontmatter-probe/dist/main.js
 
+    # This job reads package-lock.json. The job asks the npm registry
+    # which of the versions in that file have a known security defect.
+    # The job fails when the registry reports such a defect. The option
+    # --package-lock-only makes npm build the dependency tree from the
+    # lockfile, and the job installs no package.
+    audit:
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+            - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+              with:
+                  node-version-file: .nvmrc
+            - run: npm audit --package-lock-only
+
     # This job is the single required check that gates merges to main.
     # The job passes only when every needed job has the result success.
     # The needs context lists the needed jobs, and the step reads the
     # full needs context. Therefore a new job in needs is also gated,
     # and the step needs no edit.
     ci-ok:
-        needs: [lint, typecheck, test, test-windows, build]
+        needs: [lint, typecheck, test, test-windows, build, audit]
         if: always()
         runs-on: ubuntu-latest
         steps:
