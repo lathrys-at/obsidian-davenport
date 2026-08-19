@@ -18,6 +18,17 @@
  * a part that the format does not name. A server can send each shape, and
  * the serializer must give one order for it. Do not repair these files.
  *
+ * The serializer compares two texts by their code units, and that order
+ * is not the order of the code points. The two orders differ only where
+ * one text holds a character above U+FFFF at the first position where the
+ * two texts differ. The input `code-unit-order.ics` holds two pairs of
+ * that shape. In each pair, one text holds a character above U+FFFF at
+ * that position, and the other text holds a character between U+E000 and
+ * U+FFFF. The order of the code units puts the text with the character
+ * above U+FFFF first. The order of the code points puts that text last.
+ * Keep both characters as they are. A plain letter in the place of one of
+ * them makes the two orders agree, and the pair then pins no rule.
+ *
  * The serializer writes one text for each input. Those texts are
  * committed here. A test compares each committed text with the text that
  * the serializer writes now.
