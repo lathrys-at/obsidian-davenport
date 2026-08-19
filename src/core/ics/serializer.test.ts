@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { icsCorpus } from '../../../test/harness/fixtures/ics-corpus';
 import { octetLength } from '../../../test/harness/ics-octets';
 import { timePoisonHolds } from '../../../test/harness/sweeps/time-poison';
-import { canonicalIcs } from './canon';
+import { serializeIcs } from './serializer';
 import { ICS_FOLD_OCTET_LIMIT } from './fold';
 import { parseIcs } from './parse';
 import { stringifyJCalComponent } from './jcal';
@@ -20,14 +20,14 @@ function calendar(...lines: string[]): string {
 
 /** A calendar that holds one event, and the event holds the given lines. */
 function event(...lines: string[]): string {
-	return calendar('BEGIN:VEVENT', 'UID:canon', ...lines, 'END:VEVENT');
+	return calendar('BEGIN:VEVENT', 'UID:one', ...lines, 'END:VEVENT');
 }
 
-function canon(text: string): string {
-	const result = canonicalIcs(text);
+function serialize(text: string): string {
+	const result = serializeIcs(text);
 	if (!result.ok) {
 		throw new Error(
-			`the canon refused the text: ${result.failure.message}`,
+			`the serializer refused the text: ${result.failure.message}`,
 		);
 	}
 	return result.text;
@@ -220,20 +220,20 @@ const MUTATIONS: readonly [string, (text: string) => string][] = [
 const COMPOSED = (text: string): string =>
 	MUTATIONS.reduce((carried, [, mutate]) => mutate(carried), text);
 
-describe('the canon and the corpus', () => {
+describe('the serializer and the corpus', () => {
 	it.each(icsCorpus())('writes one text for $id', (fixture) => {
-		expect(canonicalIcs(fixture.content).ok).toBe(true);
+		expect(serializeIcs(fixture.content).ok).toBe(true);
 	});
 
 	it.each(icsCorpus())('writes $id again unchanged', (fixture) => {
-		const once = canon(fixture.content);
-		expect(canon(once)).toBe(once);
+		const once = serialize(fixture.content);
+		expect(serialize(once)).toBe(once);
 	});
 
 	it.each(icsCorpus())(
 		'ends the text of $id with one carriage return and line feed',
 		(fixture) => {
-			const text = canon(fixture.content);
+			const text = serialize(fixture.content);
 			expect(text.endsWith('END:VCALENDAR\r\n')).toBe(true);
 			expect(text.endsWith('\r\n\r\n')).toBe(false);
 		},
@@ -242,7 +242,7 @@ describe('the canon and the corpus', () => {
 	it.each(icsCorpus())(
 		'holds every physical line of $id inside the octet limit',
 		(fixture) => {
-			const over = canon(fixture.content)
+			const over = serialize(fixture.content)
 				.split('\r\n')
 				.filter((line) => octetLength(line) > ICS_FOLD_OCTET_LIMIT);
 			expect(over).toEqual([]);
@@ -252,7 +252,7 @@ describe('the canon and the corpus', () => {
 	it('folds one line of the corpus to exactly the octet limit', () => {
 		const widest = Math.max(
 			...icsCorpus().flatMap((fixture) =>
-				canon(fixture.content)
+				serialize(fixture.content)
 					.split('\r\n')
 					.map((line) => octetLength(line)),
 			),
@@ -263,7 +263,7 @@ describe('the canon and the corpus', () => {
 	it.each(icsCorpus())(
 		'gives the same text again when the folds of $id are joined and made again',
 		(fixture) => {
-			const text = canon(fixture.content);
+			const text = serialize(fixture.content);
 			expect(foldedAt(logical(text), ICS_FOLD_OCTET_LIMIT)).toBe(text);
 		},
 	);
@@ -271,17 +271,17 @@ describe('the canon and the corpus', () => {
 	it.each(icsCorpus())(
 		'writes a text for $id that the boundary reads',
 		(fixture) => {
-			expect(parseIcs(canon(fixture.content)).ok).toBe(true);
+			expect(parseIcs(serialize(fixture.content)).ok).toBe(true);
 		},
 	);
 });
 
-describe('the canon and the mutations that keep the meaning', () => {
+describe('the serializer and the mutations that keep the meaning', () => {
 	for (const [name, mutate] of MUTATIONS) {
 		it.each(icsCorpus())(`${name}: $id gives one text`, (fixture) => {
 			const mutated = mutate(fixture.content);
 			expect(mutated).not.toBe(fixture.content);
-			expect(canon(mutated)).toBe(canon(fixture.content));
+			expect(serialize(mutated)).toBe(serialize(fixture.content));
 		});
 	}
 
@@ -290,52 +290,52 @@ describe('the canon and the mutations that keep the meaning', () => {
 		(fixture) => {
 			const mutated = COMPOSED(fixture.content);
 			expect(mutated).not.toBe(fixture.content);
-			expect(canon(mutated)).toBe(canon(fixture.content));
+			expect(serialize(mutated)).toBe(serialize(fixture.content));
 		},
 	);
 
 	it.each(icsCorpus())(
 		'absorbs the serialization of the library for $id',
 		(fixture) => {
-			expect(canon(libraryText(fixture.content))).toBe(
-				canon(fixture.content),
+			expect(serialize(libraryText(fixture.content))).toBe(
+				serialize(fixture.content),
 			);
 		},
 	);
 });
 
-describe('the canon and the clock', () => {
+describe('the serializer and the clock', () => {
 	it('writes the corpus while the ambient time functions throw', () => {
 		expect(timePoisonHolds()).toBe(true);
 		for (const fixture of icsCorpus()) {
-			expect(canon(fixture.content).length).toBeGreaterThan(0);
+			expect(serialize(fixture.content).length).toBeGreaterThan(0);
 		}
 	});
 });
 
-describe('the order that the canon writes', () => {
+describe('the order that the serializer writes', () => {
 	it('puts the properties of a component in the order of their names', () => {
-		expect(logical(canon(event('SUMMARY:b', 'LOCATION:a')))).toEqual([
+		expect(logical(serialize(event('SUMMARY:b', 'LOCATION:a')))).toEqual([
 			'BEGIN:VCALENDAR',
 			'PRODID:-//Davenport//canonical serializer//EN',
 			'VERSION:2.0',
 			'BEGIN:VEVENT',
 			'LOCATION:a',
 			'SUMMARY:b',
-			'UID:canon',
+			'UID:one',
 			'END:VEVENT',
 			'END:VCALENDAR',
 		]);
 	});
 
 	it('puts two properties of one name in the order of their lines', () => {
-		const lines = logical(canon(event('COMMENT:b', 'COMMENT:a')));
+		const lines = logical(serialize(event('COMMENT:b', 'COMMENT:a')));
 		expect(lines.slice(4, 6)).toEqual(['COMMENT:a', 'COMMENT:b']);
 	});
 
 	it('puts the parameters of a property in the order of their names', () => {
 		const lines = logical(
-			canon(
+			serialize(
 				event(
 					'ATTENDEE;ROLE=REQ-PARTICIPANT;CN=Zoe;PARTSTAT=ACCEPTED:mailto:z@example.com',
 				),
@@ -348,7 +348,7 @@ describe('the order that the canon writes', () => {
 
 	it('puts the frequency of a repeat rule first', () => {
 		const lines = logical(
-			canon(
+			serialize(
 				event('RRULE:BYDAY=MO;COUNT=5;FREQ=WEEKLY;WKST=SU;INTERVAL=2'),
 			),
 		);
@@ -359,7 +359,7 @@ describe('the order that the canon writes', () => {
 
 	it('puts a part that no standard names after the parts that a standard names', () => {
 		const lines = logical(
-			canon(
+			serialize(
 				event(
 					'RRULE:SKIP=FORWARD;BYMONTHDAY=30;RSCALE=CHINESE;FREQ=MONTHLY',
 				),
@@ -371,10 +371,10 @@ describe('the order that the canon writes', () => {
 	});
 
 	it('puts a timezone definition before the event that names it', () => {
-		const text = canon(
+		const text = serialize(
 			calendar(
 				'BEGIN:VEVENT',
-				'UID:canon',
+				'UID:one',
 				'DTSTART;TZID=Etc/GMT+5:20260302T090000',
 				'END:VEVENT',
 				'BEGIN:VTIMEZONE',
@@ -394,20 +394,20 @@ describe('the order that the canon writes', () => {
 	});
 
 	it('puts a master before its overrides and orders the overrides by their recurrence id', () => {
-		const text = canon(
+		const text = serialize(
 			calendar(
 				'BEGIN:VEVENT',
-				'UID:canon',
+				'UID:one',
 				'RECURRENCE-ID:20260316T140000Z',
 				'DTSTART:20260316T140000Z',
 				'END:VEVENT',
 				'BEGIN:VEVENT',
-				'UID:canon',
+				'UID:one',
 				'RECURRENCE-ID;RANGE=THISANDFUTURE:20260309T140000Z',
 				'DTSTART:20260309T140000Z',
 				'END:VEVENT',
 				'BEGIN:VEVENT',
-				'UID:canon',
+				'UID:one',
 				'DTSTART:20260302T140000Z',
 				'RRULE:FREQ=WEEKLY',
 				'END:VEVENT',
@@ -425,10 +425,10 @@ describe('the order that the canon writes', () => {
 	});
 
 	it('puts an alarm after the properties of its event and before an unknown component', () => {
-		const text = canon(
+		const text = serialize(
 			calendar(
 				'BEGIN:VEVENT',
-				'UID:canon',
+				'UID:one',
 				'BEGIN:X-VENDOR-BLOCK',
 				'X-VENDOR-KEY:1',
 				'END:X-VENDOR-BLOCK',
@@ -453,13 +453,13 @@ describe('the order that the canon writes', () => {
  * them are the work on the lines: the width of a fold, a fold that
  * nothing needs, and the line break at the end of a line.
  */
-describe('the changes that the parse boundary leaves to the canon', () => {
+describe('the changes that the parse boundary leaves to the serializer', () => {
 	it('moves a property that stands after a component in front of it', () => {
 		const lines = logical(
-			canon(
+			serialize(
 				calendar(
 					'BEGIN:VEVENT',
-					'UID:canon',
+					'UID:one',
 					'BEGIN:VALARM',
 					'ACTION:DISPLAY',
 					'DESCRIPTION:ring',
@@ -477,10 +477,10 @@ describe('the changes that the parse boundary leaves to the canon', () => {
 
 	it('moves a property that stands between two components in front of both', () => {
 		const lines = logical(
-			canon(
+			serialize(
 				calendar(
 					'BEGIN:VEVENT',
-					'UID:canon',
+					'UID:one',
 					'BEGIN:VALARM',
 					'ACTION:DISPLAY',
 					'DESCRIPTION:first',
@@ -503,29 +503,29 @@ describe('the changes that the parse boundary leaves to the canon', () => {
 
 	it('folds a line that is longer than the limit', () => {
 		const summary = `SUMMARY:${'w'.repeat(200)}`;
-		const physical = canon(event(summary)).split('\r\n');
+		const physical = serialize(event(summary)).split('\r\n');
 		expect(physical).toContain(`SUMMARY:${'w'.repeat(67)}`);
 		expect(physical).not.toContain(summary);
 	});
 
 	it('joins a fold that the text makes where no fold is necessary', () => {
 		const text = calendar().replace('VERSION:2.0', 'VERSI\r\n ON:2.0');
-		expect(logical(canon(text))).toContain('VERSION:2.0');
+		expect(logical(serialize(text))).toContain('VERSION:2.0');
 	});
 
 	it('ends every line with a carriage return and a line feed', () => {
 		const text = [...HEAD, 'END:VCALENDAR', ''].join('\n');
-		const canonical = canon(text);
-		expect(canonical.includes('\r\n')).toBe(true);
-		expect(canonical.replaceAll('\r\n', '').includes('\n')).toBe(false);
+		const written = serialize(text);
+		expect(written.includes('\r\n')).toBe(true);
+		expect(written.replaceAll('\r\n', '').includes('\n')).toBe(false);
 	});
 });
 
 /**
- * Each pair holds one meaning in two spellings that the canon keeps
- * apart. The canon collapses the order of the lines, the folds, the case
- * of a name, and a value type that repeats the default one. It collapses
- * nothing else.
+ * Each pair holds one meaning in two spellings that the serializer keeps
+ * apart. The serializer collapses the order of the lines, the folds, the
+ * case of a name, and a value type that repeats the default one. The
+ * serializer collapses nothing else.
  */
 const KEPT_APART: readonly [string, string, string][] = [
 	[
@@ -555,15 +555,15 @@ const KEPT_APART: readonly [string, string, string][] = [
 	],
 ];
 
-describe('what the canon keeps apart', () => {
+describe('what the serializer keeps apart', () => {
 	it.each(KEPT_APART)('keeps %s', (_name, left, right) => {
-		expect(canon(left)).not.toBe(canon(right));
+		expect(serialize(left)).not.toBe(serialize(right));
 	});
 });
 
-describe('the canon and a text that the boundary refuses', () => {
+describe('the serializer and a text that the boundary refuses', () => {
 	it('gives the failure of the boundary back', () => {
-		const result = canonicalIcs('BEGIN:VCALENDAR\r\nVERSION:2.0\r\n');
+		const result = serializeIcs('BEGIN:VCALENDAR\r\nVERSION:2.0\r\n');
 		expect(result.ok).toBe(false);
 		if (!result.ok) {
 			expect(result.failure.problem).toBe('unreadable');
@@ -571,7 +571,7 @@ describe('the canon and a text that the boundary refuses', () => {
 	});
 
 	it('refuses a text that holds two calendars', () => {
-		const result = canonicalIcs(`${calendar()}${calendar()}`);
+		const result = serializeIcs(`${calendar()}${calendar()}`);
 		expect(result.ok).toBe(false);
 		if (!result.ok) {
 			expect(result.failure.problem).toBe('many-calendars');

@@ -1,24 +1,24 @@
 /**
  * The golden corpus of the canonical serializer.
  *
- * The canon writes one text for each file of the adversarial ICS corpus.
+ * The serializer writes one text for each file of the adversarial ICS corpus.
  * Those texts are committed here. A test compares each committed text
- * with the text that the canon writes now.
+ * with the text that the serializer writes now.
  *
  * Each set of golden files sits in a directory. The name of the directory
  * carries the value of the core component of the normalization stamp. The
- * directory `core-1/` therefore holds the bytes that the canon wrote
+ * directory `core-1/` therefore holds the bytes that the serializer wrote
  * while that component was 1. The layout ties a change of the bytes to a
  * change of the component in three ways.
  *
- * - A change to the canon that does not raise the component reads the
- *   directory of the old value. The bytes in that directory differ from
- *   the new bytes, and the test fails and names the component.
+ * - A change to the serializer that does not raise the component reads
+ *   the directory of the old value. The bytes in that directory differ
+ *   from the new bytes, and the test fails and names the component.
  * - A change that raises the component finds no directory for the new
  *   value. The test then names the directory to write.
  * - A set that an earlier version wrote stays in the tree. The closure
- *   test reads every set, so an old set keeps its work after the canon
- *   moves past it.
+ *   test reads every set, so an old set keeps its work after the
+ *   serializer moves past it.
  *
  * The environment variable `DAVENPORT_WRITE_ICS_GOLDENS` makes the test
  * write the set of the current component. The test then fails, so a run
@@ -50,7 +50,7 @@ export interface IcsGoldenEntry {
 	readonly text: string;
 }
 
-const GOLDEN_ROOT = join(import.meta.dirname, 'ics-canon');
+const GOLDEN_ROOT = join(import.meta.dirname, 'ics-serializer');
 const SET_PREFIX = 'core-';
 const EXTENSION = '.ics';
 const WRITE_VARIABLE = 'DAVENPORT_WRITE_ICS_GOLDENS';

@@ -10,9 +10,9 @@
  * the library goes one octet past the limit. The library counts 75 octets
  * of content, and then it puts the fold space in front of those octets. A
  * physical line of the library therefore holds 76 octets. The canonical
- * text must stay inside the limit. The canon therefore asks the library
- * for a line that the library does not fold, and the canon folds that
- * line with the function below.
+ * text must stay inside the limit. The serializer therefore asks the
+ * library for a line that the library does not fold, and the serializer
+ * folds that line with the function below.
  *
  * The limit counts octets and not characters, because UTF-8 writes some
  * characters in more than one octet. A fold falls between two whole

@@ -39,7 +39,7 @@ describe('the count of octets', () => {
 	});
 });
 
-describe('the fold of the canon', () => {
+describe('the fold of the serializer', () => {
 	it('gives one line back when the line is inside the limit', () => {
 		expect(foldIcsLine('SUMMARY:short')).toEqual(['SUMMARY:short']);
 	});

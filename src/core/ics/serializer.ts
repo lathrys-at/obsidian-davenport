@@ -9,8 +9,8 @@
  * that output is the base for the comparison of three versions and the
  * material for a round-trip patch.
  *
- * The canon refuses every text that the parse boundary refuses. It never
- * repairs a text.
+ * The serializer refuses every text that the parse boundary refuses. The
+ * serializer never repairs a text.
  *
  * The work divides between the parse library and this module.
  *
@@ -41,13 +41,17 @@
  *   first. The other parts follow in the order that the format lists
  *   them. A part that no standard names comes after all of them, in the
  *   order of the names of those parts.
- * - A comparison of two names, or of two texts, reads the characters of
- *   the two strings. The comparison stops at the first character that
- *   differs. No comparison asks the device for its language settings,
+ * - A comparison of two names, or of two texts, reads the code units of
+ *   the two strings. The comparison stops at the first code unit that
+ *   differs. The order is therefore not the order of the code points: a
+ *   character above U+FFFF stands below some characters below U+FFFF,
+ *   because the first code unit of such a character is a surrogate. Every
+ *   device applies the same rule, so the bytes stay the same on every
+ *   device. No comparison asks the device for its language settings,
  *   because the answer differs from device to device.
  *
- * The canon leaves four equivalences alone. Each item below names two
- * texts that hold one meaning and that keep different bytes.
+ * The serializer leaves four equivalences alone. Each item below names
+ * two texts that hold one meaning and that keep different bytes.
  *
  * - The order of the values inside one property. `CATEGORIES:b,a` keeps
  *   the order that the server sent, because the other clients of the user
@@ -62,8 +66,8 @@
  *   between the two forms belongs to the model of an event, and not to
  *   this module.
  *
- * The canon reads no clock, and it reads no other value from outside its
- * own input. The same text always gives the same bytes.
+ * The serializer reads no clock, and the serializer reads no other value
+ * from outside its own input. The same text always gives the same bytes.
  */
 
 import { foldedIcsText } from './fold';
@@ -79,7 +83,7 @@ import type { IcsParseFailure } from './parse';
 import { parseIcs } from './parse';
 
 /** What a canonical serialization gives back. */
-export type IcsCanonResult =
+export type IcsSerializeResult =
 	| { readonly ok: true; readonly text: string }
 	| { readonly ok: false; readonly failure: IcsParseFailure };
 
@@ -87,16 +91,16 @@ export type IcsCanonResult =
  * The canonical text for the given iCalendar text, or the refusal of the
  * parse boundary.
  */
-export function canonicalIcs(text: string): IcsCanonResult {
+export function serializeIcs(text: string): IcsSerializeResult {
 	const parsed = parseIcs(text);
 	return parsed.ok
-		? { ok: true, text: canonicalIcsOf(parsed.calendar) }
+		? { ok: true, text: serializeCalendar(parsed.calendar) }
 		: { ok: false, failure: parsed.failure };
 }
 
 /** The canonical text for a calendar that the boundary already read. */
-export function canonicalIcsOf(calendar: JCalComponent): string {
-	return foldedIcsText(canonicalComponent(calendar).lines);
+export function serializeCalendar(calendar: JCalComponent): string {
+	return foldedIcsText(orderedComponent(calendar).lines);
 }
 
 /**
@@ -147,13 +151,13 @@ interface OrderedComponent {
 	readonly lines: readonly string[];
 }
 
-function canonicalComponent(component: JCalComponent): OrderedComponent {
+function orderedComponent(component: JCalComponent): OrderedComponent {
 	const [rawName, properties, components] = component;
 	const name = rawName.toUpperCase();
 	const lines = [
 		`BEGIN:${name}`,
-		...canonicalProperties(properties),
-		...canonicalComponents(components),
+		...orderedPropertyLines(properties),
+		...orderedComponentLines(components),
 		`END:${name}`,
 	];
 	return {
@@ -164,7 +168,7 @@ function canonicalComponent(component: JCalComponent): OrderedComponent {
 	};
 }
 
-function canonicalProperties(
+function orderedPropertyLines(
 	properties: readonly JCalProperty[],
 ): readonly string[] {
 	return properties
@@ -183,11 +187,11 @@ function canonicalProperties(
 		.map((property) => property.line);
 }
 
-function canonicalComponents(
+function orderedComponentLines(
 	components: readonly JCalComponent[],
 ): readonly string[] {
 	return components
-		.map(canonicalComponent)
+		.map(orderedComponent)
 		.sort(
 			(left, right) =>
 				left.rank - right.rank ||
@@ -263,9 +267,9 @@ function rankOf(name: string, properties: readonly JCalProperty[]): number {
 }
 
 /**
- * The recurrence id of an override, as the canon writes that value. The
- * text leaves out the parameters of the property, so that two overrides
- * with different parameters still take the order of their ids.
+ * The recurrence id of an override, as the serializer writes that value.
+ * The text leaves out the parameters of the property, so that two
+ * overrides with different parameters still take the order of their ids.
  */
 function recurrenceIdOf(properties: readonly JCalProperty[]): string {
 	const property = recurrenceIdProperty(properties);
