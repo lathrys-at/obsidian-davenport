@@ -1,12 +1,12 @@
 /**
  * The normalization stamp of a record.
  *
- * The bytes of a record follow from two things only: the state on the
- * server, and the intent that the vault holds. The same two inputs always
- * give the same bytes. The code that writes those bytes changes from one
- * plugin version to the next, so a record states which version of that
- * code wrote it. The statement is the stamp. A device reads the stamp
- * before it compares bytes.
+ * The bytes of a record follow from three things: the bytes that the
+ * server sent, the intent that the vault holds, and the value of each
+ * component of this stamp that the record carries. The code that writes
+ * those bytes changes from one plugin version to the next, so a record
+ * states which version of that code wrote it. The statement is the stamp.
+ * A device reads the stamp before it compares bytes.
  *
  * The stamp has two components. Each component is one whole number, and a
  * component never decreases from one plugin version to the next.
@@ -36,16 +36,17 @@
  * 3. The record holds the date of an instance that the plugin computed in
  *    the zone of the event.
  *
- * This module reads two of the three reaches today, and one of them
- * waits.
+ * This module reads reach 2 out of the calendar of the record. The caller
+ * states reach 1 and reach 3, because the calendar holds neither of them.
  *
- * - Reach 1 waits. No code in the plugin writes a timezone definition
- *   yet, so no record can hold one. A definition that the plugin wrote
- *   and a definition that the server sent also look the same in the
- *   bytes, and a rule that reads the bytes cannot tell the two apart. The
- *   code that starts to write definitions must give each definition a
- *   mark that a reader can see. That same change must make this module
- *   read the mark. Until then this module answers no for reach 1.
+ * - Reach 1 comes from the caller, which names each timezone whose
+ *   definition the plugin wrote into the record. A definition that the
+ *   plugin wrote and a definition that the server sent look the same in
+ *   the bytes, and a rule that reads the bytes alone cannot tell the two
+ *   apart. The code that writes a definition from the bundled table knows
+ *   which definitions it wrote, and that code gives this module the
+ *   names. No code in the plugin writes a definition yet, so every caller
+ *   names an empty list today.
  * - Reaches 2 and 3 read the shape of the record, and they do not read
  *   the origin of the value. The shape is the wider of the two readings,
  *   and the shape is also the correct reading. A device computes the end
@@ -109,6 +110,12 @@ export const NORMALIZATION_VERSIONS: NormalizationVersions = {
 export interface StampSubject {
 	/** The calendar that the base ICS of the record holds. */
 	readonly calendar: JCalComponent;
+	/**
+	 * The name of each timezone whose definition the plugin wrote into
+	 * this record. The code that writes a definition from the bundled
+	 * table states these names, and every other caller states none.
+	 */
+	readonly writtenZoneIds: readonly string[];
 	/** The dates that the materialization map of the record holds. */
 	readonly instanceDates: readonly string[];
 }
@@ -126,7 +133,7 @@ export interface TimezoneReaches {
 /** The reaches of the bundled table that the record shows. */
 export function timezoneReaches(subject: StampSubject): TimezoneReaches {
 	return {
-		writtenZone: false,
+		writtenZone: subject.writtenZoneIds.length > 0,
 		universalTime: holdsSeriesEndInAZone(subject.calendar),
 		instanceDate: subject.instanceDates.length > 0,
 	};

@@ -33,8 +33,9 @@ function calendarOf(...lines: string[]): JCalComponent {
 function subject(
 	calendar: JCalComponent,
 	instanceDates: readonly string[] = [],
+	writtenZoneIds: readonly string[] = [],
 ): StampSubject {
-	return { calendar, instanceDates };
+	return { calendar, writtenZoneIds, instanceDates };
 }
 
 const SERIES_IN_A_ZONE = calendarOf(
@@ -126,10 +127,20 @@ describe('the carriage of the timezone component', () => {
 		).toBe(true);
 	});
 
-	it('reads no written zone, because nothing writes one yet', () => {
+	it('reads no written zone when the caller names none', () => {
 		expect(timezoneReaches(subject(SERIES_IN_A_ZONE)).writtenZone).toBe(
 			false,
 		);
+	});
+
+	it('reads a written zone when the caller names one', () => {
+		const written = subject(ONE_EVENT, [], ['America/New_York']);
+		expect(timezoneReaches(written).writtenZone).toBe(true);
+		expect(carriesTimezoneComponent(written)).toBe(true);
+		expect(normalizationStamp(written)).toEqual({
+			core: CORE_NORMALIZATION_VERSION,
+			timezone: TIMEZONE_NORMALIZATION_VERSION,
+		});
 	});
 
 	it('carries no timezone component for any file of the corpus', () => {
