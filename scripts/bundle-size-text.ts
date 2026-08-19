@@ -2,9 +2,10 @@
  * The wording of everything that the bundle-size check prints. The check
  * prints two kinds of line. The report says what the build weighs. The
  * report also says where the weight comes from, and what moved against the
- * baseline. The failure names each output file that the build no longer
- * makes. The failure also says which size went past the step, and it names
- * the modules that grew.
+ * baseline. The report names each output file that the check does not count,
+ * and gives the count of bytes that no total holds. The failure names each
+ * output file that the build no longer makes. The failure also says which
+ * size went past the step, and it names the modules that grew.
  *
  * Each line that states a fact carries the name of the check, so that the
  * line stays legible in a log that holds the output of many steps. A line
@@ -18,6 +19,7 @@ import type {
 	Move,
 	OutputMove,
 	Report,
+	SkippedOutput,
 } from './bundle-size-core.ts';
 import { OVERHEAD } from './bundle-size-core.ts';
 
@@ -28,6 +30,7 @@ const TABLE_ROWS = 15;
 export function reportLines(
 	report: Report,
 	comparison: Comparison,
+	skipped: readonly SkippedOutput[],
 ): readonly string[] {
 	return [
 		say(
@@ -40,8 +43,31 @@ export function reportLines(
 			`the step is ${bytes(comparison.raw.step)} raw and ${bytes(comparison.compressed.step)} compressed. The check fails on growth past the step, and on an output file that the build no longer makes.`,
 		),
 		...outputLines(comparison),
+		...skippedLines(skipped),
 		...moduleLines(report, comparison),
 	];
+}
+
+/**
+ * The lines that name each output file that the check does not count. Each
+ * line gives the count of bytes that stays outside the totals, or it says
+ * that the metafile gives no such count. These lines are absent when the
+ * build makes no file of that kind.
+ */
+function skippedLines(skipped: readonly SkippedOutput[]): readonly string[] {
+	return skipped.map((output) =>
+		say(
+			`the check does not count ${output.path}, because a release carries no source map. ${skipSize(output)}`,
+		),
+	);
+}
+
+/** The sentence that gives the bytes of a file that the check does not count. */
+function skipSize(output: SkippedOutput): string {
+	if (output.bytes === undefined) {
+		return 'The metafile gives that file no count of bytes.';
+	}
+	return `That file holds ${bytes(output.bytes)}, and no total in this report holds those bytes.`;
 }
 
 /** The lines that name each output file that the build makes. */

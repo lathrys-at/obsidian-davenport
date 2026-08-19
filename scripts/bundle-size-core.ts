@@ -24,6 +24,11 @@
  * `stepFor` states that step in bytes. The second is an output file that
  * the baseline holds and the build no longer makes.
  *
+ * The check does not count a source map, because a release carries no source
+ * map. Such a file stays outside every total, and it fails no rule. The
+ * report names that file and gives its count of bytes. Therefore the report
+ * shows the bytes that the totals do not hold.
+ *
  * A build that gives this module nothing to measure is a fault. A metafile
  * that does not describe the files on disk is a fault. A baseline whose own
  * numbers disagree with each other is a fault. The check fails on each of
@@ -76,14 +81,33 @@ export interface OutputMeta {
 	readonly modules: readonly ModuleShare[];
 }
 
+/**
+ * One output file that the check does not count. The count of bytes is the
+ * count that the metafile gives for that file. This count is absent when the
+ * metafile gives no count of bytes. The check reads no other part of that
+ * entry.
+ */
+export interface SkippedOutput {
+	readonly path: string;
+	readonly bytes: number | undefined;
+}
+
 /** What the metafile of the build says about the output files. */
 export interface Metafile {
 	readonly outputs: readonly OutputMeta[];
+	/**
+	 * The output files that the check does not count. The report names each
+	 * one and its count of bytes. No total holds those bytes, and the
+	 * comparison against the baseline never reads this list.
+	 */
+	readonly skipped: readonly SkippedOutput[];
 }
 
 /**
  * The output files that the metafile describes. A source map is not an
- * output file here, because a release carries no source map.
+ * output file here, because a release carries no source map. Each source map
+ * goes into the skipped list instead. The report names each file of that
+ * list.
  */
 export function readMetafile(text: string): Reading<Metafile> {
 	const parsed = parseJson(text);
@@ -98,8 +122,13 @@ export function readMetafile(text: string): Reading<Metafile> {
 		return { ok: false, reason: 'the metafile has no outputs object' };
 	}
 	const found: OutputMeta[] = [];
+	const skipped: SkippedOutput[] = [];
 	for (const [path, value] of Object.entries(outputs)) {
 		if (path.endsWith('.map')) {
+			skipped.push({
+				path,
+				bytes: isRecord(value) ? countOf(value.bytes) : undefined,
+			});
 			continue;
 		}
 		const output = readOutput(path, value);
@@ -111,7 +140,7 @@ export function readMetafile(text: string): Reading<Metafile> {
 	if (found.length === 0) {
 		return { ok: false, reason: 'the metafile declares no output file' };
 	}
-	return { ok: true, value: { outputs: found } };
+	return { ok: true, value: { outputs: found, skipped } };
 }
 
 function readOutput(path: string, value: unknown): Reading<OutputMeta> {
