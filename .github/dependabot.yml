@@ -1,0 +1,32 @@
+# Dependabot opens the pull requests that update the dependencies of
+# this repository. Each entry below collects every update of one
+# ecosystem into one group. Dependabot opens one pull request for each
+# group. One review therefore covers a whole batch. Each pull request
+# runs the same ci-ok check as any other change.
+version: 2
+updates:
+    # This entry covers package.json and package-lock.json in the root
+    # of the repository.
+    - package-ecosystem: npm
+      directory: '/'
+      schedule:
+          interval: weekly
+      groups:
+          npm:
+              patterns:
+                  - '*'
+      commit-message:
+          prefix: chore
+          prefix-development: chore
+
+    # This entry covers the workflow files in .github/workflows.
+    - package-ecosystem: github-actions
+      directory: '/'
+      schedule:
+          interval: weekly
+      groups:
+          actions:
+              patterns:
+                  - '*'
+      commit-message:
+          prefix: chore
