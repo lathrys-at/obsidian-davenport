@@ -176,7 +176,10 @@ Each issue gets one branch, and each branch gets one PR. The PR body contains
 squash-merge only, and linear history. Open PRs as drafts. The lead marks a
 PR ready after the review findings are addressed. Then the lead runs
 `gh pr merge --squash --auto`. The single required check `ci-ok` gates the
-merge. Never auto-merge a draft.
+merge. Never auto-merge a draft. Three rules do not apply to an automated
+dependency-update pull request: the branch name, the `Fixes #N` line, and the
+draft state. Every other rule of this section applies to such a pull request,
+and the required check `ci-ok` gates its merge.
 
 The closing-keyword parser of GitHub ignores negation: the text "does not
 close #N" still closes #N when the squash commit lands. Keep closing keywords
