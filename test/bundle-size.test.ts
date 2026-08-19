@@ -7,6 +7,8 @@
  * - whether the numbers of a baseline agree with each other;
  * - how much growth past the baseline the check accepts;
  * - which output files the check requires the build to keep making;
+ * - which output files the check does not count, and what the report says
+ *   about them;
  * - what the comparison says, and the wording that the check prints;
  * - what the check does when the metafile or the baseline is absent.
  *
@@ -138,6 +140,7 @@ describe('the metafile reader', () => {
 						modules: [{ name: 'src/main.ts', bytes: 100 }],
 					},
 				],
+				skipped: [],
 			},
 		});
 	});
@@ -160,6 +163,23 @@ describe('the metafile reader', () => {
 		]);
 		expect(metafile.outputs.map((output) => output.path)).toStrictEqual([
 			'main.js',
+		]);
+		expect(metafile.skipped).toStrictEqual([
+			{ path: 'main.js.map', bytes: 90_000 },
+		]);
+	});
+
+	it('holds a source map that the metafile gives no size', () => {
+		const metafile = taken(
+			readMetafile(
+				'{"outputs":{"main.js":{"bytes":10,"inputs":{}},"main.js.map":{}}}',
+			),
+		);
+		expect(metafile.outputs.map((output) => output.path)).toStrictEqual([
+			'main.js',
+		]);
+		expect(metafile.skipped).toStrictEqual([
+			{ path: 'main.js.map', bytes: undefined },
 		]);
 	});
 
@@ -286,6 +306,19 @@ describe('the measurement of a build', () => {
 			'c.ts',
 			'a.ts',
 			'b.ts',
+		]);
+	});
+
+	it('counts no byte of a source map in any total', () => {
+		const built = metafileOf([
+			{ path: 'main.js', bytes: 900, modules: { 'src/main.ts': 100 } },
+			{ path: 'main.js.map', bytes: 90_000, entry: false },
+		]);
+		const report = taken(measure(built, [measurementOf('main.js', 900)]));
+		expect(report.raw).toBe(900);
+		expect(report.compressed).toBe(300);
+		expect(report.outputs.map((output) => output.path)).toStrictEqual([
+			'main.js',
 		]);
 	});
 
@@ -501,7 +534,7 @@ describe('the comparison against the baseline', () => {
 		expect(comparison.outputs[1]?.was).toBeUndefined();
 		expect(comparison.gone).toStrictEqual([]);
 		expect(comparison.fails).toBe(false);
-		expect(reportLines(split, comparison).join('\n')).toContain(
+		expect(reportLines(split, comparison, []).join('\n')).toContain(
 			'chunk-A.js  chunk  300 bytes raw  100 bytes compressed  the baseline does not hold this file',
 		);
 	});
@@ -526,7 +559,9 @@ describe('the wording of the check', () => {
 	]);
 
 	it('says the size, the baseline, the step and each output file', () => {
-		const lines = reportLines(report, compare(report, report)).join('\n');
+		const lines = reportLines(report, compare(report, report), []).join(
+			'\n',
+		);
 		expect(lines).toContain('900 bytes raw and 300 bytes compressed');
 		expect(lines).toContain('50000 bytes (50.0 kB) raw');
 		expect(lines).toContain('main.js  entry');
@@ -539,9 +574,34 @@ describe('the wording of the check', () => {
 			modules[`m${String(index).padStart(2, '0')}.ts`] = 10;
 		}
 		const many = reportOf([{ path: 'main.js', bytes: 900, modules }]);
-		const lines = reportLines(many, compare(many, many)).join('\n');
+		const lines = reportLines(many, compare(many, many), []).join('\n');
 		expect(lines).toContain('the other 5 modules hold 50 bytes');
 		expect(lines).toContain('(build overhead)  700 bytes');
+	});
+
+	it('names an output file that the check does not count', () => {
+		const lines = reportLines(report, compare(report, report), [
+			{ path: 'main.js.map', bytes: 90_000 },
+		]).join('\n');
+		expect(lines).toContain(
+			'bundle size: the check does not count main.js.map, because a release carries no source map. That file holds 90000 bytes (90.0 kB), and no total in this report holds those bytes.',
+		);
+	});
+
+	it('says that the metafile gives such a file no count of bytes', () => {
+		const lines = reportLines(report, compare(report, report), [
+			{ path: 'main.js.map', bytes: undefined },
+		]).join('\n');
+		expect(lines).toContain(
+			'the check does not count main.js.map, because a release carries no source map. The metafile gives that file no count of bytes.',
+		);
+	});
+
+	it('says nothing about a skip when the build skips nothing', () => {
+		const lines = reportLines(report, compare(report, report), []).join(
+			'\n',
+		);
+		expect(lines).not.toContain('does not count');
 	});
 
 	it('says nothing when the check passes', () => {
@@ -769,6 +829,33 @@ describe('the check as a process', () => {
 		expect(result.output).toContain(
 			'the build no longer produces merged-chunk.js',
 		);
+	});
+
+	it('adds one line when the build makes a source map, and passes', () => {
+		const outputs = [
+			{ path: 'mapped.js', bytes: 900, modules: { 'src/main.ts': 100 } },
+		];
+		const baseline = record('mapped', reportOf(outputs));
+		const plain = run(build('mapped', outputs), baseline);
+		const mapped = run(
+			build('mapped-map', [
+				...outputs,
+				{ path: 'mapped.js.map', bytes: 4000, entry: false },
+			]),
+			baseline,
+		);
+		expect(plain.status).toBe(0);
+		expect(mapped.status).toBe(0);
+		expect(plain.output).not.toContain('does not count');
+		expect(mapped.output).toContain(
+			'bundle size: the check does not count mapped.js.map, because a release carries no source map. That file holds 4000 bytes (4.0 kB), and no total in this report holds those bytes.',
+		);
+		// The two runs differ by the skip line only. No total moved.
+		const rest = mapped.output
+			.split('\n')
+			.filter((line) => !line.includes('does not count'))
+			.join('\n');
+		expect(rest).toBe(plain.output);
 	});
 
 	it('passes on a build that is smaller than its baseline', () => {

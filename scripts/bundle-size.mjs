@@ -5,6 +5,11 @@
  * the most bytes. A module under node_modules counts against the package
  * that holds it. Therefore the report says what each dependency costs.
  *
+ * The check does not count a source map, because a release carries no source
+ * map. The report names each source map that the build makes. The report
+ * also gives the count of bytes that no total holds. A source map fails no
+ * rule.
+ *
  * The check compares the sizes against `bundle-baseline.json`. Two things
  * fail the check:
  *
@@ -151,7 +156,7 @@ const baseline = taken(
 );
 
 const comparison = compare(report, baseline);
-for (const line of reportLines(report, comparison)) {
+for (const line of reportLines(report, comparison, metafile.skipped)) {
 	console.log(line);
 }
 const failures = failureLines(comparison);
