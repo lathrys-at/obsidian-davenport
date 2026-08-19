@@ -89,10 +89,10 @@ jobs:
             - run: node scripts/scan-bundle.mjs tools/frontmatter-probe/dist/main.js
 
     # This job reads package-lock.json. The job asks the npm registry
-    # which of the versions in that file have a known security defect.
-    # The job fails when the registry reports such a defect. The option
-    # --package-lock-only makes npm build the dependency tree from the
-    # lockfile, and the job installs no package.
+    # which of the versions in package-lock.json have a known security
+    # defect. The job fails when the registry reports such a defect. The
+    # option --package-lock-only tells npm to build the dependency tree
+    # from package-lock.json, and the job installs no package.
     audit:
         runs-on: ubuntu-latest
         steps:
