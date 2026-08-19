@@ -45,6 +45,34 @@ The check never writes the baseline by itself. Accept an intended change in
 the pull request that causes it: run
 `node scripts/coverage-ratchet.mjs --write-baseline` and commit the new file.
 
+## The mutation lane
+
+The coverage ratchet counts the lines that a test runs. It does not count the
+lines that a test checks. The mutation lane asks the second question.
+StrykerJS makes a small change to the source, runs the tests, and asks whether
+a test fails. A change that survives every test marks a line that the tests
+run and do not check.
+
+```bash
+npm run mutation
+node scripts/mutation-ratchet.mjs
+```
+
+The run takes minutes, and the run writes `reports/mutation/mutation.html` for
+a person and `reports/mutation/mutation.json` for the check. A workflow runs
+the lane once a week and on request. The lane is not part of the required
+`ci-ok` check, and no merge waits for it.
+
+[`mutation-baseline.json`](../mutation-baseline.json) holds one number, and
+that number is the score of the whole run. A score below that floor fails the
+check. The check gives no grace, and the check never writes the baseline by
+itself. Accept an intended change in the pull request that causes it: run
+`node scripts/mutation-ratchet.mjs --write-baseline` and commit the new file.
+
+A mutant that survives is work, and not a broken build. A mutant that shows a
+gap in the tests becomes an issue. A mutant that no test can kill gets a
+Stryker disable comment at the line, with one sentence that states why.
+
 ## Order and seeds
 
 Files run in a random order. The tests inside each file also run in a random

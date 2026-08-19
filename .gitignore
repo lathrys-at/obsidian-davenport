@@ -11,6 +11,15 @@ node_modules
 # test coverage output
 coverage/
 
+# The mutation run writes the reports of the run into this directory.
+# scripts/mutation-ratchet.mjs reads the JSON report, and a person reads the
+# HTML report.
+reports/
+
+# The mutation run copies the repository into this directory, and it makes
+# each mutant in the copy. The run removes the directory when the run ends.
+.stryker-tmp/
+
 # Don't include the compiled main.js file in the repo.
 # They should be uploaded to GitHub releases instead.
 main.js

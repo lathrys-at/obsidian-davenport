@@ -2,6 +2,8 @@ node_modules
 main.js
 bundle-meta.json
 coverage
+reports
+.stryker-tmp
 package-lock.json
 tools/*/dist
 .vaults
