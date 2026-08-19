@@ -1,0 +1,14 @@
+BEGIN:VCALENDAR
+PRODID:-//Davenport//Adversarial ICS corpus//EN
+VERSION:2.0
+BEGIN:VEVENT
+DESCRIPTION:この行はちょうど七十五オクテットで折り返す
+ 、続きはここから始まります。
+DTEND:20260315T103000Z
+DTSTAMP:20260101T000000Z
+DTSTART:20260315T093000Z
+SUMMARY:Folds inside runs of multi-octet characters
+UID:fold-splits-multibyte-run@corpus.davenport.test
+X-CORPUS-EMOJI:👩‍👩‍👧‍👦 keeps its joiners across the fold
+END:VEVENT
+END:VCALENDAR

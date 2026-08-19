@@ -13,8 +13,12 @@
  * engine receives only the typed form.
  *
  * The types keep the array shape of jCal, because the serializer of the
- * library accepts the same shape.
+ * library accepts the same shape. This file is also the one place that
+ * hands the typed form back to the library, so the copy that the library
+ * requires stands here one time and not at each call.
  */
+
+import ICAL from 'ical.js';
 
 /**
  * The value of a parameter. A parameter that carries more than one value
@@ -97,6 +101,46 @@ export function jcalListLength(value: unknown): number | null {
 export function jcalValues(property: JCalProperty): readonly JCalValue[] {
 	const [, , , ...values] = property;
 	return values;
+}
+
+/** One property, from its name, its parameters, its value type and its values. */
+export function jcalProperty(
+	name: string,
+	parameters: JCalParameters,
+	type: string,
+	values: readonly JCalValue[],
+): JCalProperty {
+	return [name, parameters, type, ...values];
+}
+
+/**
+ * The text that the library writes for one component and everything
+ * inside it. The library folds this text with its own rule, and the fold
+ * of the library reaches one octet past the limit of the format. The
+ * canonical serializer therefore does not build its text this way. This
+ * function serves the caller that wants the text of the library itself.
+ *
+ * The copy of the component is necessary, because the library declares an
+ * array that it can write to, and the engine holds the structure as a
+ * readonly tuple. The copy is one level deep, and the library reads the
+ * levels below it and writes to none of them.
+ */
+export function stringifyJCalComponent(component: JCalComponent): string {
+	return ICAL.stringify([...component]);
+}
+
+/**
+ * The text that the library writes for one property, as one line that the
+ * library does not fold. The canonical serializer folds the line itself.
+ *
+ * The design set states how the library writes each value type and each
+ * parameter. The library takes the set from the name of the root
+ * component and gives the same set to every component below the root. The
+ * boundary accepts VCALENDAR as the root and refuses every other name, so
+ * the set of iCalendar is the set of every property that reaches here.
+ */
+export function stringifyJCalProperty(property: JCalProperty): string {
+	return ICAL.stringify.property([...property], ICAL.design.icalendar, true);
 }
 
 function componentProblem(value: unknown, path: string): string | null {

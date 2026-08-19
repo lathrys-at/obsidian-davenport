@@ -1,0 +1,31 @@
+BEGIN:VCALENDAR
+PRODID:-//Davenport//Adversarial ICS corpus//EN
+VERSION:2.0
+BEGIN:VEVENT
+DTEND:20260308T173000Z
+DTSTAMP:20260101T000000Z
+DTSTART:20260308T163000Z
+SUMMARY:Alarms written by some other client
+UID:valarm-foreign-actions@corpus.davenport.test
+BEGIN:VALARM
+ACTION:AUDIO
+ATTACH;FMTTYPE=audio/basic:ftp://example.test/sounds/bell-01.aud
+TRIGGER:-PT10M
+END:VALARM
+BEGIN:VALARM
+ACTION:DISPLAY
+DESCRIPTION:A display alarm that repeats
+DURATION:PT5M
+REPEAT:4
+TRIGGER:-PT30M
+END:VALARM
+BEGIN:VALARM
+ACTION:EMAIL
+ATTENDEE:mailto:another@example.test
+ATTENDEE:mailto:someone@example.test
+DESCRIPTION:The body of the reminder mail\nsplit over two lines
+SUMMARY:Reminder from another client
+TRIGGER;RELATED=END:-P1D
+END:VALARM
+END:VEVENT
+END:VCALENDAR

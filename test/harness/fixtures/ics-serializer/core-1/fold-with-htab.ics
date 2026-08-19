@@ -1,0 +1,15 @@
+BEGIN:VCALENDAR
+PRODID:-//Davenport//Adversarial ICS corpus//EN
+VERSION:2.0
+BEGIN:VEVENT
+COMMENT:A tab fold and a space fold appear in this one value\, so an unfold
+ er must accept both. And a space fold ends it.
+DESCRIPTION:The fold below inserts a tab rather than a space\, which is the
+  other linear white-space character the standard permits.
+DTEND:20260316T150000Z
+DTSTAMP:20260101T000000Z
+DTSTART:20260316T140000Z
+SUMMARY:Continuation lines introduced by a horizontal tab
+UID:fold-with-htab@corpus.davenport.test
+END:VEVENT
+END:VCALENDAR

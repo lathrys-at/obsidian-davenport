@@ -1,0 +1,14 @@
+BEGIN:VCALENDAR
+PRODID:-//Davenport//Adversarial ICS corpus//EN
+VERSION:2.0
+BEGIN:VEVENT
+DESCRIPTION:This physical line carries exactly seventy-five octets before i
+ ts CRLF\, and the fold below opens the next line with a space that the val
+ ue keeps: the space is not the fold's.
+DTEND:20260313T130000Z
+DTSTAMP:20260101T000000Z
+DTSTART:20260313T120000Z
+SUMMARY:Folds that land exactly on the limit
+UID:fold-at-75-octets@corpus.davenport.test
+END:VEVENT
+END:VCALENDAR

@@ -1,3 +1,4 @@
+import type { NormalizationStamp } from '../ics/stamp';
 import type { EventFields } from './event';
 import type { EventIdentity } from './identity';
 import type { Tombstone } from './tombstone';
@@ -110,8 +111,14 @@ export interface RecordData {
 	 * version. Sometimes a device reads a record that carries a stamp
 	 * newer than the stamp of that device. If the differences are in the
 	 * bytes only, the older device makes no rewrite.
+	 *
+	 * The stamp has two components. Every record carries the core
+	 * component. A record carries the timezone component only when the
+	 * bundled timezone table reaches the bytes of that record.
+	 * {@link NormalizationStamp} states both components and the rules that
+	 * decide the second one.
 	 */
-	readonly normalizationVersion: number;
+	readonly normalizationVersion: NormalizationStamp;
 	/**
 	 * The checksum of the record over its own canonical bytes. The plugin
 	 * blanks this field before it computes the checksum.

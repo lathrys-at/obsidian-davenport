@@ -1,0 +1,15 @@
+BEGIN:VCALENDAR
+PRODID:-//Davenport//Adversarial ICS corpus//EN
+VERSION:2.0
+BEGIN:VEVENT
+COMMENT:An escaped comma split by the fold\, then an escaped semicolon spli
+ t by the fold\; ends this comment.
+DESCRIPTION:A newline escape split by the fold\nfollows this word\, and an 
+ escaped backslash split by the fold\\ closes the value.
+DTEND:20260314T110000Z
+DTSTAMP:20260101T000000Z
+DTSTART:20260314T100000Z
+SUMMARY:Folds falling between the two characters of an escape
+UID:fold-splits-escape@corpus.davenport.test
+END:VEVENT
+END:VCALENDAR

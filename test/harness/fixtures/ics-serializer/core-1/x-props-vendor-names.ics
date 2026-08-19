@@ -1,0 +1,25 @@
+BEGIN:VCALENDAR
+CALSCALE:GREGORIAN
+PRODID:-//Davenport//Adversarial ICS corpus//EN
+VERSION:2.0
+X-PUBLISHED-TTL:PT4H
+X-WR-CALNAME:Vendor property names
+X-WR-TIMEZONE:UTC
+BEGIN:VEVENT
+DTEND:20260305T093000Z
+DTSTAMP:20260101T000000Z
+DTSTART:20260305T090000Z
+SUMMARY:Vendor property names
+UID:x-props-vendor-names@corpus.davenport.test
+X---TRIPLE-DASH:dashes may repeat inside a name
+X-0:a digit is a legal first character
+X-A:one letter after the prefix
+X-EVOLUTION-ALARM-UID:20260305T090000Z-0
+X-FOO:property names are case-insensitive
+X-FOO:so this line repeats the property above
+X-MICROSOFT-CDO-BUSYSTATUS:BUSY
+X-MICROSOFT-CDO-INTENDEDSTATUS:FREE
+X-VERY-LONG-VENDOR-PROPERTY-NAME-WHICH-ON-ITS-OWN-ALREADY-EXCEEDS-THE-OCTET
+ -LIMIT:the fold falls inside the property name
+END:VEVENT
+END:VCALENDAR
