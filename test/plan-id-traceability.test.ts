@@ -501,11 +501,35 @@ describe('the titles that a suite file declares', () => {
 		'concurrent',
 		'sequential',
 		'shuffle',
+		'describe',
+		'suite',
 	])('cannot read a title that stands behind %s', (modifier) => {
 		const found = readTitles(`it.${modifier}('FM-' + number, () => {});`);
 		expect(found.titles).toEqual([]);
 		expect(found.unreadable).toHaveLength(1);
 		expect(found.unreadable[0]?.text).toBe("'FM-' + number");
+	});
+
+	// Vitest carries a group of tests on the name of a test: `test.describe`
+	// and `it.suite` start a group, and each one takes a title. A reader that
+	// steps over these words loses the titles of that group.
+	it.each([
+		['test.describe', "test.describe('FM-1 one', () => {});"],
+		['test.suite', "test.suite('FM-1 one', () => {});"],
+		['it.describe', "it.describe('FM-1 one', () => {});"],
+		['it.suite', "it.suite('FM-1 one', () => {});"],
+	])('reads a plain title that %s takes', (_what, source) => {
+		const found = readTitles(source);
+		expect(found.titles).toEqual([{ line: 1, title: 'FM-1 one' }]);
+		expect(found.unreadable).toEqual([]);
+	});
+
+	it('counts a title that a group of a test takes as a citation', () => {
+		const { found, result } = run(
+			"test.describe('FM-1 reads the vocabulary', () => {});",
+		);
+		expect(found.titleCount).toBe(1);
+		expect(result.cited).toEqual(['FM-1']);
 	});
 
 	// The rows of a table stand between the modifier and the title. The rule
@@ -1011,6 +1035,32 @@ describe('the check as a process', () => {
 			'skipped.test.ts:1 holds a title that the check cannot read',
 		);
 		expect(result.err).toContain("title: 'computed ' + title");
+	});
+
+	// Vitest carries a group of tests on the name of a test. Such a group takes
+	// a title, so the check must read that title and fail on a title that a
+	// program builds there.
+	it('fails on a title that a program builds behind a group of a test', () => {
+		const suites = mkdtempSync(join(scratch, 'suites-'));
+		writeFileSync(
+			join(suites, 'group.test.ts'),
+			[
+				"test.describe('computed ' + title, () => {});",
+				"it.suite('FM-1 reads the vocabulary', () => {});",
+				'',
+			].join('\n'),
+			'utf8',
+		);
+		const result = check([PLAN_PATH, suites]);
+		expect(result.status).toBe(1);
+		expect(result.err).toContain(
+			'group.test.ts:1 holds a title that the check cannot read',
+		);
+		expect(result.err).toContain("title: 'computed ' + title");
+		expect(result.out).toContain(
+			'the count of titles in the suite files is 1',
+		);
+		expect(result.out).toContain('the titles cite 1 ID of the plan');
 	});
 
 	it('names a call of a suite file that gives no title', () => {

@@ -17,6 +17,7 @@ import type {
 	PlanFault,
 	Reconciliation,
 	SuiteScan,
+	Unreadable,
 } from './plan-ids-core.ts';
 import { prefixOf } from './plan-ids-core.ts';
 
@@ -132,7 +133,10 @@ export function failureLines(
  * read. Therefore the check fails on each of these titles.
  */
 function computedLines(scan: SuiteScan): readonly string[] {
-	const sites = scan.unreadable.filter((site) => site.text !== undefined);
+	const sites = scan.unreadable.filter(
+		(site): site is Unreadable & { text: string } =>
+			site.text !== undefined,
+	);
 	if (sites.length === 0) {
 		return [];
 	}
@@ -142,7 +146,7 @@ function computedLines(scan: SuiteScan): readonly string[] {
 			say(
 				`${site.path}:${String(site.line)} holds a title that the check cannot read`,
 			),
-			`  title: ${String(site.text)}`,
+			`  title: ${site.text}`,
 		);
 	}
 	lines.push(

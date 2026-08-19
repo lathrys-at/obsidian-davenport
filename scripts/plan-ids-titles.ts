@@ -33,25 +33,29 @@ const CALLERS = new Set(['describe', 'it', 'test', 'suite', 'bench']);
 /**
  * The words that Vitest puts between a name and a title. Each word stands
  * behind a point, and a title can follow it. The reader steps over these
- * words to reach the title.
+ * words to reach the title. The set holds the modifiers that keep the call a
+ * test, and it holds `describe` and `suite`, which start a group of tests.
  *
  * A word that this set does not hold makes the call something other than a
  * test, and the reader passes over that call. A suite that keeps its rows in
  * an array and calls `test.run()` over them writes such a call: `run` is not
  * a word of this set.
  *
- * The set holds no word that takes something other than a title. `extend` and
- * `scoped` take a set of fixtures, so `test.extend({...})` declares no test
- * and this set leaves both words out.
+ * Three words of Vitest stand behind a point and take something other than a
+ * title. `extend`, `override` and `scoped` take a set of fixtures, so
+ * `test.extend({...})` declares no test. This set leaves those three words
+ * out, and the reader passes over each of those calls.
  *
- * Keep this set together with the documented modifiers of Vitest. The reader
- * passes over a call that carries a modifier that this set does not hold. The
- * title of that call then cites no ID. A plain title that the reader loses in
- * this way still shows in the report, because the plan ID joins the IDs that
- * no title cites.
+ * Keep this set together with the members of Vitest that take a title. The
+ * reader passes over a call that carries a word that this set does not hold.
+ * The title of that call then cites no ID. A plain title that the reader
+ * loses in this way still shows in the report, because the plan ID joins the
+ * IDs that no title cites. A title that a program builds and loses in this
+ * way shows nowhere, and that loss is what this check must stop.
  */
 const MODIFIERS = new Set([
 	'concurrent',
+	'describe',
 	'each',
 	'fails',
 	'for',
@@ -61,6 +65,7 @@ const MODIFIERS = new Set([
 	'shuffle',
 	'skip',
 	'skipIf',
+	'suite',
 	'todo',
 ]);
 
