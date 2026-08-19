@@ -38,9 +38,11 @@
  *   components, in the order of their names. Two components of one rank
  *   and one name take the order of their two texts.
  * - The parts of a repeat rule take a fixed rank. The frequency comes
- *   first. The other parts follow in the order that the format lists
- *   them. A part that no standard names comes after all of them, in the
- *   order of the names of those parts.
+ *   first, except where the name of a part reads as a whole number. The
+ *   other parts follow in the order that the format lists them. A part
+ *   that no standard names comes after all of them, in the order of the
+ *   names of those parts. The comment above `orderedParameters` states
+ *   what a name that reads as a whole number does.
  * - A comparison of two names, or of two texts, reads the code units of
  *   the two strings. The comparison stops at the first code unit that
  *   differs. The order is therefore not the order of the code points: a

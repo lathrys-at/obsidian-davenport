@@ -249,7 +249,7 @@ describe('the serializer and the corpus', () => {
 		},
 	);
 
-	it('folds one line of the corpus to exactly the octet limit', () => {
+	it('folds the widest line of the corpus to exactly the octet limit', () => {
 		const widest = Math.max(
 			...icsCorpus().flatMap((fixture) =>
 				serialize(fixture.content)

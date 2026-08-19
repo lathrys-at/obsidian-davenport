@@ -10,6 +10,14 @@
  * here, so a new rule of the serializer lands together with an input that
  * exercises the rule.
  *
+ * Some rules of the serializer decide the order of two components that a
+ * legal calendar cannot hold together. Three shapes in `inputs/` are
+ * therefore outside the grammar of the format, and each one is
+ * deliberate: two masters that share one identifier; an unknown component
+ * inside a component that takes no such component; and a repeat rule with
+ * a part that the format does not name. A server can send each shape, and
+ * the serializer must give one order for it. Do not repair these files.
+ *
  * The serializer writes one text for each input. Those texts are
  * committed here. A test compares each committed text with the text that
  * the serializer writes now.

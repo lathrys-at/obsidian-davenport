@@ -5,18 +5,35 @@ COMMENT:the second comment of the calendar
 COMMENT:the first comment of the calendar
 BEGIN:VEVENT
 UID:tie-plain-override
+DTSTAMP:20260101T000000Z
 RECURRENCE-ID:20260316T140000
 DTSTART:20260316T140000
 SUMMARY:an override whose recurrence id carries no parameter
 END:VEVENT
 BEGIN:VEVENT
 UID:tie-zoned-override
+DTSTAMP:20260101T000000Z
 RECURRENCE-ID;TZID=America/New_York:20260316T140000
 DTSTART;TZID=America/New_York:20260316T140000
 SUMMARY:an override whose recurrence id carries a parameter
 END:VEVENT
 BEGIN:VEVENT
+UID:tie-ranged-series
+DTSTAMP:20260101T000000Z
+RECURRENCE-ID:20260316T140000Z
+DTSTART:20260301T140000Z
+SUMMARY:the override of the later instance, moved to the earlier start
+END:VEVENT
+BEGIN:VEVENT
+UID:tie-ranged-series
+DTSTAMP:20260101T000000Z
+RECURRENCE-ID;RANGE=THISANDFUTURE:20260309T140000Z
+DTSTART:20260305T140000Z
+SUMMARY:the override of the earlier instance, moved to the later start
+END:VEVENT
+BEGIN:VEVENT
 UID:tie-deep
+DTSTAMP:20260101T000000Z
 DTSTART:20260302T090000Z
 SUMMARY:one of two masters that differ inside an alarm only
 BEGIN:VALARM
@@ -27,6 +44,7 @@ END:VALARM
 END:VEVENT
 BEGIN:VEVENT
 UID:tie-deep
+DTSTAMP:20260101T000000Z
 DTSTART:20260302T090000Z
 SUMMARY:one of two masters that differ inside an alarm only
 BEGIN:VALARM
