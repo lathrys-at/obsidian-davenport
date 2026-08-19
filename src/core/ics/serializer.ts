@@ -281,9 +281,10 @@ function recurrenceIdOf(properties: readonly JCalProperty[]): string {
 	const line = stringifyJCalProperty(
 		jcalProperty(property[0], {}, property[2], jcalValues(property)),
 	);
-	// The name of the property holds no colon, and the value type that the
-	// library can add holds none either. The first colon is therefore the
-	// one that separates the name from the value.
+	// This slice needs the empty parameters above it, because a parameter
+	// value can hold a colon. The name of the property holds no colon, and
+	// the value type that the library can add holds none either. The first
+	// colon is therefore the one that separates the name from the value.
 	return line.slice(line.indexOf(':') + 1);
 }
 
