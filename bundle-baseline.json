@@ -1,12 +1,12 @@
 {
-	"raw": 662,
-	"compressed": 447,
+	"raw": 1038,
+	"compressed": 645,
 	"outputs": [
 		{
 			"path": "main.js",
 			"kind": "entry",
-			"raw": 662,
-			"compressed": 447
+			"raw": 1038,
+			"compressed": 645
 		}
 	],
 	"modules": [
@@ -15,5 +15,5 @@
 			"bytes": 103
 		}
 	],
-	"overhead": 559
+	"overhead": 935
 }
