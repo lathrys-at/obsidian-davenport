@@ -101,9 +101,17 @@ plan does not contain. The check also fails when the plan declares a suite and
 defines no ID for that suite. A new suite heading in the plan therefore lands
 together with the first ID of that suite.
 
-Write each title as a plain string. The check reads no ID out of a title that
-a program builds, and the check still passes. The plan ID then joins the IDs
-that no title cites, and that list does not fail the check.
+Write each title as a plain string. The check reads a plain string, and the
+check reads no other shape of title. The check fails on each title that it
+cannot read. A title that a program joins from parts is one example. A
+template with an expression in it is another example. The check names the
+file, the line, and the text that stands in the title.
+
+For the citations, the check reads every file under `test/suites/` whose name
+ends in `.test.ts`, at any depth. It reads no other file for the citations.
+The rule of the plain string therefore holds for those files, and for no other
+file. A test elsewhere under `test/` takes its name from what the test covers,
+and the check never reads that name.
 
 ## What the setup file blocks
 

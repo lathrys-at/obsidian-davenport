@@ -19,6 +19,15 @@
  * unit tests beside the harness take their names from what they cover, and
  * not from a plan ID. Therefore the suite directory is the whole surface.
  *
+ * The check also fails when it cannot read a title of a suite file. The check
+ * reads a plain string, and the check reads no other shape of title. A title
+ * that a program builds from parts is one example. A template with an
+ * expression in it is another example. Such a title carries no ID that the
+ * check can read, and the title loses its trace to the plan. The check names
+ * the file, the line, and the text that stands in the title. A call of a
+ * suite file that gives no title at all also fails the check. This rule holds
+ * for the files that the check reads, and for no other file.
+ *
  * The check reads the plan and the suite directory of this repository. If you
  * give a path as the first argument, the check reads that plan instead. If
  * you give a second path, the check reads the suite files under that
@@ -47,7 +56,13 @@ const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const PLAN = 'docs/davenport-test-plan.md';
 const SUITES = 'test/suites';
 
-/** The files that hold the suites. Git carries no empty directory. */
+/**
+ * The files that the check reads for the citations. The set holds every file
+ * under the suite root whose name ends in `.test.ts`, at any depth. The set
+ * holds no other file. Therefore this function states where the rules of the
+ * suites apply. Git carries no empty directory, so a root that does not exist
+ * gives an empty set.
+ */
 function suiteFiles(root) {
 	if (!existsSync(root)) {
 		return [];
@@ -118,7 +133,7 @@ if (files.length === 0) {
 for (const line of reportLines(corpus, scan, result)) {
 	console.log(line);
 }
-const failures = failureLines(result);
+const failures = failureLines(scan, result);
 if (failures.length > 0) {
 	for (const line of failures) {
 		console.error(line);

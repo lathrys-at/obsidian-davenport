@@ -2,7 +2,9 @@
  * The wording of everything that the plan-ID traceability check prints. The
  * check prints three kinds of line. The fault names what the check needs from
  * the plan and did not find. The report says what the check found. The
- * failure names each title that cites an ID that the plan does not contain.
+ * failure names each title that fails the check. Three things fail the check.
+ * The check cannot read the title. The call gives no title at all. The title
+ * cites an ID that the plan does not contain.
  *
  * Each line that states a fact carries the name of the check, so that the
  * line stays legible in a log that holds the output of many steps. A line
@@ -15,6 +17,7 @@ import type {
 	PlanFault,
 	Reconciliation,
 	SuiteScan,
+	Unreadable,
 } from './plan-ids-core.ts';
 import { prefixOf } from './plan-ids-core.ts';
 
@@ -67,25 +70,8 @@ export function reportLines(
 			`the count of titles in the suite files is ${String(scan.titleCount)}`,
 		),
 	];
-	lines.push(...unreadableLines(scan));
 	lines.push(...citedLines(result));
 	lines.push(...uncitedLines(result));
-	return lines;
-}
-
-/** The lines that name the titles that the check cannot read. */
-function unreadableLines(scan: SuiteScan): readonly string[] {
-	if (scan.unreadable.length === 0) {
-		return [];
-	}
-	const lines = [
-		say(
-			`the count of titles that the check cannot read is ${String(scan.unreadable.length)}. A title that is not a plain string cites no ID.`,
-		),
-	];
-	for (const site of scan.unreadable) {
-		lines.push(`  ${site.path}:${String(site.line)}  ${site.text}`);
-	}
 	return lines;
 }
 
@@ -123,8 +109,80 @@ function uncitedLines(result: Reconciliation): readonly string[] {
 	return lines;
 }
 
-/** The lines of the failure. The failure names each citation that fails. */
-export function failureLines(result: Reconciliation): readonly string[] {
+/**
+ * The lines of the failure. The failure names each title that fails. The
+ * titles that the check cannot read come first, then the calls that give no
+ * title, then the citations that the plan does not contain. A run that holds
+ * more than one of these kinds prints each kind, in that order.
+ */
+export function failureLines(
+	scan: SuiteScan,
+	result: Reconciliation,
+): readonly string[] {
+	return [
+		...computedLines(scan),
+		...titlelessLines(scan),
+		...unknownLines(result),
+	];
+}
+
+/**
+ * The lines that name the titles that the check cannot read. The check reads
+ * the titles of the suite files for the citations that the titles carry. A
+ * title that is not a plain string carries no citation that the check can
+ * read. Therefore the check fails on each of these titles.
+ */
+function computedLines(scan: SuiteScan): readonly string[] {
+	const sites = scan.unreadable.filter(
+		(site): site is Unreadable & { text: string } =>
+			site.text !== undefined,
+	);
+	if (sites.length === 0) {
+		return [];
+	}
+	const lines: string[] = [];
+	for (const site of sites) {
+		lines.push(
+			say(
+				`${site.path}:${String(site.line)} holds a title that the check cannot read`,
+			),
+			`  title: ${site.text}`,
+		);
+	}
+	lines.push(
+		say(
+			`the count of titles that the check cannot read is ${String(sites.length)}. The check reads a plain string, and the check cannot read a title that a program builds. Make each of these titles a plain string.`,
+		),
+	);
+	return lines;
+}
+
+/**
+ * The lines that name the calls that give no title. Such a call has no text
+ * that stands in the title, so these lines name the place alone. The remedy
+ * is also different: the call needs a title, and not a title of another
+ * shape.
+ */
+function titlelessLines(scan: SuiteScan): readonly string[] {
+	const sites = scan.unreadable.filter((site) => site.text === undefined);
+	if (sites.length === 0) {
+		return [];
+	}
+	const lines = sites.map((site) =>
+		say(
+			`${site.path}:${String(site.line)} holds a call that gives no title`,
+		),
+	);
+	lines.push(
+		say(
+			`the count of calls that give no title is ${String(sites.length)}. Give a title to each of these calls.`,
+		),
+	);
+	return lines;
+}
+
+/** The lines that name the citations that the plan does not contain. */
+function unknownLines(result: Reconciliation): readonly string[] {
 	if (result.unknown.length === 0) {
 		return [];
 	}
