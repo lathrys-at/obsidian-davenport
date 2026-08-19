@@ -71,6 +71,29 @@ const SERIES_IN_UNIVERSAL_TIME = calendarOf(
 	'END:VEVENT',
 );
 
+const TASK_SERIES_IN_A_ZONE = calendarOf(
+	'BEGIN:VTODO',
+	'UID:stamp',
+	'DUE;TZID=America/New_York:20260302T090000',
+	'RRULE:FREQ=WEEKLY;UNTIL=20260601T130000Z',
+	'END:VTODO',
+);
+
+const TASK_WITHOUT_A_SERIES = calendarOf(
+	'BEGIN:VTODO',
+	'UID:stamp',
+	'DUE;TZID=America/New_York:20260302T090000',
+	'END:VTODO',
+);
+
+const TASK_SERIES_WITHOUT_AN_END = calendarOf(
+	'BEGIN:VTODO',
+	'UID:stamp',
+	'DUE;TZID=America/New_York:20260302T090000',
+	'RRULE:FREQ=WEEKLY;COUNT=12',
+	'END:VTODO',
+);
+
 const ONE_EVENT = calendarOf(
 	'BEGIN:VEVENT',
 	'UID:stamp',
@@ -104,6 +127,25 @@ describe('the carriage of the timezone component', () => {
 			core: CORE_NORMALIZATION_VERSION,
 			timezone: TIMEZONE_NORMALIZATION_VERSION,
 		});
+	});
+
+	it('carries the timezone component for a task series that ends under a due date in a named zone', () => {
+		expect(normalizationStamp(subject(TASK_SERIES_IN_A_ZONE))).toEqual({
+			core: CORE_NORMALIZATION_VERSION,
+			timezone: TIMEZONE_NORMALIZATION_VERSION,
+		});
+	});
+
+	it('reads no universal-time reach in a task that states no repeat rule', () => {
+		expect(
+			timezoneReaches(subject(TASK_WITHOUT_A_SERIES)).universalTime,
+		).toBe(false);
+	});
+
+	it('reads no universal-time reach in a task series that states no end', () => {
+		expect(
+			timezoneReaches(subject(TASK_SERIES_WITHOUT_AN_END)).universalTime,
+		).toBe(false);
 	});
 
 	it('reads no universal-time reach in a series that states no end', () => {

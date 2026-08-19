@@ -30,9 +30,12 @@
  *
  * 1. The record holds a timezone definition that the plugin wrote, and
  *    not one that the server sent.
- * 2. The record holds a universal-time value that the plugin computed
- *    from the bundled table. The end of a repeating series is the known
- *    case, because the format states that end in universal time.
+ * 2. The record holds a repeating series whose end stands in universal
+ *    time, under a time that names a timezone. That time is the anchor
+ *    of the series, and the anchor is the start of an event or the due
+ *    date of a task. The format states the end of such a series in
+ *    universal time, so an edit of that end converts a local time
+ *    through the bundled table.
  * 3. The record holds the date of an instance that the plugin computed in
  *    the zone of the event.
  *
@@ -47,14 +50,12 @@
  *   which definitions it wrote, and that code gives this module the
  *   names. No code in the plugin writes a definition yet, so every caller
  *   names an empty list today.
- * - Reaches 2 and 3 read the shape of the record, and they do not read
- *   the origin of the value. The shape is the wider of the two readings,
- *   and the shape is also the correct reading. A device computes the end
- *   of a series and sends that end to the server. The server sends the
- *   same end back, and the record then holds the copy of the server. A
- *   rule that asked which device computed the value would give one record
- *   two answers. The bytes of a record must not depend on the device that
- *   wrote them.
+ * - Reaches 2 and 3 read the shape of the record, and they do not ask
+ *   which device computed a value. A device computes the end of a series
+ *   and sends that end to the server. The server sends the same end back,
+ *   and the record then holds the copy of the server. A rule that asked
+ *   which device computed the value would give one record two answers.
+ *   The bytes of a record must not depend on the device that wrote them.
  * - Reach 3 reads the materialization map of the record. No code fills
  *   that map yet, so the map holds no date today.
  *
@@ -183,8 +184,14 @@ export function skewDecision(
 }
 
 /**
+ * The properties that anchor a repeating series. An event anchors its
+ * series on the start, and a task anchors its series on the due date.
+ */
+const ANCHOR_PROPERTIES: readonly string[] = ['dtstart', 'due'];
+
+/**
  * True when the calendar states the end of a repeating series and states
- * the start of that series in a named zone. The format writes the end of
+ * the anchor of that series in a named zone. The format writes the end of
  * such a series in universal time, so a device converts a local time
  * through the bundled table to write it.
  */
@@ -193,7 +200,7 @@ function holdsSeriesEndInAZone(calendar: JCalComponent): boolean {
 		calendar,
 		(component) =>
 			holdsRepeatRuleWithEnd(component[1]) &&
-			holdsZonedStart(component[1]),
+			holdsZonedAnchor(component[1]),
 	);
 }
 
@@ -207,10 +214,11 @@ function holdsRepeatRuleWithEnd(properties: readonly JCalProperty[]): boolean {
 	);
 }
 
-function holdsZonedStart(properties: readonly JCalProperty[]): boolean {
+function holdsZonedAnchor(properties: readonly JCalProperty[]): boolean {
 	return properties.some(
 		(property) =>
-			property[0].toLowerCase() === 'dtstart' && 'tzid' in property[1],
+			ANCHOR_PROPERTIES.includes(property[0].toLowerCase()) &&
+			'tzid' in property[1],
 	);
 }
 
