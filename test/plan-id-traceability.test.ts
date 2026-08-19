@@ -141,9 +141,9 @@ describe('the IDs that the plan contains', () => {
 
 	it('reads the whole corpus of the real plan', () => {
 		expect(PLAN.suitePrefixes).toHaveLength(26);
-		expect(PLAN.ids).toHaveLength(266);
+		expect(PLAN.ids).toHaveLength(267);
 		expect(PLAN.suiteIds).toHaveLength(227);
-		expect(PLAN.otherIds).toHaveLength(39);
+		expect(PLAN.otherIds).toHaveLength(40);
 	});
 
 	it('keeps the sweeps and the protocol items outside the test IDs', () => {
@@ -747,7 +747,7 @@ describe('what the check prints', () => {
 	it('states the counts of the plan', () => {
 		const { found, result } = run("it('FM-1 one', () => {});");
 		expect(reportLines(PLAN, found, result)[0]).toContain(
-			'the plan contains 266 IDs. The plan gives 227 of these IDs to the suites, and 39 to the sweeps',
+			'the plan contains 267 IDs. The plan gives 227 of these IDs to the suites, and 40 to the sweeps',
 		);
 	});
 
@@ -924,7 +924,7 @@ describe('the check as a process', () => {
 		const result = check([]);
 		expect(result.err).toBe('');
 		expect(result.status).toBe(0);
-		expect(result.out).toContain('the plan contains 266 IDs');
+		expect(result.out).toContain('the plan contains 267 IDs');
 	});
 
 	it('fails on a title that cites an ID that the plan does not contain', () => {

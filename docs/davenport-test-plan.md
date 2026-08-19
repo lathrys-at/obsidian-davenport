@@ -79,6 +79,10 @@ The determinism of the *real* `processFrontMatter` is exactly Appendix A item 11
 
 The harness has a controllable clock. That clock drives debounce, grace periods, horizon edges, delta granularity, and retention. The harness also has an adversarial ICS corpus that holds fuzzed unmodeled `X-` properties, foreign `VALARM`s, structured locations, legal but exotic folding and escaping, `VTIMEZONE` variety that includes historical zones, `RECURRENCE-ID` overrides, and `EXDATE`s. IV-4, the normalization tests, and the round-trip suites use that corpus.
 
+The harness poisons the ambient time functions in every run of the test suite, and that scope covers every [E], [M], and [C] run. The poisoned functions are `Date.now`, the `Date` constructor with no argument, `Date` called as a plain function, and the timers `setTimeout`, `setInterval`, and `setImmediate`. A test that reads the wall clock through one of these functions therefore fails at the line that reads the wall clock (IV-14). The poison covers only these ordinary forms of a clock reading, and it does not cover every path to the wall clock. Three known paths stay outside the poison: `performance.timeOrigin` with `performance.now`, `new Intl.DateTimeFormat().format()` with no argument, and a timer that a test imports from `node:timers`. The poison replaces the time functions of the global objects, and an imported function does not come from those objects.
+
+The poison asks which code made the call, and it answers from the stack. A call throws when the caller is the code of this repository, and a call throws when the poison cannot read the caller. A call gets the real answer when the caller is an installed dependency, the node runtime, or a file outside the repository root. The poison must let those callers through, because the test runner and the test dependencies read the wall clock in the same process as the tests. A test that must read the real clock calls a named opt-out, and that call states its reason.
+
 ### 3.6 Vault-write interruption and restart
 
 This capability is the kill points inside a vault write, and the process lifecycle around that write. These are the other two capabilities that Part 2 defines [C] by. A write and its change event are separable: the harness can drop the write, drop the event, or deliver the two out of order.
@@ -104,6 +108,7 @@ The sweeps are standing assertions. This plan evaluates them across every [E], [
 - **IV-11 Mode gating (§4.2, B.2).** No push-capable action is reachable on a remote-owned calendar. Feed calendars are remote-owned unconditionally.
 - **IV-12 Surface lifecycle (§14.3).** Flight-skew items self-dismiss when their condition resolves. Preservation items (§4.2, §5.4) resolve only by acknowledgment. No item outlives its condition.
 - **IV-13 Network discipline (§2.2).** Every network call routes through `requestUrl`. CalDAV servers send no CORS headers, so a stray `fetch` is a mobile-only breakage discovered in the field. Two mechanisms enforce this rule. First, the harness poisons global `fetch` in every simulated run (Part 3.4). Second, a static scan of the shipped bundle finds no direct `fetch` usage.
+- **IV-14 Time discipline (Part 3.5).** The controlled clock is the only source of a time in an [E], [M], or [C] run. No [E], [M], or [C] test uses the opt-out that Part 3.5 states. The wall clock gives a different answer on each run. A test that reads the wall clock can therefore pass on one run and fail on a later run. The harness poisons the ambient time functions in every run of the test suite, and that poison covers only the ordinary forms of a clock reading. The sweep asserts that the poison stayed in place for the whole run.
 
 ## Part 5 — Suites
 
