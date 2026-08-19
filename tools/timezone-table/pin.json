@@ -1,0 +1,35 @@
+{
+	"release": "2026c",
+	"form": "main",
+	"archive": {
+		"name": "tzdata2026c.tar.gz",
+		"url": "https://data.iana.org/time-zones/releases/tzdata2026c.tar.gz",
+		"sha256": "e4a178a4477f3d0ea77cc31828ff72aa38feff8d61aa13e7e99e142e9d902be4"
+	},
+	"data": [
+		"africa",
+		"antarctica",
+		"asia",
+		"australasia",
+		"backward",
+		"etcetera",
+		"europe",
+		"factory",
+		"northamerica",
+		"southamerica"
+	],
+	"files": {
+		"LICENSE": "0613408568889f5739e5ae252b722a2659c02002839ad970a63dc5e9174b27cf",
+		"africa": "f2851d4be4a4925cbdc9d56e10d780bccadb89d6ffb9aed78c3e35f97c200aed",
+		"antarctica": "e410ad71c9450828c592d21419301d41ac79ce50159fd0ac2d6c5031cb6bdfe6",
+		"asia": "cd12fe2bd64a02d808fd34abb92f08f19e5da20133a1c6c347d11171c00d9e1c",
+		"australasia": "846ba455578e3e0f9eb850f05be3cc06d02ff51bbe4b726f755be9dc765f16c9",
+		"backward": "d2f4c8953f204982ddf4dc0c2debf41b2464de376dad7d546d0fc70f889fa706",
+		"etcetera": "7281f095b42c13c4ae36b8bcba884e81dbb38127221fc1d9805c4dbf852487db",
+		"europe": "0fef17177d871af93188f2985e6034029bfd83e43d2a1c3838e4320712dba7c1",
+		"factory": "ae2ec1d36dabf79a69cb7dd4fb6fd9168d05fc8cfd31aee2dd19e4f18beb9885",
+		"northamerica": "4046b382ee56e287a5ea0cfddae67297badcf9c8fb6b6e2ee8086898c847e147",
+		"southamerica": "c6e17ee367c6d7c1ab613444641538bca6d11818d46feb96e565e98c45238a2b",
+		"version": "b8b066b540bc2870e6f1f3cd76f1b0e6c3629b2e3a12f14ba9e47085a1abb781"
+	}
+}

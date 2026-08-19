@@ -6,3 +6,12 @@ test/harness/fixtures/ics/*.ics -text
 # hold the octets that the canonical serializer writes. A conversion of the
 # line endings would change the bytes under the test that compares them.
 test/harness/fixtures/ics-serializer/**/*.ics -text
+
+# The vendored timezone release keeps the bytes that the release states.
+# The pin holds the checksum of every one of these files, and a conversion
+# of the line endings would break every checksum.
+tools/timezone-table/vendor/** -text
+
+# The offset fixture states one answer for each line, and the reader of the
+# fixture splits the file on the line feed.
+test/harness/fixtures/timezone-offsets.txt -text
