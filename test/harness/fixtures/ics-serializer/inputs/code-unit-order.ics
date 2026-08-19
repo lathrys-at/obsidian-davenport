@@ -6,15 +6,15 @@ UID:code-unit-order
 DTSTAMP:20260101T000000Z
 DTSTART:20260401T090000Z
 SUMMARY:two comments that first differ at a character above U+FFFF
+COMMENT:the difference is here: Ａ is between U+E000 and U+FFFF
 COMMENT:the difference is here: 😀 is above U+FFFF
-COMMENT:the difference is here: Ａ is below U+FFFF and above U+D7FF
 END:VEVENT
 BEGIN:X-VENDOR-HIGH-ORDER
 X-VENDOR-KIND:one of two blocks that differ at a character above U+FFFF
-X-VENDOR-NOTE:the difference is here: 😀 is above U+FFFF
+X-VENDOR-NOTE:the difference is here: Ａ is between U+E000 and U+FFFF
 END:X-VENDOR-HIGH-ORDER
 BEGIN:X-VENDOR-HIGH-ORDER
 X-VENDOR-KIND:one of two blocks that differ at a character above U+FFFF
-X-VENDOR-NOTE:the difference is here: Ａ is below U+FFFF and above U+D7FF
+X-VENDOR-NOTE:the difference is here: 😀 is above U+FFFF
 END:X-VENDOR-HIGH-ORDER
 END:VCALENDAR
