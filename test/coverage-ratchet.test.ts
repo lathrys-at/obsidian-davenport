@@ -454,8 +454,8 @@ describe('the comparison against the baseline', () => {
 		expect(comparison.changed[0]?.past).toBe(true);
 		expect(comparison.changed[0]?.moves[0]).toMatchObject({
 			metric: 'statements',
-			floor: 98,
-			now: 95,
+			floor: { total: 100, covered: 98 },
+			now: { total: 100, covered: 95 },
 			change: -3,
 			past: true,
 		});
@@ -495,10 +495,39 @@ describe('the comparison against the baseline', () => {
 				{ path: 'src/b.ts', statements: [450, 900] },
 			],
 		);
-		expect(comparison.total[0]?.floor).toBe(55);
-		expect(comparison.total[0]?.now).toBe(50.54);
+		expect(comparison.total[0]?.floor).toStrictEqual({
+			total: 100,
+			covered: 55,
+		});
+		expect(comparison.total[0]?.now).toStrictEqual({
+			total: 910,
+			covered: 460,
+		});
+		expect(comparison.total[0]?.change).toBe(-4.46);
 		expect(comparison.changed).toStrictEqual([]);
 		expect(comparison.fails).toBe(false);
+	});
+
+	it('names no mismatch when each floor holds the counts of the run', () => {
+		const samples = [{ path: 'src/a.ts', statements: [3, 4] as Pair }];
+		expect(against(samples, samples).mismatched).toStrictEqual([]);
+	});
+
+	it('names each metric whose counts differ from the counts of its floor', () => {
+		// The branches hold the same two counts, and the statements do
+		// not. Both metrics keep the percentage that they had.
+		const comparison = against(
+			[{ path: 'src/a.ts', statements: [1, 2], branches: [1, 2] }],
+			[{ path: 'src/a.ts', statements: [2, 4], branches: [1, 2] }],
+		);
+		expect(comparison.changed).toStrictEqual([]);
+		expect(comparison.fails).toBe(false);
+		expect(
+			comparison.mismatched.map((file) => [
+				file.path,
+				file.moves.map((move) => move.metric),
+			]),
+		).toStrictEqual([['src/a.ts', ['statements']]]);
 	});
 
 	it('fails when the run reports a file that the baseline does not hold', () => {
@@ -583,24 +612,71 @@ describe('the wording of the check', () => {
 	});
 
 	it('gives the counts of the floor and the counts of the run', () => {
-		// The three consistency rules of the baseline accept an edit that
-		// moves counts from one file to another. The baseline then holds a
-		// floor with counts that the run does not report. The report gives
-		// both pairs of counts, and not the percentages alone.
+		// The baseline and the run both hold 7 of 8 statements. The floor
+		// of src/a.ts holds 2 statements, and the run reports 4. An edit
+		// that moves counts from one file to another leaves this state,
+		// and the three consistency rules of the baseline accept it.
 		const said = lines(
 			[
-				{ path: 'src/a.ts', statements: [20, 50] },
-				{ path: 'src/b.ts', statements: [4, 4] },
+				{ path: 'src/a.ts', statements: [1, 2] },
+				{ path: 'src/b.ts', statements: [6, 6] },
 			],
 			[
 				{ path: 'src/a.ts', statements: [3, 4] },
 				{ path: 'src/b.ts', statements: [4, 4] },
 			],
 		).report.join('\n');
-		expect(said).toContain('src/a.ts  statements 3 of 4 (75%)');
 		expect(said).toContain(
-			'src/a.ts  statements  from 20 of 50 (40%) to 3 of 4 (75%)  35 percentage points more',
+			'src/a.ts  statements  from 1 of 2 (50%) to 3 of 4 (75%)  25 percentage points more',
 		);
+		expect(said).toContain('the floor holds 1 of 2 statements (50%)');
+		expect(said).toContain('the floor holds 6 of 6 statements (100%)');
+	});
+
+	it('shows an edit that moves counts and holds each percentage', () => {
+		// The floor of src/a.ts loses 89 covered statements and 98 held
+		// statements, and it keeps 50 percent. The floor of src/b.ts takes
+		// 89 of 89, and the floor of src/c.ts takes 0 of 9. Each
+		// percentage of the baseline stands the same. Therefore no metric
+		// moves against a floor, and the check passes. The counts of each
+		// floor differ from the counts of the run, and the second line of
+		// each row states them.
+		const said = lines(
+			[
+				{ path: 'src/a.ts', statements: [1, 2] },
+				{ path: 'src/b.ts', statements: [139, 139] },
+				{ path: 'src/c.ts', statements: [0, 18] },
+			],
+			[
+				{ path: 'src/a.ts', statements: [50, 100] },
+				{ path: 'src/b.ts', statements: [50, 50] },
+				{ path: 'src/c.ts', statements: [0, 9] },
+			],
+		);
+		expect(said.failure).toStrictEqual([]);
+		const report = said.report.join('\n');
+		expect(report).toContain('no file moved against its floor');
+		expect(report).toContain(
+			'src/a.ts  statements 50 of 100 (50%)  branches 0 of 0 (100%)  functions 0 of 0 (100%)  lines 0 of 0 (100%)  no percentage moved',
+		);
+		expect(report).toContain('the floor holds 1 of 2 statements (50%)');
+	});
+
+	it('gives a row to a file with no statement when its floor differs', () => {
+		// The run reports no statement for src/type.ts, and the floor of
+		// that file holds five. Both stand at 100 percent. A file with no
+		// statement gets no row, and this file gets one.
+		const said = lines(
+			[
+				{ path: 'src/a.ts', statements: [4, 4] },
+				{ path: 'src/type.ts', statements: [5, 5] },
+			],
+			[{ path: 'src/a.ts', statements: [4, 4] }, { path: 'src/type.ts' }],
+		).report.join('\n');
+		expect(said).toContain('the run reports 2 files, and 1 of them holds');
+		expect(said).toContain('src/type.ts  statements 0 of 0 (100%)');
+		expect(said).toContain('the floor holds 5 of 5 statements (100%)');
+		expect(said).not.toContain('holds no statement');
 	});
 
 	it('says nothing about a failure when nothing failed', () => {
@@ -834,6 +910,32 @@ describe('the check as a process', () => {
 		expect(result.output).not.toContain('add up to');
 		expect(result.output).toContain(
 			'the run reports src/a.ts, and the baseline holds no floor for that file',
+		);
+	});
+
+	it('passes a baseline that moves counts, and prints the counts', () => {
+		// The baseline moves 89 covered statements and 98 held statements
+		// out of src/a.ts. src/b.ts takes 89 of 89, and src/c.ts takes 0
+		// of 9. Each percentage of the baseline stands the same, and each
+		// consistency rule of the baseline holds. Therefore no rule of the
+		// check fails, and the report is what shows the edit.
+		const result = run(
+			summary('quiet', [
+				{ path: 'src/a.ts', statements: [50, 100] },
+				{ path: 'src/b.ts', statements: [50, 50] },
+				{ path: 'src/c.ts', statements: [0, 9] },
+			]),
+			record('quiet', [
+				{ path: 'src/a.ts', statements: [1, 2] },
+				{ path: 'src/b.ts', statements: [139, 139] },
+				{ path: 'src/c.ts', statements: [0, 18] },
+			]),
+		);
+		expect(result.status).toBe(0);
+		expect(result.output).toContain('no file moved against its floor');
+		expect(result.output).toContain('src/a.ts  statements 50 of 100 (50%)');
+		expect(result.output).toContain(
+			'the floor holds 1 of 2 statements (50%)',
 		);
 	});
 

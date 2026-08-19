@@ -260,10 +260,16 @@ function recordedCount(count: Count): RecordedCount {
  *
  * These three rules bound one number at a time. An edit that moves counts
  * from one file to another keeps all three rules true, and it lowers the
- * floor of the first file. These rules do not catch that edit. The report
- * prints the counts of each floor beside the counts of the run. Therefore
- * the report shows the counts that such an edit moved, and the reader does
- * not depend on the diff of this file alone.
+ * floor of the first file. These rules do not catch that edit.
+ *
+ * The report shows that edit. The comparison holds each metric whose counts
+ * differ from the counts of its floor, and the report prints the counts of
+ * that floor. Such an edit gives two files a floor with counts that the run
+ * does not report.
+ *
+ * The report states the numbers. The report does not state a cause. A
+ * person who reviews a change to this file therefore reads the diff of that
+ * file.
  */
 export function readBaseline(text: string): Reading<Baseline> {
 	const parsed = objectOf(text, 'the coverage baseline');
@@ -420,30 +426,31 @@ function checkSums(report: Report, what: string): Reading<true> {
 /**
  * One metric of one file, and what that metric does against its floor.
  *
- * A move carries the counts that the baseline holds. A move also carries
- * the counts that the run reports. Each pair of counts comes with the
- * percentage of that pair. The report prints the counts beside the
- * percentage, because a percentage alone hides the counts that give it.
+ * A move carries the two counts of the floor and the two counts of the run.
+ * The comparison takes the percentage of each pair, and it holds the change
+ * between the two percentages. A reader of a move computes a percentage
+ * again from the counts that the move carries.
  */
 export interface Move {
 	readonly metric: Metric;
 	/** The counts that the baseline holds. */
-	readonly floorCount: Count;
-	/** The percentage of the counts that the baseline holds. */
-	readonly floor: number;
+	readonly floor: Count;
 	/** The counts that the run reports. */
-	readonly nowCount: Count;
-	/** The percentage of the counts that the run reports. */
-	readonly now: number;
+	readonly now: Count;
 	/** The points that the percentage gains. A fall is negative. */
 	readonly change: number;
 	/** Whether the fall goes past the grace. */
 	readonly past: boolean;
 }
 
-/** One file, and what the file does against the baseline. */
-export interface FileMove {
+/** One file, and some metrics of that file. */
+export interface FileMoves {
 	readonly path: string;
+	readonly moves: readonly Move[];
+}
+
+/** One file, and what the file does against the baseline. */
+export interface FileMove extends FileMoves {
 	/** Every metric whose percentage differs from its floor. */
 	readonly moves: readonly Move[];
 	/** Whether one metric of this file fell past the grace. */
@@ -456,6 +463,14 @@ export interface Comparison {
 	readonly total: readonly Move[];
 	/** Every file that differs from its floor, with the worst fall first. */
 	readonly changed: readonly FileMove[];
+	/**
+	 * Every file that holds a metric whose counts differ from the counts of
+	 * its floor, with the metrics that differ. Two different pairs of counts
+	 * can give one percentage, so a metric can stand here and move no
+	 * percentage. An edit of the baseline that moves counts from one file to
+	 * another puts a metric of each file here.
+	 */
+	readonly mismatched: readonly FileMoves[];
 	/**
 	 * The files that the baseline holds and the run does not report. Each
 	 * one fails the check.
@@ -498,6 +513,10 @@ export interface Comparison {
  * Nothing else fails the check. The numbers of the whole run never fail
  * the check. Coverage that rises never fails the check.
  *
+ * The comparison also collects each metric whose counts differ from the
+ * counts of its floor. No rule uses that list. The list is what makes an
+ * edit of the baseline that moves counts legible in the report.
+ *
  * The comparison reports every move that it finds. The report is what makes
  * the numbers legible.
  */
@@ -506,6 +525,7 @@ export function compare(report: Report, baseline: Baseline): Comparison {
 		baseline.files.map((file) => [file.path, file.counts]),
 	);
 	const changed: FileMove[] = [];
+	const mismatched: FileMoves[] = [];
 	const fresh: string[] = [];
 	for (const file of report.files) {
 		const was = floors.get(file.path);
@@ -514,9 +534,8 @@ export function compare(report: Report, baseline: Baseline): Comparison {
 			continue;
 		}
 		floors.delete(file.path);
-		const moves = movesOf(was, file.counts).filter(
-			(move) => move.change !== 0,
-		);
+		const all = movesOf(was, file.counts);
+		const moves = all.filter((move) => move.change !== 0);
 		if (moves.length > 0) {
 			changed.push({
 				path: file.path,
@@ -524,11 +543,16 @@ export function compare(report: Report, baseline: Baseline): Comparison {
 				past: moves.some((move) => move.past),
 			});
 		}
+		const other = all.filter((move) => !alike(move.floor, move.now));
+		if (other.length > 0) {
+			mismatched.push({ path: file.path, moves: other });
+		}
 	}
 	const gone = [...floors.keys()].sort(order);
 	return {
 		total: movesOf(baseline.total, report.total),
 		changed: changed.sort(byWorstFall),
+		mismatched,
 		gone,
 		fresh,
 		fails:
@@ -538,20 +562,21 @@ export function compare(report: Report, baseline: Baseline): Comparison {
 	};
 }
 
+/** Whether two counts hold the same two numbers. */
+function alike(left: Count, right: Count): boolean {
+	return left.total === right.total && left.covered === right.covered;
+}
+
 /** What the four metrics of one file do against four floors. */
 function movesOf(floors: Counts, now: Counts): readonly Move[] {
 	return METRICS.map((metric) => {
 		const held = floors[metric];
 		const ran = now[metric];
-		const floor = percentOf(held);
-		const reached = percentOf(ran);
-		const fall = hundredths(floor) - hundredths(reached);
+		const fall = hundredths(percentOf(held)) - hundredths(percentOf(ran));
 		return {
 			metric,
-			floorCount: held,
-			floor,
-			nowCount: ran,
-			now: reached,
+			floor: held,
+			now: ran,
 			change: -fall / 100,
 			past: fall > GRACE_HUNDREDTHS,
 		};
