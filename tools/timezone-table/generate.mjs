@@ -4,10 +4,12 @@
  *     node tools/timezone-table/generate.mjs
  *     node tools/timezone-table/generate.mjs --check
  *
- * The script reads the timezone database files under `vendor/`. Those
- * files come from one release of the database, and `pin.json` names that
- * release and holds the checksum of every one of the files. The script
- * stops when a checksum does not agree. The script reaches no network.
+ * The script reads the timezone database files from the cache that the
+ * download command fills. Those files come from one release of the
+ * database, and `pin.json` names that release and holds the checksum of
+ * each of the files. The script stops when a checksum does not agree, and
+ * it stops when the cache holds no copy of the release. The script
+ * reaches no network.
  *
  * Without an argument the script writes the module. With `--check` the
  * script writes nothing and compares instead. The exit status is 0 when
@@ -19,9 +21,16 @@
  * release.
  */
 
-import { createHash } from 'node:crypto';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import {
+	absentMessage,
+	readCachedRelease,
+	readPin,
+	timezoneCacheRoot,
+	wrongMessage,
+	PIN_PATH,
+} from './cache.ts';
 import { encodeTable, tableNames } from './encode.ts';
 import { expandZones } from './expand.ts';
 import { tableModule, TABLE_MODULE_PATH } from './module.ts';
@@ -31,9 +40,8 @@ const EXIT_DIFFERS = 1;
 const EXIT_UNUSABLE = 2;
 const USAGE = 'usage: node tools/timezone-table/generate.mjs [--check]';
 
-const here = new URL('./', import.meta.url);
-const root = new URL('../../', here);
-const modulePath = fileURLToPath(new URL(TABLE_MODULE_PATH, root));
+const repository = new URL('../../', import.meta.url);
+const modulePath = fileURLToPath(new URL(TABLE_MODULE_PATH, repository));
 
 const argument = process.argv[2];
 if (argument === '--help' || argument === '-h') {
@@ -49,40 +57,32 @@ const check = argument === '--check';
 
 let pin;
 try {
-	pin = JSON.parse(readFileSync(new URL('pin.json', here), 'utf8'));
+	pin = readPin();
 } catch (error) {
-	console.error(`the script cannot read pin.json: ${String(error)}`);
+	console.error(`the script cannot read ${PIN_PATH}: ${String(error)}`);
+	process.exit(EXIT_UNUSABLE);
+}
+
+const root = timezoneCacheRoot();
+const cached = readCachedRelease(pin, root);
+if (cached.state === 'wrong') {
+	console.error(wrongMessage(pin, root, cached.wrong));
+	process.exit(EXIT_UNUSABLE);
+}
+if (cached.state === 'absent') {
+	console.error(absentMessage(pin, root, cached.missing));
 	process.exit(EXIT_UNUSABLE);
 }
 
 const texts = new Map();
-for (const [name, expected] of Object.entries(pin.files)) {
-	let bytes;
-	try {
-		bytes = readFileSync(new URL(`vendor/${name}`, here));
-	} catch (error) {
-		console.error(
-			`the script cannot read vendor/${name}: ${String(error)}`,
-		);
-		process.exit(EXIT_UNUSABLE);
-	}
-	const found = createHash('sha256').update(bytes).digest('hex');
-	if (found !== expected) {
-		console.error(
-			`vendor/${name} does not agree with pin.json:\n  pin.json states ${expected}\n  the file gives ${found}`,
-		);
-		console.error(
-			'The vendored files and the pin must come from one release. See tools/timezone-table/README.md.',
-		);
-		process.exit(EXIT_UNUSABLE);
-	}
+for (const [name, bytes] of cached.files) {
 	texts.set(name, bytes.toString('utf8'));
 }
 
 const stated = (texts.get('version') ?? '').trim();
 if (stated !== pin.release) {
 	console.error(
-		`vendor/version states the release ${stated}, and pin.json states ${pin.release}`,
+		`the file version of the cache states the release ${stated}, and ${PIN_PATH} states ${pin.release}`,
 	);
 	process.exit(EXIT_UNUSABLE);
 }

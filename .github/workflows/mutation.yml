@@ -41,6 +41,13 @@ jobs:
                   node-version-file: .nvmrc
                   cache: npm
             - run: npm ci
+            # The suite holds tests that read one release of the IANA
+            # timezone database, and those tests run nothing when the cache
+            # holds no copy of the release. A mutant that only such a test
+            # kills would survive the run, and the score would fall. This
+            # step gets the release, as the test job of the CI workflow
+            # does.
+            - run: npm run timezone:download
             - run: npm run mutation
 
             # The HTML report names every mutant of the run, and it names the

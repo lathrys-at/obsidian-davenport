@@ -107,7 +107,6 @@ export default defineConfig(
 					// service needs a project for every file that it
 					// parses, and this list gives those files the default
 					// one. The count below only has to hold the list.
-					maximumDefaultProjectFileMatchCount_THIS_WILL_SLOW_DOWN_LINTING: 12,
 					allowDefaultProject: [
 						'eslint.config.mts',
 						'manifest.json',
@@ -116,14 +115,16 @@ export default defineConfig(
 						'tools/frontmatter-probe/*.mjs',
 						'tools/timezone-table/*.mjs',
 					],
-					// The patterns above match ten files. Each of these
-					// files is outside tsconfig.json, so the linter
-					// builds a program of its own for the file. The
+					// The patterns above name fifteen paths. The linter
+					// counts the thirteen that hold code: this file, and
+					// each .mjs entry point under scripts/ and tools/.
+					// Each of these files is outside tsconfig.json, so the
+					// linter builds a program of its own for the file. The
 					// default limit is eight files, and the linter stops
 					// past that limit. The limit guards the run time of the
 					// lint. The number below gives room for a few more tool
 					// files.
-					maximumDefaultProjectFileMatchCount_THIS_WILL_SLOW_DOWN_LINTING: 12,
+					maximumDefaultProjectFileMatchCount_THIS_WILL_SLOW_DOWN_LINTING: 16,
 				},
 				tsconfigRootDir: import.meta.dirname,
 				extraFileExtensions: ['.json'],
@@ -260,6 +261,22 @@ export default defineConfig(
 		files: ['tools/frontmatter-probe/environment.ts'],
 		rules: {
 			'obsidianmd/platform': 'off',
+		},
+	},
+	// The timezone tool runs under node on a desktop, and no part of it
+	// ships. It reads a release of the timezone database from a cache, it
+	// hashes the bytes of each file, and it writes one source file. The
+	// plugin carries that source file and never this code.
+	{
+		name: 'davenport/timezone-tooling',
+		files: ['tools/timezone-table/**/*.ts'],
+		languageOptions: {
+			globals: {
+				...globals.node,
+			},
+		},
+		rules: {
+			'obsidianmd/no-nodejs-modules': 'off',
 		},
 	},
 	// The fetch poison is the runtime half of the ban below: it replaces

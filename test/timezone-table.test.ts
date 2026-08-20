@@ -2,54 +2,85 @@
  * The generator of the timezone table.
  *
  * The plugin ships a table of timezone rules, and a generator writes that
- * table from one release of the timezone database. The release sits in
- * the repository under `tools/timezone-table/vendor/`, so the generator
- * needs no network and any person can run it again and compare.
+ * table from one release of the timezone database. The repository holds
+ * the checksum of that release and not the bytes of it. The download
+ * command puts the bytes in a cache outside the repository.
  *
  * These tests hold three promises.
  *
- * - The vendored files are the files of the pinned release. The checksum
- *   of every one of them agrees with the pin.
+ * - The files in the cache are the files of the pinned release. The
+ *   checksum of each one of them agrees with the pin.
  * - The generator over those files writes the table that the repository
  *   ships, byte for byte. A change to the generator that nobody meant
  *   therefore fails here, and so does an edit of the generated file.
  * - The generator reads its input and refuses what it does not
  *   understand.
+ *
+ * The first two promises need the release. A test of one of them states
+ * that it has no input, and runs nothing, where the cache holds no copy
+ * of the release. A test of one of them fails where the cache holds bytes
+ * that the pin refuses. The third promise needs no release, and those
+ * tests run at every run.
  */
 
-import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, type TestContext } from 'vitest';
+import {
+	absentMessage,
+	checksum,
+	readCachedRelease,
+	readPin,
+	timezoneCacheRoot,
+	wrongMessage,
+} from '../tools/timezone-table/cache';
 import { encodeTable, tableNames } from '../tools/timezone-table/encode';
 import { expandZone, expandZones } from '../tools/timezone-table/expand';
 import { tableModule } from '../tools/timezone-table/module';
-import { parseTimezoneSource } from '../tools/timezone-table/source';
+import {
+	parseTimezoneSource,
+	type TimezoneSource,
+} from '../tools/timezone-table/source';
 
 const ROOT = join(import.meta.dirname, '..');
-const VENDOR = join(ROOT, 'tools', 'timezone-table', 'vendor');
 const TABLE_MODULE = join(ROOT, 'src', 'core', 'timezone', 'table-data.ts');
 
-interface Pin {
-	readonly release: string;
-	readonly form: string;
-	readonly archive: { readonly name: string; readonly sha256: string };
-	readonly data: readonly string[];
-	readonly files: Readonly<Record<string, string>>;
+const pin = readPin();
+const cacheRoot = timezoneCacheRoot();
+const cached = readCachedRelease(pin, cacheRoot);
+
+/**
+ * The files of the release. The test states that it has no input where
+ * the cache holds no copy of the release. The test fails where the cache
+ * holds a file that the pin refuses, because such a file is a fault and
+ * not an absence.
+ */
+function releaseFiles(context: TestContext): ReadonlyMap<string, Buffer> {
+	if (cached.state === 'wrong') {
+		throw new Error(wrongMessage(pin, cacheRoot, cached.wrong));
+	}
+	if (cached.state === 'absent') {
+		return context.skip(absentMessage(pin, cacheRoot, cached.missing));
+	}
+	return cached.files;
 }
 
-const pin = JSON.parse(
-	readFileSync(join(ROOT, 'tools', 'timezone-table', 'pin.json'), 'utf8'),
-) as Pin;
-
-function vendored(name: string): string {
-	return readFileSync(join(VENDOR, name), 'utf8');
+function fileText(files: ReadonlyMap<string, Buffer>, name: string): string {
+	const bytes = files.get(name);
+	if (bytes === undefined) {
+		throw new Error(`the cache holds no file named ${name}`);
+	}
+	return bytes.toString('utf8');
 }
 
-function generate(): string {
-	const source = parseTimezoneSource(
-		pin.data.map((name) => ({ name, text: vendored(name) })),
+function release(files: ReadonlyMap<string, Buffer>): TimezoneSource {
+	return parseTimezoneSource(
+		pin.data.map((name) => ({ name, text: fileText(files, name) })),
 	);
+}
+
+function generate(files: ReadonlyMap<string, Buffer>): string {
+	const source = release(files);
 	return tableModule(
 		pin.release,
 		encodeTable(expandZones(source), tableNames(source)),
@@ -64,18 +95,24 @@ describe('the pin of the timezone release', () => {
 		expect(pin.form).toBe('main');
 	});
 
-	it('agrees with the release that the vendored files state', () => {
-		expect(vendored('version').trim()).toBe(pin.release);
+	it('agrees with the release that the files of the cache state', (context) => {
+		expect(fileText(releaseFiles(context), 'version').trim()).toBe(
+			pin.release,
+		);
 	});
 
-	it('holds the checksum of every vendored file', () => {
+	it('holds the checksum of every file of the release', (context) => {
+		const files = releaseFiles(context);
 		for (const [name, expected] of Object.entries(pin.files)) {
-			const found = createHash('sha256')
-				.update(readFileSync(join(VENDOR, name)))
-				.digest('hex');
-			expect(found, `vendor/${name} does not agree with the pin`).toBe(
-				expected,
-			);
+			const bytes = files.get(name);
+			expect(
+				bytes,
+				`the cache holds no file named ${name}`,
+			).toBeDefined();
+			expect(
+				bytes === undefined ? '' : checksum(bytes),
+				`the file ${name} of the cache does not agree with the pin`,
+			).toBe(expected);
 		}
 	});
 
@@ -85,37 +122,35 @@ describe('the pin of the timezone release', () => {
 		}
 	});
 
-	it('carries the notice of the release', () => {
-		expect(vendored('LICENSE')).toContain('public domain');
+	it('carries the notice of the release', (context) => {
+		expect(fileText(releaseFiles(context), 'LICENSE')).toContain(
+			'public domain',
+		);
 	});
 });
 
-describe('the generator over the vendored release', () => {
-	it('writes the table that the repository ships', () => {
+describe('the generator over the release in the cache', () => {
+	it('writes the table that the repository ships', (context) => {
 		expect(
-			generate(),
+			generate(releaseFiles(context)),
 			'the generator writes a different table from the one in the tree. Run node tools/timezone-table/generate.mjs and commit the result.',
 		).toBe(readFileSync(TABLE_MODULE, 'utf8'));
 	});
 
-	it('writes the same bytes at every run', () => {
-		expect(generate()).toBe(generate());
+	it('writes the same bytes at every run', (context) => {
+		const files = releaseFiles(context);
+		expect(generate(files)).toBe(generate(files));
 	});
 
-	it('reads every zone and every link of the release', () => {
-		const source = parseTimezoneSource(
-			pin.data.map((name) => ({ name, text: vendored(name) })),
-		);
+	it('reads every zone and every link of the release', (context) => {
+		const source = release(releaseFiles(context));
 		expect(source.zones.length).toBe(341);
 		expect(source.links.length).toBe(257);
 		expect(source.zones.length + source.links.length).toBe(598);
 	});
 
-	it('gives every zone a state at the start of 1970', () => {
-		const source = parseTimezoneSource(
-			pin.data.map((name) => ({ name, text: vendored(name) })),
-		);
-		for (const zone of expandZones(source)) {
+	it('gives every zone a state at the start of 1970', (context) => {
+		for (const zone of expandZones(release(releaseFiles(context)))) {
 			expect(
 				zone.initial.abbreviation.length,
 				`${zone.name} states no abbreviation at the start of 1970`,
@@ -123,11 +158,8 @@ describe('the generator over the vendored release', () => {
 		}
 	});
 
-	it('states the changes of every zone in order', () => {
-		const source = parseTimezoneSource(
-			pin.data.map((name) => ({ name, text: vendored(name) })),
-		);
-		for (const zone of expandZones(source)) {
+	it('states the changes of every zone in order', (context) => {
+		for (const zone of expandZones(release(releaseFiles(context)))) {
 			let previous = 0;
 			for (const change of zone.changes) {
 				expect(
@@ -468,12 +500,10 @@ describe('the horizon of the expansion', () => {
 		expect(expandZones(read).length).toBe(1);
 	});
 
-	it('holds the pinned release below the horizon', () => {
+	it('holds the pinned release below the horizon', (context) => {
 		// The refusal above runs over the pinned release at every test run,
 		// because the generator calls it. This states the margin.
-		const read = parseTimezoneSource(
-			pin.data.map((name) => ({ name, text: vendored(name) })),
-		);
+		const read = release(releaseFiles(context));
 		let latest = 0;
 		for (const set of read.rules.values()) {
 			for (const rule of set) {

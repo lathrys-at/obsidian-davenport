@@ -44,6 +44,25 @@ jobs:
                   node-version-file: .nvmrc
                   cache: npm
             - run: npm ci
+            # The generator of the timezone table reads one release of the
+            # IANA timezone database. The repository holds the checksum of
+            # that release and not the files of it. This step gets the
+            # release into a cache outside the tree, and the step fails the
+            # job when the bytes do not agree with the checksum. The suite
+            # below then holds a test that writes the table from that
+            # release and compares it against the table in the tree.
+            # Without this step that test states that it has no input and
+            # runs nothing. The step and the test read the place of the
+            # cache from one module, so the two cannot name different
+            # directories.
+            #
+            # The step reaches the network, as the step above it does. The
+            # archive is under half a megabyte, and the step takes about
+            # one second. No action holds the archive between two runs. An
+            # action that held it would cost more than the download: it
+            # would put one more third party in the supply chain of the
+            # run.
+            - run: npm run timezone:download
             - run: npm run coverage
             - run: node scripts/coverage-ratchet.mjs
             - run: node scripts/plan-ids.mjs
@@ -69,6 +88,10 @@ jobs:
                   node-version-file: .nvmrc
                   cache: npm
             - run: npm ci
+            # This job runs the same step as the job above. The download
+            # command writes files and joins paths, and this leg states
+            # whether it does so under the rules of Windows too.
+            - run: npm run timezone:download
             - run: npm run coverage
             - run: node scripts/coverage-ratchet.mjs
             - run: node scripts/plan-ids.mjs
