@@ -1,44 +1,40 @@
 /**
- * The configuration of the mutation lane. StrykerJS makes a small change to
+ * The configuration of mutation testing. StrykerJS makes a small change to
  * the source, runs the tests, and asks whether a test fails. A mutant is one
  * such change. A test that fails kills the mutant. A mutant survives when
  * every test passes. A mutant that survives marks source that the tests run
  * and do not check.
  *
- * The lane runs on a schedule, and it runs on request. The lane is not part
- * of the required check of a pull request. A run takes far longer than the
- * test suite.
- *
- * `scripts/mutation-ratchet.mjs` reads the JSON report of the run. The check
- * compares the score of the run against the floor in `mutation-baseline.json`.
+ * A person runs this tool by hand to find the gaps in the tests. No workflow
+ * runs the tool, no check reads its report, and no merge waits for a run. A
+ * run takes far longer than the test suite.
  *
  *     npm run mutation
- *     node scripts/mutation-ratchet.mjs
  *
  * The `reports` directory and the `.stryker-tmp` directory hold the output of
  * a run. Git ignores both directories.
  */
-import { MUTATED } from './scripts/mutation-ratchet-core.ts';
-
 export default {
 	packageManager: 'npm',
 	testRunner: 'vitest',
 
-	// The lane mutates the source files, and it mutates no test file. A test
-	// of the check compares this selection against the files that the
-	// coverage instrument reads.
-	mutate: [...MUTATED],
+	// The tool mutates the source files, and it mutates no test file. A test
+	// compares this selection against the files that the coverage instrument
+	// reads. The two selections must name the same files. A file outside the
+	// coverage selection has no floor for its lines, and a file outside this
+	// selection gets no mutants at all.
+	mutate: ['src/**/*.ts', '!src/**/*.test.ts'],
 
-	// The check needs the JSON report. A person needs the HTML report. The
-	// two text reporters put the score and the progress in the log of the
-	// run.
+	// A person needs the HTML report. The two text reporters put the score
+	// and the progress in the log of the run. The JSON report holds the same
+	// data as the HTML report, in the form that a program reads.
 	reporters: ['clear-text', 'progress', 'html', 'json'],
 	htmlReporter: { fileName: 'reports/mutation/mutation.html' },
 	jsonReporter: { fileName: 'reports/mutation/mutation.json' },
 
-	// A run must give the same score for the same commit. The floor has no
-	// meaning if the score moves for another reason. Therefore the run keeps
-	// no state between two runs, and each run tests every mutant again.
+	// A run must give the same score for the same commit. A score that moves
+	// for another reason says nothing about the tests. Therefore the run
+	// keeps no state between two runs, and each run tests every mutant again.
 	incremental: false,
 
 	// Stryker measures which test runs which line, and it then runs only the

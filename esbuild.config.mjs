@@ -53,8 +53,10 @@ const context = await esbuild.context({
 	treeShaking: true,
 	outfile: 'main.js',
 	minify: prod,
-	// The metafile says which module holds which bytes of the output.
-	// `scripts/bundle-size.mjs` reads it. The watch build never writes it.
+	// The metafile says which module holds which bytes of the output. A
+	// person reads it to see where the bytes went, and
+	// `scripts/repeat-build.mjs` compares it between two runs. The watch
+	// build never writes it.
 	metafile: prod,
 	// A content hash in the name of a chunk makes each rebuild of that chunk
 	// read as an output file that went away, and the timezone data will

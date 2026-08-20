@@ -1,6 +1,7 @@
 {
 	"name": "davenport",
 	"version": "0.0.1",
+	"author": "ren (lathrys-at)",
 	"description": "Sync calendar events and tasks between your vault and CalDAV servers (iCloud, Fastmail, Nextcloud, Google, and more).",
 	"main": "main.js",
 	"type": "module",

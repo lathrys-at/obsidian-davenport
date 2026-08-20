@@ -26,9 +26,9 @@
  * each output file of the build, and it gives the size of each one. esbuild
  * writes those names relative to the directory that the build ran in, so the
  * metafile holds no absolute path. Two runs in one directory must therefore
- * write the same metafile. `scripts/bundle-size.mjs` reads the metafile, and
- * a metafile that changes between two runs makes the report of that check
- * change too.
+ * write the same metafile. A person reads the metafile to see where the bytes
+ * of the bundle went, and a metafile that changes between two runs makes that
+ * reading change too.
  *
  * The check removes files, so it holds every path that it removes or reads
  * inside the build directory. A path that leaves that directory ends the run.

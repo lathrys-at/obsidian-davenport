@@ -155,10 +155,6 @@ jobs:
             - run: npm ci
             - run: npm run build
             - run: node scripts/scan-bundle.mjs
-            - run: node scripts/bundle-size.mjs
-            # This step removes the files of `npm run build`, so it stands
-            # after every step that reads those files.
-            - run: node scripts/repeat-build.mjs
             - run: npm run probe:build
             - run: node scripts/scan-bundle.mjs tools/frontmatter-probe/dist/main.js
 

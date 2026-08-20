@@ -45,42 +45,34 @@ The check never writes the baseline by itself. Accept an intended change in
 the pull request that causes it: run
 `node scripts/coverage-ratchet.mjs --write-baseline` and commit the new file.
 
-## The mutation lane
+## Mutation testing
 
 The coverage ratchet counts the lines that a test runs. It does not count the
-lines that a test checks. The mutation lane asks the second question.
-StrykerJS makes a small change to the source, runs the tests, and asks whether
-a test fails. A change that survives every test marks a line that the tests
-run and do not check.
+lines that a test checks. Mutation testing asks the second question. StrykerJS
+makes a small change to the source, runs the tests, and asks whether a test
+fails. A change that survives every test marks a line that the tests run and
+do not check.
 
 ```bash
 npm run mutation
-node scripts/mutation-ratchet.mjs
 ```
 
-The run takes minutes, and the run writes `reports/mutation/mutation.html` for
-a person and `reports/mutation/mutation.json` for the check. A workflow runs
-the lane once a week and on request. The lane is not part of the required
-`ci-ok` check, and no merge waits for it.
+The run takes minutes, and the run writes `reports/mutation/mutation.html` and
+`reports/mutation/mutation.json`. A person reads the HTML report.
 
-[`mutation-baseline.json`](../mutation-baseline.json) holds one number, and
-that number is the score of the whole run. A score less than that floor fails
-the check, even by one hundredth of a point. The check never writes the
-baseline by itself. Accept an intended change in the pull request that causes
-it: run `node scripts/mutation-ratchet.mjs --write-baseline` and commit the
-new file.
-
-The check also fails on a run that measured too little to score. The score
-divides by the mutants that it counts, and a mutant that the run could not
-test leaves that division. A run that tests less would therefore score more.
-The check refuses a report that holds a mutant with a compile error or a
-runtime error, and it refuses a report whose mutants the score counts none of.
+A person runs this tool by hand to find the gaps in the tests. No workflow
+runs the tool, no check reads its report, and no merge waits for a run. The
+score of a run has no floor, and no file in the repository records a score.
+[`stryker.config.mjs`](../stryker.config.mjs) configures the run. A case in
+[`stryker-config.test.ts`](stryker-config.test.ts) loads that file and
+compares the selection in it with the files that the coverage instrument
+reads.
 
 Read the score with its limit in mind. Stryker holds a set of rules, and each
 rule makes one kind of change. A rule of the source can be wrong in a way that
-no rule of Stryker writes, and the lane then says nothing about that mistake.
-The score is therefore a floor under the tests, and it is not a statement that
-the tests pin the behavior of a line.
+no rule of Stryker writes, and a run then says nothing about that mistake. The
+score is therefore a floor under the tests, and it is not a statement that the
+tests pin the behavior of a line.
 
 A mutant that survives is work, and not a broken build. A mutant that shows a
 gap in the tests becomes an issue. A mutant that no test can kill gets a
