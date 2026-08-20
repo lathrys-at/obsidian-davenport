@@ -44,6 +44,52 @@ jobs:
                   node-version-file: .nvmrc
                   cache: npm
             - run: npm ci
+            # The generator of the timezone table reads one release of the
+            # IANA timezone database. The repository holds the checksum of
+            # that release and not the files of it. This step gets the
+            # release into a cache outside the tree, and the step fails the
+            # job when the bytes do not agree with the checksum. The suite
+            # below then holds a test that writes the table from that
+            # release and compares it against the table in the tree.
+            # Without this step that test states that it has no input and
+            # runs nothing. The step and the test read the place of the
+            # cache from one module, so the two cannot name different
+            # directories.
+            #
+            # The step reaches the network, as the step above it does. The
+            # archive is under half a megabyte. No action holds the archive
+            # between two runs. An action that held it would cost more than
+            # the download: it would put one more third party in the supply
+            # chain of the run.
+            #
+            # The command gives the status 1 for bytes that do not agree
+            # with the pin, and the status 2 for a script that cannot run.
+            # A server that does not answer, an answer that is not 200, a
+            # name that does not resolve, and an address that does not
+            # start with https: are all in the second class. This step
+            # therefore runs the command again after the status 2. There
+            # are three attempts in total, and the step waits 5 seconds
+            # before each attempt after the first one.
+            #
+            # The status 1 fails the job immediately, and this step does
+            # not run the command again after it. A checksum that
+            # disagrees is an answer, and a second attempt cannot change
+            # that answer.
+            - name: Get the pinned timezone release
+              shell: bash
+              run: |
+                  for attempt in 1 2 3; do
+                      if [ "$attempt" -gt 1 ]; then
+                          sleep 5
+                      fi
+                      status=0
+                      npm run timezone:download || status=$?
+                      if [ "$status" -ne 2 ]; then
+                          exit "$status"
+                      fi
+                      echo "the download command could not run. This was attempt ${attempt} of 3."
+                  done
+                  exit 2
             - run: npm run coverage
             - run: node scripts/coverage-ratchet.mjs
             - run: node scripts/plan-ids.mjs
@@ -69,6 +115,27 @@ jobs:
                   node-version-file: .nvmrc
                   cache: npm
             - run: npm ci
+            # This job runs the same step as the job above, and it reads
+            # the status of the command in the same way. The download
+            # command writes files and joins paths, and this leg states
+            # whether it does so under the rules of Windows too. The shell
+            # is bash here, because the default shell of a Windows runner
+            # is PowerShell.
+            - name: Get the pinned timezone release
+              shell: bash
+              run: |
+                  for attempt in 1 2 3; do
+                      if [ "$attempt" -gt 1 ]; then
+                          sleep 5
+                      fi
+                      status=0
+                      npm run timezone:download || status=$?
+                      if [ "$status" -ne 2 ]; then
+                          exit "$status"
+                      fi
+                      echo "the download command could not run. This was attempt ${attempt} of 3."
+                  done
+                  exit 2
             - run: npm run coverage
             - run: node scripts/coverage-ratchet.mjs
             - run: node scripts/plan-ids.mjs

@@ -1,7 +1,8 @@
 # Timezone table
 
-This directory holds one release of the IANA timezone database and the
-generator that turns it into the table that the plugin ships.
+This directory holds the pin of one release of the IANA timezone database
+and the generator that turns that release into the table that the plugin
+ships.
 
 ## Why the plugin ships a table
 
@@ -19,8 +20,10 @@ and through nothing else.
 
 | Path           | What it holds                                              |
 | -------------- | ---------------------------------------------------------- |
-| `vendor/`      | The data files of the pinned release, byte for byte        |
 | `pin.json`     | The release, the form, and the checksum of every file      |
+| `download.mjs` | The command that gets the release and checks it            |
+| `cache.ts`     | The place of the cache, and the reader of it               |
+| `archive.ts`   | The reader of the archive that the release ships           |
 | `source.ts`    | The reader of the file format of the release               |
 | `zone.ts`      | The states of a clock, and the code that builds one        |
 | `expand.ts`    | The rules of a zone, turned into changes of the clock      |
@@ -33,19 +36,35 @@ and through nothing else.
 The generator writes `src/core/timezone/table-data.ts`. That file is the
 artifact that the plugin ships. Do not edit it by hand.
 
-## The release, and why it is in the repository
+## The release, and where the bytes of it are
 
-`vendor/` holds the data files of one release. They are the files of the
-release, with no change of any byte. The data of the timezone database is
-in the public domain, and `vendor/LICENSE` carries the notice of the
-release.
+The repository holds the checksum of the release, and it holds no byte of
+the release. `pin.json` states the release, the address of its archive,
+the checksum of that archive, and the checksum of each of the twelve files
+that the release ships for this tool. The data of the timezone database is
+in the public domain, and the release carries the notice in its `LICENSE`
+file.
 
-The files are in the repository for one reason: a person must be able to
-write the table again, get the same bytes, and need no network to do it.
-A test in `test/timezone-table.test.ts` runs the generator over these
-files at every test run and compares the result against the committed
-module. A change to the generator that nobody meant therefore fails the
-build, and so does an edit of the generated file.
+The download command gets the archive from the server of the timezone
+project and puts the twelve files in a cache outside the repository. The
+command computes the checksum of the archive before it reads one byte of
+the content, and it computes the checksum of each file before it writes
+that file. Nothing reaches the cache that `pin.json` does not state.
+
+The cache is in the cache home of the user:
+
+- the directory that `DAVENPORT_TIMEZONE_CACHE` names, where the
+  environment sets that variable;
+- `$XDG_CACHE_HOME/davenport/timezone-database`, where the environment
+  sets `XDG_CACHE_HOME`;
+- `~/.cache/davenport/timezone-database` in all other conditions.
+
+The name of the release names the directory that holds its files. A move
+of the pin therefore takes nothing away from the cache.
+
+The command uses a cached archive again where the checksum of that archive
+agrees with the pin. The command then reaches no network. The command gets
+the archive one time for one release.
 
 The release ships its data in the **main** form. It also ships tools that
 turn the data into a vanguard form and a rearguard form. Those forms state
@@ -54,24 +73,39 @@ form about the zones that run one. `pin.json` records the form, and a test
 holds it at `main`.
 
 The release does **not** ship a file named `tzdata.zi`. That file is a
-product of the build of the release, and the tarball holds the data files
-that this directory vendors.
+product of the build of the release, and the archive holds the data files
+that this tool reads.
 
-## Run the generator
+## Get the release, and write the table
 
 ```bash
+npm run timezone:download          # get the release into the cache
 npm run timezone:generate          # write the module
 node tools/timezone-table/generate.mjs --check   # compare, write nothing
 ```
 
-The generator stops when the checksum of a vendored file does not agree
-with `pin.json`.
+The download command needs a network the first time. After that the
+command reads the cache, and it needs no network. The generator reads the
+cache and reaches no network. The generator stops when the cache holds no
+copy of the release, and the message names the download command. The
+generator also stops when a file of the cache does not agree with
+`pin.json`.
+
+`--check` writes nothing. It compares the module in the tree against what
+the generator writes now. The exit status is 0 when the two agree, 1 when
+they differ, and 2 when the script cannot run. The tests make the same
+comparison at every test run: the test file `test/timezone-table.test.ts`
+runs the generator over the cache and compares byte for byte. That test
+states that it has no input, and runs nothing, where the cache holds no
+copy of the release. The test fails where the cache holds bytes that the
+pin refuses.
 
 `pin.json` records the checksum that the person who moved the pin computed
 from the archive. The timezone project publishes no checksum file for an
-archive; it publishes a detached signature. `pin.json` names that signature
-file, and the step that verifies it is step 1 below. The record names where
-the signature is. The record does not state that somebody ran the check.
+archive; it publishes a detached signature. `pin.json` names that
+signature file, and the step that verifies it is step 1 below. The record
+names where the signature is. The record does not state that somebody ran
+the check.
 
 ## Move the pin to a new release
 
@@ -85,18 +119,20 @@ the bytes that the plugin ships.
     curl -O https://data.iana.org/time-zones/releases/tzdataYYYYR.tar.gz.asc
     gpg --verify tzdataYYYYR.tar.gz.asc tzdataYYYYR.tar.gz
     shasum -a 256 tzdataYYYYR.tar.gz
+    tar xzf tzdataYYYYR.tar.gz
+    shasum -a 256 LICENSE africa antarctica asia australasia backward \
+        etcetera europe factory northamerica southamerica version
     ```
 
-2. Put the new files in `vendor/`. The set of files is the set that
-   `pin.json` names under `files`. `version` and `LICENSE` come from the
-   release too.
+2. Write `pin.json` again: the release, the name and the address of the
+   archive, the checksum of the archive, and the checksum of every file.
+   `form` stays `main`.
 
-3. Write `pin.json` again: the release, the checksum of the archive, and
-   the checksum of every file. `form` stays `main`.
-
-4. Write the table again, and read the difference.
+3. Get the release into the cache, and write the table again. Then read
+   the difference.
 
     ```bash
+    npm run timezone:download
     npm run timezone:generate
     git diff src/core/timezone/table-data.ts
     ```
@@ -104,27 +140,28 @@ the bytes that the plugin ships.
     One line of the table states one timezone identifier, so the
     difference names every zone that changed and no other zone.
 
-5. Write the fixture that the tests compare against again. This step needs
+4. Write the fixture that the tests compare against again. This step needs
    `zic`, the compiler that the timezone project ships. The fixture states
    what a second reader of the same release answers, so the tests do not
    compare the plugin against itself.
 
     ```bash
+    cache=~/.cache/davenport/timezone-database/YYYYR
     zic -b fat -d /tmp/zoneinfo \
-        tools/timezone-table/vendor/{africa,antarctica,asia,australasia,\
-    backward,etcetera,europe,factory,northamerica,southamerica}
+        $cache/{africa,antarctica,asia,australasia,backward,etcetera,\
+    europe,factory,northamerica,southamerica}
     node tools/timezone-table/oracle.mjs /tmp/zoneinfo
     ```
 
-6. Raise the timezone component of the normalization stamp. A new release
+5. Raise the timezone component of the normalization stamp. A new release
    changes the bytes that a record can carry, and the component indexes
    those bytes.
 
-7. Run the gates: `npm test`, `npm run lint`, `npm run typecheck`,
+6. Run the gates: `npm test`, `npm run lint`, `npm run typecheck`,
    `npm run build`, and the bundle and coverage checks.
 
-Steps 1 to 5 need a network one time, for the release itself. Nothing in
-the build and nothing in the tests reaches a network.
+Steps 1 to 4 need a network one time, for the release itself. Nothing in
+the build reaches a network, and no test reaches a network.
 
 ## What the table holds
 
