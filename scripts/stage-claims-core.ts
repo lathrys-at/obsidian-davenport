@@ -26,11 +26,20 @@
  * - a suite tag that stands for every ID of that suite, for example `LG` or
  *   `CD complete`. The word `except` then takes IDs back out of the suite.
  *
+ * A comma and a semicolon each end an entry of a list, and one function reads
+ * an entry. A stage list and a claim line go through that one function.
+ * Therefore the two sides read the four forms by one rule.
+ *
  * A suite tag counts only where the tag opens an entry of the list. A tag
  * inside a phrase names a thing and not a list of IDs. The entry
  * `the conflict UI (the UI-11 table)` therefore gives the stage UI-11 alone.
- * The check reports each tag that it passed over in this way, so that a reader
- * can see the choice that the check made.
+ * The check reports each tag that it passed over in this way, and it reports
+ * the IDs that the other reading would add, so that a reader can see the
+ * choice that the check made and the cost of that choice.
+ *
+ * A fenced block of a Markdown text holds an example, and an example states
+ * nothing about this repository. The check reads no stage list and no claim
+ * line inside a fence.
  *
  * The comparison keeps every ID of each set, and not the counts alone. The
  * plan gives some IDs to more than one stage, and each of those stages needs
@@ -54,7 +63,10 @@ const CONSUMES = /\bConsumes:/;
 const EXCEPT = /\bexcept\b/;
 
 /** The line of an issue body that states the claim of that issue. */
-const TRAILER = /^[ \t]*[-*][ \t]+(?:\*\*)?Test plan(?:\*\*)?[ \t]*:(.*)$/m;
+const TRAILER = /^[ \t]*[-*][ \t]+(?:\*\*)?Test plan(?:\*\*)?[ \t]*:(.*)$/gm;
+
+/** The line that opens a fenced block, and the line that closes one. */
+const FENCE = /^[ \t]*(`{3,}|~{3,})(.*)$/;
 
 /** The stage number that a milestone name states. */
 const MILESTONE_STAGE = /\bStage (\d+)\b/;
@@ -278,6 +290,42 @@ export function readEntry(text: string, corpus: PlanCorpus): Entry {
 }
 
 /**
+ * The text without its fenced blocks. A fenced block holds an example, and an
+ * example states nothing about this repository. A fence opens on a line of
+ * three or more backticks, or of three or more tildes. The block closes on a
+ * line that holds as many of the same character and no other word. A block
+ * that no line closes runs to the end of the text.
+ *
+ * Each line of a block becomes an empty line. Therefore the text keeps its
+ * count of lines, and a line that stands after a block still reads the same.
+ */
+export function withoutFences(text: string): string {
+	let open: string | undefined;
+	return text
+		.split('\n')
+		.map((line) => {
+			const fence = FENCE.exec(line);
+			if (open === undefined) {
+				if (fence === null) {
+					return line;
+				}
+				open = must(fence[1]);
+				return '';
+			}
+			const marks = fence === null ? '' : must(fence[1]);
+			if (
+				fence !== null &&
+				marks.startsWith(open) &&
+				must(fence[2]).trim() === ''
+			) {
+				open = undefined;
+			}
+			return '';
+		})
+		.join('\n');
+}
+
+/**
  * Splits the list of a stage into its entries. A comma and a semicolon each
  * end an entry. A comma inside brackets ends nothing, because the text inside
  * the brackets qualifies the entry that carries it.
@@ -303,8 +351,9 @@ function entriesOf(text: string): readonly string[] {
 
 /** The stage lists of the plan, and the test IDs that each stage holds. */
 export function readStages(text: string, corpus: PlanCorpus): StageCorpus {
-	const part = PART.exec(text);
-	const body = part === null ? '' : text.slice(part.index);
+	const source = withoutFences(text);
+	const part = PART.exec(source);
+	const body = part === null ? '' : source.slice(part.index);
 	const stages: Stage[] = [];
 	const holds: Hold[] = [];
 	// The holds of one stage read in the order of the plan, and not in the
@@ -365,16 +414,93 @@ export function readStages(text: string, corpus: PlanCorpus): StageCorpus {
 	};
 }
 
+/** One suite tag that stands inside an entry and does not open that entry. */
+export interface Passed {
+	readonly stage: number;
+	/** The text of the entry that holds the tag. */
+	readonly entry: string;
+	readonly tag: string;
+	/**
+	 * The test IDs that this stage takes under the other reading, and that
+	 * this stage does not hold under the rule of the check. A reading that
+	 * took a suite tag anywhere in an entry would add each of these.
+	 */
+	readonly extra: readonly string[];
+}
+
+/** What the other reading of the suite tags gives, against this reading. */
+export interface Wider {
+	/** One row for each suite tag that the check passed over. */
+	readonly rows: readonly Passed[];
+	/** The pairs of a test ID and a stage that the other reading adds. */
+	readonly pairs: number;
+	/** The count of test IDs that more than one stage holds under it. */
+	readonly splitHalves: number;
+}
+
+/**
+ * Each suite tag that the check passed over, with the IDs that the other
+ * reading would add. The check reads a suite tag as a whole suite only where
+ * the tag opens an entry. The other reading takes the tag anywhere in the
+ * entry. These rows and these counts state the difference between the two
+ * readings, so that the output of one run is enough to audit the rule.
+ */
+export function passedTags(plan: PlanCorpus, corpus: StageCorpus): Wider {
+	const rows: Passed[] = [];
+	const spread = new Map<string, Set<number>>();
+	const hold = (id: string, stage: number): void => {
+		const stages = spread.get(id) ?? new Set<number>();
+		stages.add(stage);
+		spread.set(id, stages);
+	};
+	for (const item of corpus.holds) {
+		hold(item.id, item.stage);
+	}
+	const added = new Set<string>();
+	for (const stage of corpus.stages) {
+		const held = new Set(
+			corpus.holds
+				.filter((item) => item.stage === stage.number)
+				.map((item) => item.id),
+		);
+		for (const entry of stage.entries) {
+			for (const tag of entry.passed) {
+				const extra = suiteOf(tag, plan).filter((id) => !held.has(id));
+				rows.push({
+					stage: stage.number,
+					entry: entry.text,
+					tag,
+					extra,
+				});
+				for (const id of extra) {
+					added.add(`${id}@${String(stage.number)}`);
+					hold(id, stage.number);
+				}
+			}
+		}
+	}
+	return {
+		rows,
+		pairs: added.size,
+		splitHalves: [...spread.values()].filter((stages) => stages.size > 1)
+			.length,
+	};
+}
+
 /** Something that the check needs from the stage lists and did not find. */
 export type StageFault =
 	| { readonly kind: 'no-part' }
 	| { readonly kind: 'no-stage' }
-	| { readonly kind: 'empty-stage'; readonly stage: number };
+	| { readonly kind: 'empty-stage'; readonly stage: number }
+	| { readonly kind: 'repeat-stage'; readonly stage: number };
 
 /**
  * What the stage lists do not give the check. The check fails on each of these
  * faults. A part that declares nothing makes every comparison empty, and an
  * empty comparison passes. Therefore the check tests the plan first.
+ *
+ * A stage number that stands two times is also a fault. The holds of the two
+ * lines become one set, and the report then names one stage for two lists.
  */
 export function stageFaults(corpus: StageCorpus): readonly StageFault[] {
 	const faults: StageFault[] = [];
@@ -383,7 +509,12 @@ export function stageFaults(corpus: StageCorpus): readonly StageFault[] {
 		return faults;
 	}
 	const held = new Set(corpus.holds.map((hold) => hold.stage));
+	const seen = new Set<number>();
 	for (const stage of corpus.stages) {
+		if (seen.has(stage.number)) {
+			faults.push({ kind: 'repeat-stage', stage: stage.number });
+		}
+		seen.add(stage.number);
 		if (!held.has(stage.number)) {
 			faults.push({ kind: 'empty-stage', stage: stage.number });
 		}
@@ -416,6 +547,13 @@ export interface Loose {
 	readonly ids: readonly string[];
 }
 
+/** One issue whose body carries more than one claim line. */
+export interface Repeated {
+	readonly issue: number;
+	/** The count of claim lines that the body carries. */
+	readonly lines: number;
+}
+
 /** What the issue bodies claim. */
 export interface ClaimScan {
 	readonly claims: readonly Claim[];
@@ -423,8 +561,25 @@ export interface ClaimScan {
 	readonly trailers: number;
 	/** The claims that state no stage. */
 	readonly loose: readonly Loose[];
+	/** The issues whose bodies carry more than one claim line. */
+	readonly repeated: readonly Repeated[];
 	/** The name of the milestone of each stage. */
 	readonly milestones: ReadonlyMap<number, readonly string[]>;
+}
+
+/**
+ * The IDs that one claim line names. The line writes a list of IDs in the same
+ * forms that an entry of a stage list uses, and one line can hold more than
+ * one entry. Therefore the line goes through the entry reader, and a claim
+ * line and a stage list read the four forms by one rule.
+ */
+function claimedIds(text: string, corpus: PlanCorpus): readonly string[] {
+	const found: string[] = [];
+	for (const entry of entriesOf(text)) {
+		const read = readEntry(entry, corpus);
+		found.push(...read.named, ...read.expanded);
+	}
+	return unique(found);
 }
 
 /**
@@ -434,6 +589,10 @@ export interface ClaimScan {
  * point at a neighbour, or to say which milestone delivers another half. A
  * check that read every mention as a claim would report a disagreement for
  * each of those.
+ *
+ * A body that carries more than one claim line gives the check the first line,
+ * and the check names that issue in the report. Therefore an author sees that
+ * the check read one line and passed over the others.
  *
  * The milestone of the issue states the stage of the claim. A milestone that
  * names no stage gives the check nothing to compare, and the check reports
@@ -447,17 +606,22 @@ export function readClaims(
 	const prefixes = new Set(corpus.suitePrefixes);
 	const claims: Claim[] = [];
 	const loose: Loose[] = [];
+	const repeated: Repeated[] = [];
 	const milestones = new Map<number, string[]>();
 	let trailers = 0;
 	for (const issue of issues) {
-		const line = TRAILER.exec(issue.body);
-		if (line === null) {
+		const found = [...withoutFences(issue.body).matchAll(TRAILER)];
+		const line = found[0];
+		if (line === undefined) {
 			continue;
 		}
 		trailers++;
+		if (found.length > 1) {
+			repeated.push({ issue: issue.number, lines: found.length });
+		}
 		// An ID of a suite that the plan does not contain is still a claim of
 		// a test. The comparison then reports that no stage holds it.
-		const ids = namedIds(must(line[1]), corpus).filter(
+		const ids = claimedIds(must(line[1]), corpus).filter(
 			(id) => suites.has(id) || prefixes.has(prefixOf(id)),
 		);
 		if (ids.length === 0) {
@@ -491,7 +655,7 @@ export function readClaims(
 			});
 		}
 	}
-	return { claims, trailers, loose, milestones };
+	return { claims, trailers, loose, repeated, milestones };
 }
 
 /** Something that the check needs from the issues and did not find. */

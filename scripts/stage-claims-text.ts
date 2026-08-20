@@ -21,6 +21,7 @@ import type {
 	StageCorpus,
 	StageFault,
 } from './stage-claims-core.ts';
+import { passedTags } from './stage-claims-core.ts';
 
 /**
  * Staging moves as the work proceeds. A disagreement between a stage list and
@@ -34,12 +35,28 @@ const MOVES = [
 	'two are out of step.',
 ].join(' ');
 
-/** The lines of the fault of the plan. The check fails after these lines. */
-export function faultLines(faults: readonly StageFault[]): readonly string[] {
+/**
+ * The lines of the fault of the plan. The check fails after these lines.
+ *
+ * The first line states what the check read. A check that fails must say how
+ * much it examined, because a reader cannot tell a plan with one bad stage
+ * from a plan that the check could not read at all.
+ */
+export function faultLines(
+	faults: readonly StageFault[],
+	plan: PlanCorpus,
+	stages: StageCorpus,
+): readonly string[] {
 	if (faults.length === 0) {
 		return [];
 	}
-	const lines = faults.map((fault) => say(faultText(fault)));
+	const held = new Set(stages.holds.map((hold) => hold.id));
+	const lines = [
+		say(
+			`the check read the plan. The plan states ${count(plan.suiteIds, 'test ID')}. The plan declares ${count(stages.stages, 'stage')}. The stages hold ${String(held.size)} of those test IDs.`,
+		),
+		...faults.map((fault) => say(faultText(fault))),
+	];
 	lines.push(
 		say('The comparison did not run. The plan failed the checks above.'),
 	);
@@ -54,6 +71,8 @@ function faultText(fault: StageFault): string {
 			return 'the plan declares no stage. The check expects a list item that starts with a bold name of the form Stage 1 (feeds, read path):';
 		case 'empty-stage':
 			return `the plan declares stage ${String(fault.stage)} and gives that stage no test ID.`;
+		case 'repeat-stage':
+			return `the plan declares stage ${String(fault.stage)} more than one time. The check gives one list to one stage, and the check cannot tell which list belongs to that stage.`;
 	}
 }
 
@@ -105,27 +124,35 @@ export function stageLines(
  * counts only where the tag opens an entry of a stage list. A tag inside a
  * phrase names a thing, and the entry then gives the stage the IDs that the
  * entry names. These lines make that choice visible.
+ *
+ * Each line also states the cost of the choice: the test IDs that the other
+ * reading gives the stage, and that this reading does not. Therefore the
+ * output of one run is enough to audit the rule, and nobody must build the
+ * arithmetic again.
  */
-export function passedLines(stages: StageCorpus): readonly string[] {
-	const lines: string[] = [];
-	for (const stage of stages.stages) {
-		for (const entry of stage.entries) {
-			for (const tag of entry.passed) {
-				lines.push(
-					say(
-						`stage ${String(stage.number)} names the suite ${tag} inside an entry, and the entry does not start with that suite`,
-					),
-					`  entry: ${entry.text}`,
-				);
-			}
-		}
-	}
-	if (lines.length === 0) {
+export function passedLines(
+	plan: PlanCorpus,
+	stages: StageCorpus,
+): readonly string[] {
+	const wider = passedTags(plan, stages);
+	if (wider.rows.length === 0) {
 		return [];
+	}
+	const lines: string[] = [];
+	for (const row of wider.rows) {
+		lines.push(
+			say(
+				`stage ${String(row.stage)} names the suite ${row.tag} inside an entry, and the entry does not start with that suite`,
+			),
+			`  entry: ${row.entry}`,
+			row.extra.length === 0
+				? '  another reading takes the tag here, and that reading gives this stage no other test ID'
+				: `  another reading takes the tag here, and that reading gives this stage ${count(row.extra, 'more test ID')}: ${row.extra.join(' ')}`,
+		);
 	}
 	lines.push(
 		say(
-			'the check gives such a stage the IDs that the entry names, and it does not give that stage the whole suite.',
+			`the check gives such a stage the IDs that the entry names. The check does not give that stage the whole suite. Another reading takes a suite tag anywhere in an entry. That reading adds ${plural(wider.pairs, 'pair')} of a test ID and a stage, and that reading gives ${plural(wider.splitHalves, 'test ID')} to more than one stage.`,
 		),
 	);
 	return lines;
@@ -152,13 +179,21 @@ export function claimLines(scan: ClaimScan): readonly string[] {
 	const ids = new Set(scan.claims.map((claim) => claim.id));
 	const lines = [
 		say(
-			`the check read a claim line in ${plural(scan.trailers, 'issue')}. Those lines make ${count(scan.claims, 'claim')} of a test ID, and the claims name ${String(ids.size)} different test IDs.`,
+			`the check read a claim line in ${plural(scan.trailers, 'issue')}. Those lines make ${count(scan.claims, 'claim')} of a test ID, and the claims name ${plural(ids.size, 'different test ID')}.`,
 		),
 	];
 	for (const [stage, names] of [...scan.milestones].sort(
 		(left, right) => left[0] - right[0],
 	)) {
 		lines.push(`  stage ${String(stage)}: ${names.join(', ')}`);
+	}
+	for (const repeat of scan.repeated) {
+		lines.push(
+			say(
+				`the body of issue #${String(repeat.issue)} carries ${plural(repeat.lines, 'claim line')}, and the check read the first line`,
+			),
+			'  Write the claim of an issue on one line.',
+		);
 	}
 	for (const loose of scan.loose) {
 		lines.push(
@@ -280,7 +315,7 @@ export function adjudicatedLines(result: Reconciliation): readonly string[] {
 	if (result.stale.length > 0) {
 		lines.push(
 			say(
-				`${count(result.stale, 'adjudicated mention')} of the check meets no disagreement in this run. Remove each of these from scripts/stage-claims-core.ts.`,
+				`the check meets no disagreement for ${count(result.stale, 'adjudicated mention')} in this run. Remove each of those mentions from scripts/stage-claims-core.ts.`,
 			),
 		);
 		for (const entry of result.stale) {

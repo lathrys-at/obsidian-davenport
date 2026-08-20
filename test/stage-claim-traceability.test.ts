@@ -40,11 +40,13 @@ import type {
 import {
 	ADJUDICATED,
 	claimFaults,
+	passedTags,
 	readClaims,
 	readEntry,
 	readStages,
 	reconcile,
 	stageFaults,
+	withoutFences,
 } from '../scripts/stage-claims-core';
 import type { CommandResult, IssueHost } from '../scripts/stage-claims-issues';
 import {
@@ -177,6 +179,21 @@ describe('the test IDs that each stage holds', () => {
 
 	it('holds an ID one time for one stage, and not one time for each mention', () => {
 		expect(stagesOf(STAGES, 'PU-7')).toEqual([3, 4]);
+	});
+
+	// The check reads a suite tag as a whole suite only where the tag opens an
+	// entry. The other reading takes the tag anywhere in the entry. The numbers
+	// below are the difference between the two readings on the real plan, and
+	// the report states them on every run.
+	it('states what the other reading of a suite tag costs on the real plan', () => {
+		const wider = passedTags(PLAN, STAGES);
+		expect(wider.rows.map((row) => [row.stage, row.tag])).toEqual([
+			[4, 'UI'],
+			[7, 'DA'],
+		]);
+		expect(wider.pairs).toBe(26);
+		expect(wider.splitHalves).toBe(48);
+		expect(STAGES.splitHalves).toHaveLength(31);
 	});
 });
 
@@ -323,6 +340,77 @@ describe('the forms that a list of IDs uses', () => {
 	});
 });
 
+describe('the fenced blocks that the check passes over', () => {
+	// A fenced block of the plan holds an example of a stage list. An example
+	// declares no stage of this repository.
+	it('reads no stage out of a fenced block of the plan', () => {
+		const corpus = readStages(
+			[
+				'## Part 8 — Ordering',
+				'- **Stage 1 (one):** QQ complete, ZQ-1.',
+				'',
+				'```markdown',
+				'- **Stage 9 (an example):** ZQ-2.',
+				'```',
+				'',
+				'- **Stage 2 (two):** ZQ, QQ-3.',
+			].join('\n'),
+			SMALL,
+		);
+		expect(corpus.stages.map((stage) => stage.number)).toEqual([1, 2]);
+	});
+
+	it('reads no part of ordering out of a fenced block of the plan', () => {
+		const corpus = readStages(
+			[
+				'```',
+				'## Part 8 — Ordering',
+				'- **Stage 1 (one):** QQ.',
+				'```',
+			].join('\n'),
+			SMALL,
+		);
+		expect(corpus.stages).toEqual([]);
+	});
+
+	it.each([
+		['a fence of backticks', '```', '```'],
+		['a fence of tildes', '~~~', '~~~'],
+		['a fence that carries a name', '```markdown', '```'],
+		['a fence that a longer fence closes', '```', '`````'],
+		['a fence that stands indented', '   ```', '   ```'],
+	])('passes over %s', (_what, open, close) => {
+		expect(
+			withoutFences([open, 'the text inside', close, 'after'].join('\n')),
+		).toBe(['', '', '', 'after'].join('\n'));
+	});
+
+	// A fence that no line closes runs to the end of the text.
+	it('passes over the rest of a text that no line closes', () => {
+		expect(withoutFences(['before', '```', 'inside'].join('\n'))).toBe(
+			['before', '', ''].join('\n'),
+		);
+	});
+
+	// A tilde does not close a fence of backticks, and a fence closes on a
+	// line that carries no other word.
+	it.each([
+		['a fence of another character', '~~~'],
+		['a shorter fence', '``'],
+		['a fence that carries a name', '``` more'],
+	])('does not close a fence of backticks on %s', (_what, line) => {
+		expect(withoutFences(['```', 'inside', line, 'after'].join('\n'))).toBe(
+			['', '', '', ''].join('\n'),
+		);
+	});
+
+	it('keeps a text that holds no fence', () => {
+		expect(withoutFences('- **Stage 1 (one):** QQ.')).toBe(
+			'- **Stage 1 (one):** QQ.',
+		);
+	});
+});
+
 describe('a plan that gives the check no stage list', () => {
 	it('finds no fault in the real plan', () => {
 		expect(stageFaults(STAGES)).toEqual([]);
@@ -366,8 +454,25 @@ describe('a plan that gives the check no stage list', () => {
 		]);
 	});
 
+	// Two stage lines with the same number fold into one set of holds, and the
+	// report then names one stage for two lists.
+	it('reports a stage number that stands two times', () => {
+		const corpus = readStages(
+			[
+				'## Part 8 — Ordering',
+				'- **Stage 1 (one):** QQ complete.',
+				'- **Stage 1 (again):** ZQ complete.',
+			].join('\n'),
+			SMALL,
+		);
+		expect(stageFaults(corpus)).toEqual([
+			{ kind: 'repeat-stage', stage: 1 },
+		]);
+	});
+
 	it('states each fault and the consequence of the faults', () => {
-		const lines = faultLines(stageFaults(readStages('', SMALL))).join('\n');
+		const corpus = readStages('', SMALL);
+		const lines = faultLines(stageFaults(corpus), SMALL, corpus).join('\n');
 		expect(lines).toContain('the plan holds no part of ordering');
 		expect(lines).toContain('the plan declares no stage');
 		expect(lines).toContain(
@@ -375,8 +480,33 @@ describe('a plan that gives the check no stage list', () => {
 		);
 	});
 
+	// A check that fails must say how much it examined. A reader cannot tell a
+	// plan with one bad stage from a plan that the check could not read.
+	it('states the count of what it read in front of each fault', () => {
+		const corpus = readStages(
+			[
+				'## Part 8 — Ordering',
+				'- **Stage 1 (one):** QQ complete.',
+				'- **Stage 2 (two):** the rest lands here.',
+			].join('\n'),
+			SMALL,
+		);
+		const lines = faultLines(stageFaults(corpus), SMALL, corpus).join('\n');
+		expect(lines).toContain(
+			'the check read the plan. The plan states 5 test IDs. The plan declares 2 stages. The stages hold 3 of those test IDs.',
+		);
+	});
+
+	it('states that count for a plan that holds no part of ordering', () => {
+		const corpus = readStages('', SMALL);
+		const lines = faultLines(stageFaults(corpus), SMALL, corpus).join('\n');
+		expect(lines).toContain(
+			'The plan states 5 test IDs. The plan declares 0 stages. The stages hold 0 of those test IDs.',
+		);
+	});
+
 	it('says nothing about a plan that carries its stage lists', () => {
-		expect(faultLines(stageFaults(STAGES))).toEqual([]);
+		expect(faultLines(stageFaults(STAGES), PLAN, STAGES)).toEqual([]);
 	});
 });
 
@@ -424,6 +554,147 @@ describe('the claims that an issue body carries', () => {
 			SMALL,
 		);
 		expect(scan.claims.map((claim) => claim.id)).toEqual(['QQ-1']);
+	});
+
+	// A claim line writes a list of IDs in the same forms that a stage list
+	// uses. A line that names a suite gave no ID before, and the check then
+	// reported each ID of that suite as claimed by nobody.
+	it('takes the whole suite from a tag that opens the claim line', () => {
+		const scan = readClaims(
+			[issueOf(36, 'M1 — Stage 1: the first stage', 'QQ complete')],
+			SMALL,
+		);
+		expect(scan.claims.map((claim) => claim.id)).toEqual([
+			'QQ-1',
+			'QQ-2',
+			'QQ-3',
+		]);
+	});
+
+	// This is the form that one issue of the tree uses today.
+	it('takes the whole suite from a tag that a phrase follows', () => {
+		const scan = readClaims(
+			[
+				issueOf(
+					37,
+					'M7 — Stage 7: the last stage',
+					'RC complete (Part 8 stage 7)',
+				),
+			],
+			PLAN,
+		);
+		expect(scan.claims.map((claim) => claim.id)).toEqual([
+			'RC-1',
+			'RC-2',
+			'RC-3',
+			'RC-4',
+			'RC-5',
+			'RC-6',
+		]);
+	});
+
+	// The word except takes IDs back out of the suite. A claim line that lost
+	// the suite kept the ID that the author wrote to exclude, and it kept
+	// nothing that the author wrote to include.
+	it('takes IDs back out of the suite of a claim line after the word except', () => {
+		const scan = readClaims(
+			[
+				issueOf(
+					38,
+					'M1 — Stage 1: the first stage',
+					'QQ complete except QQ-3',
+				),
+			],
+			SMALL,
+		);
+		expect(scan.claims.map((claim) => claim.id)).toEqual(['QQ-1', 'QQ-2']);
+	});
+
+	it('reads a suite tag and a named ID in one claim line', () => {
+		const scan = readClaims(
+			[
+				issueOf(
+					39,
+					'M2 — Stage 2: the second stage',
+					'ZQ complete, QQ-3',
+				),
+			],
+			SMALL,
+		);
+		expect(scan.claims.map((claim) => claim.id)).toEqual([
+			'ZQ-1',
+			'ZQ-2',
+			'QQ-3',
+		]);
+	});
+
+	// A fenced block holds an example. An example in a body of this repository
+	// says how to write a claim, and it claims nothing.
+	it('reads no claim out of a fenced block of a body', () => {
+		const scan = readClaims(
+			[
+				{
+					number: 40,
+					title: 'docs: the form of a claim',
+					body: [
+						'Write the claim like this:',
+						'',
+						'```markdown',
+						'- Test plan: QQ-1, QQ-2',
+						'```',
+						'',
+						'- Test plan: ZQ-1',
+					].join('\n'),
+					milestone: 'M1 — Stage 1: the first stage',
+				},
+			],
+			SMALL,
+		);
+		expect(scan.claims.map((claim) => claim.id)).toEqual(['ZQ-1']);
+		expect(scan.trailers).toBe(1);
+	});
+
+	it('reads no claim out of a body whose only claim line stands in a fence', () => {
+		const scan = readClaims(
+			[
+				{
+					number: 41,
+					title: 'docs: the form of a claim',
+					body: ['~~~', '- Test plan: QQ-1', '~~~'].join('\n'),
+					milestone: 'M1 — Stage 1: the first stage',
+				},
+			],
+			SMALL,
+		);
+		expect(scan.claims).toEqual([]);
+		expect(scan.trailers).toBe(0);
+	});
+
+	// A body that carries two claim lines gives the check the first line. The
+	// check names the issue, so that the author sees the lines that it passed
+	// over.
+	it('reads the first claim line of a body and names the issue', () => {
+		const scan = readClaims(
+			[
+				{
+					number: 42,
+					title: 'feat: the work',
+					body: ['- Test plan: QQ-1', '- Test plan: QQ-2'].join('\n'),
+					milestone: 'M1 — Stage 1: the first stage',
+				},
+			],
+			SMALL,
+		);
+		expect(scan.claims.map((claim) => claim.id)).toEqual(['QQ-1']);
+		expect(scan.repeated).toEqual([{ issue: 42, lines: 2 }]);
+	});
+
+	it('names no issue whose body carries one claim line', () => {
+		const scan = readClaims(
+			[issueOf(43, 'M1 — Stage 1: the first stage', 'QQ-1')],
+			SMALL,
+		);
+		expect(scan.repeated).toEqual([]);
 	});
 
 	it('reads the claim line that stands in bold', () => {
@@ -570,6 +841,7 @@ describe('what the stage lists and the claims say about each other', () => {
 			claims: [],
 			trailers: 0,
 			loose: [],
+			repeated: [],
 			milestones: new Map(),
 		};
 		expect(reconcile(PLAN, STAGES, empty).unstaged).toEqual([]);
@@ -588,6 +860,7 @@ describe('what the stage lists and the claims say about each other', () => {
 			claims: [],
 			trailers: 0,
 			loose: [],
+			repeated: [],
 			milestones: new Map(),
 		});
 		expect(result.unstaged).toEqual(['QQ-2']);
@@ -744,13 +1017,52 @@ describe('what the check prints', () => {
 			].join('\n'),
 			SMALL,
 		);
-		const lines = passedLines(corpus).join('\n');
+		const lines = passedLines(SMALL, corpus).join('\n');
 		expect(lines).toContain('stage 1 names the suite ZQ inside an entry');
 		expect(lines).toContain('entry: and the group of ZQ (the ZQ-1 table)');
 	});
 
+	// The report states what the rule of the check costs. Therefore the output
+	// of one run is enough to audit the rule, and nobody must build the
+	// arithmetic again.
+	it('names the IDs that the other reading of the tag would add', () => {
+		const corpus = readStages(
+			[
+				'## Part 8 — Ordering',
+				'- **Stage 1 (one):** ZQ complete.',
+				'- **Stage 2 (two):** QQ complete, and the group of ZQ (the ZQ-1 table).',
+			].join('\n'),
+			SMALL,
+		);
+		expect(corpus.splitHalves).toEqual(['ZQ-1']);
+		const lines = passedLines(SMALL, corpus).join('\n');
+		expect(lines).toContain(
+			'another reading takes the tag here, and that reading gives this stage 1 more test ID: ZQ-2',
+		);
+		expect(lines).toContain(
+			'That reading adds 1 pair of a test ID and a stage, and that reading gives 2 test IDs to more than one stage.',
+		);
+	});
+
+	it('says so when the other reading of the tag would add no ID', () => {
+		const corpus = readStages(
+			[
+				'## Part 8 — Ordering',
+				'- **Stage 1 (one):** ZQ-1, and the group of ZQ (the ZQ-2 table).',
+			].join('\n'),
+			SMALL,
+		);
+		const lines = passedLines(SMALL, corpus).join('\n');
+		expect(lines).toContain(
+			'another reading takes the tag here, and that reading gives this stage no other test ID',
+		);
+		expect(lines).toContain(
+			'That reading adds 0 pairs of a test ID and a stage, and that reading gives 0 test IDs to more than one stage.',
+		);
+	});
+
 	it('says nothing about a plan whose entries name no loose suite tag', () => {
-		expect(passedLines(SMALL_STAGES)).toEqual([]);
+		expect(passedLines(SMALL, SMALL_STAGES)).toEqual([]);
 	});
 
 	it('states where the issues came from', () => {
@@ -769,6 +1081,39 @@ describe('what the check prints', () => {
 		);
 		expect(lines.join('\n')).toContain('2 claims of a test ID');
 		expect(lines).toContain('  stage 1: M1 — Stage 1: the first stage');
+	});
+
+	// One claim line per issue is the rule. A body that carries more lines
+	// loses the rest, and the check says so rather than dropping them without
+	// a word.
+	it('names each issue whose body carries more than one claim line', () => {
+		const many = readClaims(
+			[
+				{
+					number: 44,
+					title: 'feat: the work',
+					body: ['- Test plan: QQ-1', '- Test plan: QQ-2'].join('\n'),
+					milestone: 'M1 — Stage 1: the first stage',
+				},
+			],
+			SMALL,
+		);
+		const lines = claimLines(many).join('\n');
+		expect(lines).toContain(
+			'the body of issue #44 carries 2 claim lines, and the check read the first line',
+		);
+		expect(lines).toContain('Write the claim of an issue on one line.');
+	});
+
+	// The count and the noun must agree. One ID is one test ID.
+	it('states the count of the claimed IDs with the noun of that count', () => {
+		const one = readClaims(
+			[issueOf(45, 'M1 — Stage 1: the first stage', 'QQ-1')],
+			SMALL,
+		);
+		expect(claimLines(one).join('\n')).toContain(
+			'the claims name 1 different test ID.',
+		);
 	});
 
 	it('names each ID that a stage names and its milestone does not claim', () => {
@@ -844,7 +1189,9 @@ describe('what the check prints', () => {
 		const lines = adjudicatedLines(
 			reconcile(SMALL, SMALL_STAGES, scan, [entry]),
 		).join('\n');
-		expect(lines).toContain('meets no disagreement in this run');
+		expect(lines).toContain(
+			'the check meets no disagreement for 1 adjudicated mention in this run',
+		);
 		expect(lines).toContain('scripts/stage-claims-core.ts');
 	});
 
@@ -1013,9 +1360,30 @@ describe('the issues that the command gives', () => {
 		expect(() => readAnswer(answer)).toThrow();
 	});
 
-	it('reads a row whose body is absent as an empty body', () => {
-		expect(readAnswer('[{"number":4,"title":"feat: four"}]')[0]?.body).toBe(
-			'',
+	it('reads a row whose body is an empty string', () => {
+		expect(
+			readAnswer('[{"number":4,"title":"feat: four","body":""}]')[0]
+				?.body,
+		).toBe('');
+	});
+
+	// The command asks for the body of each issue. A row with no body, or with
+	// a body of another type, is an answer of a shape that the check does not
+	// know. Such a row carries no claim, and a set of such rows would make the
+	// comparison small and leave the check green.
+	it.each([
+		['a row with no body', '[{"number":4,"title":"feat: four"}]'],
+		[
+			'a row whose body is null',
+			'[{"number":4,"title":"feat: four","body":null}]',
+		],
+		[
+			'a row whose body is an object',
+			'[{"number":4,"title":"feat: four","body":{"text":"x"}}]',
+		],
+	])('throws on %s', (_what, answer) => {
+		expect(() => readAnswer(answer)).toThrow(
+			'issue #4 of the answer carries no body',
 		);
 	});
 });
@@ -1108,6 +1476,87 @@ describe('the check as a process', () => {
 		expect(result.out).toContain('The stages hold 227 of the 227 test IDs');
 	});
 
+	// A claim line that names a suite gave no ID before. The check then
+	// reported each ID of that suite as claimed by nobody, and the report of
+	// the run was wrong.
+	it('passes over a plan and a set of issues that agree through a suite tag', () => {
+		const issues = answers('suites.json', [
+			{
+				number: 1,
+				milestone: 'M1 — Stage 1: one',
+				claim: 'QQ complete except QQ-3, ZQ-1',
+			},
+			{ number: 2, milestone: 'M2 — Stage 2: two', claim: 'ZQ, QQ-3' },
+		]);
+		const result = check([`--issues=${issues}`, SMALL_PLAN]);
+		expect(result.err).toBe('');
+		expect(result.status).toBe(0);
+		expect(result.out).toContain(
+			'every stage that holds a test ID has an issue of its milestone that claims that ID',
+		);
+	});
+
+	it('reads no claim out of a fenced block of a body', () => {
+		const path = file(
+			'fenced.json',
+			JSON.stringify([
+				{
+					number: 1,
+					title: 'docs: the form of a claim',
+					body: [
+						'```markdown',
+						'- Test plan: QQ-1',
+						'```',
+						'',
+						'- Test plan: QQ-1, QQ-2, ZQ-1',
+					].join('\n'),
+					milestone: { title: 'M1 — Stage 1: one' },
+				},
+				{
+					number: 2,
+					title: 'feat: the work',
+					body: '- Test plan: QQ-3, ZQ-1, ZQ-2',
+					milestone: { title: 'M2 — Stage 2: two' },
+				},
+			]),
+		);
+		const result = check([`--issues=${path}`, SMALL_PLAN]);
+		expect(result.err).toBe('');
+		expect(result.status).toBe(0);
+		expect(result.out).toContain('the check read a claim line in 2 issues');
+		expect(result.out).toContain(
+			'every stage that holds a test ID has an issue of its milestone that claims that ID',
+		);
+	});
+
+	// The bodies and the milestones of the issues change when nobody changes
+	// the tree. The answer is the only record of what one run compared.
+	it('writes the answer that it read to the file of --save-issues', () => {
+		const saved = join(scratch, 'saved.json');
+		const result = check([
+			`--issues=${AGREED}`,
+			`--save-issues=${saved}`,
+			SMALL_PLAN,
+		]);
+		expect(result.status).toBe(0);
+		expect(result.out).toContain(
+			`the check wrote the answer of the command to ${saved}`,
+		);
+		expect(readFileSync(saved, 'utf8')).toBe(readFileSync(AGREED, 'utf8'));
+	});
+
+	it('says so when it cannot write the file of --save-issues', () => {
+		const result = check([
+			`--issues=${AGREED}`,
+			`--save-issues=${join(scratch, 'no-such-folder', 'saved.json')}`,
+			SMALL_PLAN,
+		]);
+		expect(result.status).toBe(0);
+		expect(result.out).toContain(
+			'the check cannot write the answer of the command to',
+		);
+	});
+
 	it('says which file it read the issues from', () => {
 		const result = check([`--issues=${AGREED}`, SMALL_PLAN]);
 		expect(result.out).toContain(
@@ -1191,6 +1640,73 @@ describe('the check as a process', () => {
 		expect(result.err).toContain(
 			'the plan declares stage 2 and gives that stage no test ID',
 		);
+	});
+
+	// A check that fails must say how much it examined. The two paths below
+	// print no report of their own, so the fault carries the count.
+	it.each([
+		[
+			'a plan that holds no part of ordering',
+			['### 5.1 First suite [QQ] — §1', '- **QQ-1 [D]** One.'],
+			'The plan states 1 test ID. The plan declares 0 stages. The stages hold 0 of those test IDs.',
+		],
+		[
+			'a plan whose stage lost its list',
+			[
+				'### 5.1 First suite [QQ] — §1',
+				'- **QQ-1 [D]** One.',
+				'## Part 8 — Ordering',
+				'- **Stage 1 (one):** QQ complete.',
+				'- **Stage 2 (two):** the rest lands here.',
+			],
+			'The plan states 1 test ID. The plan declares 2 stages. The stages hold 1 of those test IDs.',
+		],
+	])('states the count of what it read on %s', (what, text, wanted) => {
+		const plan = file(
+			`count-${what.replace(/\W+/g, '-')}.md`,
+			text.join('\n'),
+		);
+		const result = check([`--issues=${AGREED}`, plan]);
+		expect(result.status).toBe(1);
+		expect(result.err).toContain(wanted);
+	});
+
+	it('fails on a plan that declares one stage two times', () => {
+		const plan = file(
+			'repeat-stage.md',
+			[
+				'### 5.1 First suite [QQ] — §1',
+				'- **QQ-1 [D]** One.',
+				'- **QQ-2 [D]** Two.',
+				'## Part 8 — Ordering',
+				'- **Stage 1 (one):** QQ-1.',
+				'- **Stage 1 (again):** QQ-2.',
+			].join('\n'),
+		);
+		const result = check([`--issues=${AGREED}`, plan]);
+		expect(result.status).toBe(1);
+		expect(result.err).toContain(
+			'the plan declares stage 1 more than one time',
+		);
+	});
+
+	// A fenced block of the plan holds an example of a stage list. An example
+	// declares no stage of this repository.
+	it('reads no stage out of a fenced block of the plan', () => {
+		const plan = file(
+			'fenced-plan.md',
+			[
+				SMALL_TEXT,
+				'',
+				'```markdown',
+				'- **Stage 9 (an example):** ZQ-2.',
+				'```',
+			].join('\n'),
+		);
+		const result = check([`--issues=${AGREED}`, plan]);
+		expect(result.err).toBe('');
+		expect(result.status).toBe(0);
+		expect(result.out).toContain('the plan declares 2 stages');
 	});
 
 	it('fails on a plan that gives it no vocabulary of IDs', () => {

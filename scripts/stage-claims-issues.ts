@@ -150,6 +150,12 @@ function milestoneOf(row: object): string | undefined {
  * The issues that the answer of the command holds. A row that carries no
  * number, no title, or no body is not an issue that the check can read, and
  * this function throws on such a row.
+ *
+ * The command asks for the body of each issue, and GitHub gives an empty body
+ * as an empty string. A row with no body, or with a body of another type, is
+ * therefore an answer of a shape that this module does not know. Such a row
+ * would carry no claim, and a set of such rows would make the comparison small
+ * and leave the check green. The function throws instead.
  */
 export function readAnswer(text: string): readonly Issue[] {
 	let held: unknown;
@@ -176,35 +182,46 @@ export function readAnswer(text: string): readonly Issue[] {
 				`issue ${String(index + 1)} of the answer carries no number and no title`,
 			);
 		}
-		return {
-			number,
-			title,
-			// GitHub gives an empty body as an empty string, and the tool
-			// gives the same. A body of another type is a fault.
-			body: typeof body === 'string' ? body : '',
-			milestone: milestoneOf(row),
-		};
+		if (typeof body !== 'string') {
+			throw new Error(
+				`issue #${String(number)} of the answer carries no body. The command asks for the body of each issue, and the answer gives an empty body as an empty string.`,
+			);
+		}
+		return { number, title, body, milestone: milestoneOf(row) };
 	});
 }
 
 /**
- * Gets the issues of the repository.
+ * The answer of the command, as text.
  *
  * The function throws an error when the tool gives a status that is not an
- * answer, when the answer is not a list of issues, or when the answer holds as
- * many issues as the limit. The caller therefore never compares a part of the
- * set of issues.
+ * answer. The caller can keep this text. The bodies and the milestones of the
+ * issues change when nobody changes the tree, so the text is the only record
+ * of what one run compared.
  */
-export function getIssues(
+export function getAnswer(
 	host: IssueHost = REAL_HOST,
 	limit: number = LIMIT,
-): readonly Issue[] {
+): string {
 	const args = commandArgs(limit);
 	const result = host.run(args);
 	if (result.status === null || !ANSWERS.includes(result.status)) {
 		throw new Error(refusal(args, result, host.platform));
 	}
-	const issues = readAnswer(result.stdout);
+	return result.stdout;
+}
+
+/**
+ * The issues that the answer of the command holds, under the limit of the
+ * command. The function throws an error when the answer is not a list of
+ * issues, and when the answer holds as many issues as the limit. The caller
+ * therefore never compares a part of the set of issues.
+ */
+export function issuesOf(
+	text: string,
+	limit: number = LIMIT,
+): readonly Issue[] {
+	const issues = readAnswer(text);
 	if (issues.length >= limit) {
 		throw new Error(
 			[
@@ -217,4 +234,18 @@ export function getIssues(
 		);
 	}
 	return issues;
+}
+
+/**
+ * Gets the issues of the repository.
+ *
+ * The function throws an error when the tool gives a status that is not an
+ * answer, when the answer is not a list of issues, or when the answer holds as
+ * many issues as the limit.
+ */
+export function getIssues(
+	host: IssueHost = REAL_HOST,
+	limit: number = LIMIT,
+): readonly Issue[] {
+	return issuesOf(getAnswer(host, limit), limit);
 }

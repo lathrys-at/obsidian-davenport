@@ -48,6 +48,24 @@ jobs:
             # The option --require-issues makes the run fail when the check
             # cannot read the issues. A run of this lane that read the plan
             # alone did half of its work, and it must not report success.
-            - run: node scripts/stage-claims.mjs --require-issues
+            #
+            # The option --save-issues writes the answer of the command to a
+            # file, and the step below keeps that file.
+            - run: >
+                  node scripts/stage-claims.mjs --require-issues
+                  --save-issues=stage-claims-answer.json
               env:
                   GH_TOKEN: ${{ github.token }}
+
+            # The answer names each issue, its milestone, and its body. The
+            # upload also runs after a run that failed, because the bodies and
+            # the milestones of the issues change when nobody changes the tree.
+            # A person who reads a failed run later cannot get that state back
+            # in any other way. The file is one file that holds its own data,
+            # so a reader needs no other file.
+            - if: always()
+              uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+              with:
+                  name: stage-claims-answer
+                  path: stage-claims-answer.json
+                  if-no-files-found: warn

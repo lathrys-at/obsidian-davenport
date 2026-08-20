@@ -29,6 +29,11 @@
  * runs over a set of issues that a person keeps, and the tests of the check
  * reach no server.
  *
+ * The option --save-issues=<file> writes the answer that the check read to a
+ * file. The bodies and the milestones of the issues change when nobody changes
+ * the tree, so the answer is the only record of what one run compared. The
+ * workflow that runs this check keeps that file.
+ *
  * The check reads the plan of this repository. If you give a path, the check
  * reads that plan instead. Then the same rules run over a plan in any
  * location.
@@ -36,13 +41,14 @@
  *     node scripts/stage-claims.mjs
  *     node scripts/stage-claims.mjs --require-issues
  *     node scripts/stage-claims.mjs --issues=answer.json <plan-file>
+ *     node scripts/stage-claims.mjs --save-issues=answer.json
  *
  * This file finds the plan, gets the issues, prints the report, and sets the
  * exit status. `stage-claims-core.ts` holds the rules of the stage lists, the
  * rules of the claims, and the comparison. `stage-claims-issues.ts` gets the
  * issues. `stage-claims-text.ts` holds the wording that the check prints.
  */
-import { readFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { planFaults, readPlan } from './plan-ids-core.ts';
@@ -53,7 +59,12 @@ import {
 	reconcile,
 	stageFaults,
 } from './stage-claims-core.ts';
-import { getIssues, readAnswer } from './stage-claims-issues.ts';
+import {
+	getAnswer,
+	issuesOf,
+	LIMIT,
+	readAnswer,
+} from './stage-claims-issues.ts';
 import {
 	adjudicatedLines,
 	claimLines,
@@ -76,6 +87,7 @@ const NO_CLAIM = {
 	claims: [],
 	trailers: 0,
 	loose: [],
+	repeated: [],
 	milestones: new Map(),
 };
 
@@ -96,6 +108,9 @@ const required = args.includes('--require-issues');
 const answerPath = args
 	.find((arg) => arg.startsWith('--issues='))
 	?.slice('--issues='.length);
+const savePath = args
+	.find((arg) => arg.startsWith('--save-issues='))
+	?.slice('--save-issues='.length);
 const planPath = args.find((arg) => !arg.startsWith('--')) ?? join(ROOT, PLAN);
 
 let text;
@@ -119,7 +134,7 @@ if (planFaults(plan).length > 0) {
 }
 
 const stages = readStages(text, plan);
-const faults = faultLines(stageFaults(stages));
+const faults = faultLines(stageFaults(stages), plan, stages);
 if (faults.length > 0) {
 	fail(faults);
 }
@@ -127,19 +142,39 @@ if (faults.length > 0) {
 for (const line of stageLines(plan, stages)) {
 	console.log(line);
 }
-for (const line of passedLines(stages)) {
+for (const line of passedLines(plan, stages)) {
 	console.log(line);
 }
 
 let issues;
+let answer;
 let reason;
 try {
-	issues =
+	answer =
 		answerPath === undefined
-			? getIssues()
-			: readAnswer(readFileSync(answerPath, 'utf8'));
+			? getAnswer()
+			: readFileSync(answerPath, 'utf8');
+	issues =
+		answerPath === undefined ? issuesOf(answer, LIMIT) : readAnswer(answer);
 } catch (error) {
 	reason = said(error);
+}
+
+// The check writes this file before the comparison. Therefore a run that
+// stops at a fault of the issues still leaves the answer behind.
+if (savePath !== undefined && answer !== undefined) {
+	try {
+		writeFileSync(savePath, answer);
+		console.log(
+			say(`the check wrote the answer of the command to ${savePath}`),
+		);
+	} catch (error) {
+		console.log(
+			say(
+				`the check cannot write the answer of the command to ${savePath}: ${said(error)}`,
+			),
+		);
+	}
 }
 
 if (issues === undefined) {
