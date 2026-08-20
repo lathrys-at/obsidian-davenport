@@ -208,7 +208,7 @@ Suites mirror the design spec's sections. Each test has an ID, a shape, a behavi
 
 ### 5.9 Local change detection [CD] — §5.3
 
-- **CD-1 [E]** Watcher scope: the watcher observes only notes that carry `uid` or `state`. The watcher does not watch plain notes, and this includes acknowledged notes with event fields intact (row 1, B axes).
+- **CD-1 [E]** Watcher scope: the watcher observes only notes that carry `uid` or `state`. The watcher does not watch plain notes, and this includes acknowledged notes with event fields intact (row 1, B axes). The watcher does not watch a record file inside the records folder. That file carries `uid` and no `state` (§5.3).
 - **CD-2 [E]** Debounce: an edit burst produces one batched push after editor idle (§5.3).
 - **CD-3 [E]** Self-write exclusion works by expected-content matching. Inbound application, adoption backfill, and `state`-strip never enter the dirty set. Construct both misattribution directions, and show that both are benign. First: a user edit that is byte-identical to the expected content is swallowed, and it later takes the surfaced path. Second: a self-write that is mistaken for a user edit produces zero server writes in the steady interleaving (§5.3, §5.4; the crash interleaving per IN-12).
 - **CD-4 [E]** Generation stamps: an edit during push flight survives clear-on-success. The edit pushes on the next loop. There is no lost update, and there is no downgraded prompt (§5.3).
