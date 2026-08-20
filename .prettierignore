@@ -7,5 +7,20 @@ reports
 package-lock.json
 tools/*/dist
 .vaults
+
+# Prettier formats no markdown file. Three reasons keep this line.
+#
+# 1. Prettier pads the cells of every table. It therefore rewrites the
+#    tables of the design spec and the tables of the test plan.
+# 2. Prettier rewrites the YAML frontmatter of the note fixtures. Those
+#    files hold a corpus of frontmatter shapes, and a test reads the
+#    corpus byte for byte.
+# 3. Prettier keeps every prose line as the line stands. Prettier
+#    therefore reports no defect in a line that an edit left short.
+#
+# `npm run markdown:check` is the formatting gate of the markdown files.
+# Do not cite `prettier --check` as verification of a markdown file. That
+# command matches no markdown file, and it always reports success.
 *.md
+
 .github/

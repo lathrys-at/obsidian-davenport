@@ -115,8 +115,8 @@ export default defineConfig(
 						'tools/frontmatter-probe/*.mjs',
 						'tools/timezone-table/*.mjs',
 					],
-					// The patterns above name fifteen paths. The linter
-					// counts the thirteen that hold code: this file, and
+					// The patterns above name sixteen paths. The linter
+					// counts the fourteen that hold code: this file, and
 					// each .mjs entry point under scripts/ and tools/.
 					// Each of these files is outside tsconfig.json, so the
 					// linter builds a program of its own for the file. The
