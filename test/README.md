@@ -168,6 +168,5 @@ argument, and the timers `setTimeout`, `setInterval` and `setImmediate`.
 `performance.now` also keeps working. A test reads the time from the
 [clock port](../src/core/ports/clock.ts), and the controlled clock of the
 harness answers that port. A test that must read the real clock calls
-`withRealTime` from
-[`harness/sweeps/index.ts`](harness/sweeps/index.ts). That call states its
-reason.
+`withRealTime` from [`harness/sweeps/index.ts`](harness/sweeps/index.ts).
+That call states its reason.

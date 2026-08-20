@@ -7,8 +7,7 @@ those facts, and the project versions this document together with the
 plugin. The protocols that produce each fact live beside this document in
 `docs/dev/facts/`. Each protocol appears there when its author writes it.
 
-The rule is this: a changed fact re-routes to its pre-stated
-branch. A
+The rule is this: a changed fact re-routes to its pre-stated branch. A
 fact that has no branch is a design gap. That fact goes back to the design
 spec before code changes.
 
@@ -99,10 +98,9 @@ item.
 
 ## Recorded entries
 
-Write one heading for each item, in the entry format above. Create
-that heading
-with the item's first recorded fact. Link the item's protocol document at
-the top of that heading.
+Write one heading for each item, in the entry format above. Create that
+heading with the item's first recorded fact. Link the item's protocol
+document at the top of that heading.
 
 ### A-11 — processFrontMatter byte determinism
 
@@ -112,9 +110,8 @@ Protocol: [docs/dev/facts/a-11.md](facts/a-11.md)
   2026-08-16) and iOS 18.7 (Obsidian API 1.13.7, run 2026-08-18; the
   vault lives in the iCloud Drive container) — one API version on two
   platforms; ~~the minimum matrix of the protocol, which is the current
-  Obsidian API version and the previous one on macOS, is still open~~
-  a previous-version cell is not required, and #11 records the
-  decision ·
+  Obsidian API version and the previous one on macOS, is still open~~ a
+  previous-version cell is not required, and #11 records the decision ·
   The probe ran the 14-fixture corpus in both environments, and the 13
   parseable fixtures emitted identical bytes, fixture for fixture. Both
   environments refused the `unparseable` control with the same parse
