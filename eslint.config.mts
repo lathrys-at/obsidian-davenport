@@ -13,17 +13,28 @@ const nodeBuiltinPatterns = [
 	...builtinModules.map((m) => `${m}/*`),
 ];
 
-// The specifier forms that a file in src/core/model/ can import. Each entry
-// is a regular expression, and an entry must match the whole specifier. The
-// other folders of the engine import the domain types from the model, and
-// the model imports nothing from those folders. Add an entry here only for
-// an import that the model must have, and give that entry a comment that
-// says why. The model has no such import today.
+// The specifier forms that a file in src/core/model/ can use. The other
+// folders of the engine import the domain types from the model, and the
+// model imports nothing from those folders. Add an entry here only for an
+// import that the model must have, and give that entry a comment that says
+// why. The model has no such import today.
+//
+// Each entry is a regular expression, and an entry must match the whole
+// specifier. Two properties of the composition constrain a new entry. The
+// pattern below puts an anchor at each end, so an entry that carries an
+// anchor of its own composes wrongly. ESLint compiles the pattern with the
+// flags `iu`, because the `caseSensitive` option of the rule defaults to
+// false, so an entry that spells a folder name also matches that name in
+// another case.
 const modelImportAllowance = [
-	// A module of the same folder.
+	// One segment after the dot and the slash. Such a specifier names a
+	// file of the same folder. It also names a folder of the same folder,
+	// and the index file of that folder then loads. Both files are inside
+	// src/core/model/.
 	'\\./[^/]+',
 ];
-// The pattern refuses a specifier when no entry above matches it.
+// The pattern refuses a specifier when no entry above matches the whole of
+// it.
 const modelImportPattern = `^(?!(?:${modelImportAllowance.join('|')})$)`;
 
 // no-restricted-globals only sees bare identifiers, so member spellings
@@ -435,17 +446,23 @@ export default defineConfig(
 	},
 	// The other folders of the engine import the domain types from this
 	// folder, and this folder imports nothing from those folders. A file
-	// here therefore imports a module of the same folder only.
+	// here names a module with a specifier of the form `./name`. A specifier
+	// of that form points inside src/core/model/, so no import of the model
+	// reaches another folder.
 	//
 	// The core boundary sets an import rule for every file of src/core/. For
 	// a file of the model, the rule below takes the place of that rule. The
 	// model keeps each ban of the core boundary, because the pattern refuses
-	// every specifier that is not a module of the same folder. The Obsidian
-	// API, Electron, and the node builtins are three such specifiers.
+	// every specifier that does not have the form above. The specifier of
+	// the Obsidian API does not have that form. The specifier of Electron
+	// does not have it. The specifier of a node builtin does not have it.
 	//
-	// A test file beside a model file is not part of the engine, and such a
-	// file imports its test tools from a package. The rule does not apply to
-	// a test file.
+	// The rule does not apply to a test file beside a model file. The
+	// exemption drops the whole rule for such a file, and not the imports of
+	// the test tools alone. A test file is not part of the engine, so an
+	// import in a test file makes no dependency between the folders. A test
+	// of the model can therefore read a fixture from another folder of the
+	// engine. The core boundary still bans the platform modules there.
 	{
 		name: 'davenport/model-boundary',
 		files: ['src/core/model/**/*.ts'],
@@ -458,7 +475,7 @@ export default defineConfig(
 						{
 							regex: modelImportPattern,
 							message:
-								'A file in src/core/model/ imports a module of the same folder only. Move what the model needs into src/core/model/.',
+								"A file in src/core/model/ can name a module with a specifier of the form './name'. Such a file cannot use another form. Move the module that the model needs into src/core/model/. The engine takes a module of a platform through a port in src/adapters/.",
 						},
 					],
 				},

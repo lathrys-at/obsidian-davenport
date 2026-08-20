@@ -1,8 +1,11 @@
 /**
  * The other folders of the engine import the domain types from
  * src/core/model/, and no file of the model imports anything from those
- * folders. One lint rule holds this direction: a file of the model imports a
- * module of the same folder, and no other module.
+ * folders. One lint rule holds this direction: a file of the model names a
+ * module with a specifier of the form `./name`, and with no other form. A
+ * specifier of that form points inside src/core/model/. It names a file of
+ * the same folder, or it names a folder of the same folder, and the index
+ * file of that folder then loads.
  *
  * This file tests that rule in the form that the repository configures. Each
  * test asks the lint configuration which import rule it gives to one file.
@@ -10,14 +13,15 @@
  * test asks the whole configuration, and not one block of the configuration.
  * A later block that takes the rule away therefore fails a test here.
  *
- * The tests hold three claims. The rule reports an import that names a
- * module outside the model. The rule reports nothing for an import that
- * names a module of the model. The rule refuses each module that the core
- * boundary refuses, because the rule of the model takes the place of the
- * rule that the core boundary sets.
+ * The tests hold four claims. The rule reports an import that names a module
+ * outside the model. The rule reports nothing for an import that stays
+ * inside the model. The rule refuses each module that the core boundary
+ * refuses, because the rule of the model takes the place of the rule that
+ * the core boundary sets. The message of the rule gives the correct remedy
+ * for a module of the engine and for a module of a platform.
  */
 
-import { readdirSync } from 'node:fs';
+import { existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ESLint, Linter } from 'eslint';
@@ -31,11 +35,21 @@ interface ResolvedConfig {
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const MODEL = 'src/core/model';
+/** The file of the engine that the one-way test reads the rule for. */
+const ENGINE_FILE = 'src/core/ics/stamp.ts';
 
-/** A module of the model, which a file of the model can import. */
+/** A specifier of the allowed form, which names a file of the same folder. */
 const SIBLING_TYPE = "import type { EventFields } from './event';";
 const SIBLING_VALUE = "import { fields } from './event';";
 const SIBLING_EXPORT = "export type { EventFields } from './event';";
+
+/**
+ * A specifier of the allowed form, which names a folder of the same folder.
+ * The index file of that folder loads in place of it. A lint rule reads the
+ * text of a specifier and cannot read the disk, so the rule cannot tell this
+ * specifier from the one above.
+ */
+const SIBLING_FOLDER = "import type { Piece } from './parts';";
 
 /**
  * An import that names a module of the ICS folder of the engine. The rule
@@ -46,11 +60,18 @@ const ENGINE_VALUE = "import { stampFor } from '../ics/stamp';";
 const ENGINE_EXPORT = "export type { NormalizationStamp } from '../ics/stamp';";
 const ENGINE_ALL = "export * from '../ics/stamp';";
 const ENGINE_SIDE_EFFECT = "import '../ics/stamp';";
+const ENGINE_EQUALS = "import stamp = require('../ics/stamp');";
 
 /** A module of the engine that is not a module of the ICS folder. */
 const PORT_TYPE = "import type { Clock } from '../ports/clock';";
 const ADAPTER_TYPE = "import type { VaultFiles } from '../../adapters/vault';";
 const NESTED = "import type { Piece } from './parts/piece';";
+
+/**
+ * A module of the model, which this specifier reaches through the parent
+ * folder. The rule permits one spelling, and this is not that spelling.
+ */
+const PARENT_TO_MODEL = "import type { EventFields } from '../model/event';";
 
 /** A module of a platform, which the core boundary refuses everywhere. */
 const OBSIDIAN = "import { Notice } from 'obsidian';";
@@ -58,7 +79,7 @@ const ELECTRON = "import { app } from 'electron';";
 const NODE_PREFIXED = "import { readFile } from 'node:fs';";
 const NODE_BARE = "import { readFile } from 'fs';";
 
-/** The import that a test file beside a model file needs. */
+/** The imports that a test file beside a model file can hold. */
 const VITEST = "import { describe, it } from 'vitest';";
 
 /** An import that a file of the engine takes from the model. */
@@ -68,9 +89,15 @@ const MODEL_FROM_ENGINE =
 const linter = new Linter();
 const eslint = new ESLint({ cwd: ROOT });
 
-/** The source files of the model, without the test files beside them. */
-const modelSources = readdirSync(join(ROOT, MODEL)).filter(
-	(name) => name.endsWith('.ts') && !name.endsWith('.test.ts'),
+/**
+ * The source files of the model, at any depth, without the test files beside
+ * them. The read is recursive, so a file in a folder under the model counts.
+ */
+const modelSources = readdirSync(join(ROOT, MODEL), { recursive: true }).filter(
+	(name) =>
+		typeof name === 'string' &&
+		name.endsWith('.ts') &&
+		!name.endsWith('.test.ts'),
 );
 
 function isRuleEntry(value: unknown): value is Linter.RuleEntry {
@@ -112,16 +139,12 @@ describe('the import rule of a file in the model', () => {
 		expect(refused(rule, ENGINE_TYPE)).toHaveLength(1);
 	});
 
-	it('names the folder and the rule in the message', () => {
-		expect(refused(rule, ENGINE_TYPE)[0]).toContain(MODEL);
-		expect(refused(rule, ENGINE_TYPE)[0]).toContain('same folder');
-	});
-
 	it.each([
 		['a value import', ENGINE_VALUE],
 		['a named export', ENGINE_EXPORT],
 		['an export of everything', ENGINE_ALL],
 		['an import for the side effect', ENGINE_SIDE_EFFECT],
+		['an import that stands for a call of require', ENGINE_EQUALS],
 	])('also reports the same module through %s', (_name, code) => {
 		expect(refused(rule, code)).toHaveLength(1);
 	});
@@ -130,6 +153,7 @@ describe('the import rule of a file in the model', () => {
 		['a port', PORT_TYPE],
 		['an adapter', ADAPTER_TYPE],
 		['a folder under the model', NESTED],
+		['a module of the model through the parent folder', PARENT_TO_MODEL],
 	])('reports the import of %s', (_name, code) => {
 		expect(refused(rule, code)).toHaveLength(1);
 	});
@@ -141,11 +165,22 @@ describe('the import rule of a file in the model', () => {
 	])('reports nothing for %s of a module of the model', (_name, code) => {
 		expect(refused(rule, code)).toEqual([]);
 	});
+
+	// A lint rule reads the text of a specifier. It cannot read the disk, so
+	// it cannot tell a file of the same folder from a folder of the same
+	// folder. The rule permits both, and the module that loads for the
+	// second is the index file of that folder. That file is inside
+	// src/core/model/, so the direction of the dependency holds. This test
+	// records the behaviour as a decision.
+	it('reports nothing for a folder of the model that loads its index file', () => {
+		expect(refused(rule, SIBLING_FOLDER)).toEqual([]);
+	});
 });
 
 // The rule of the model takes the place of the rule that the core boundary
 // gives to the same file. These tests hold that the model keeps each ban of
-// the core boundary.
+// the core boundary, and that the message keeps the remedy that a platform
+// import needs.
 describe('the modules that the core boundary refuses', () => {
 	let rule: Linter.RuleEntry;
 
@@ -161,24 +196,54 @@ describe('the modules that the core boundary refuses', () => {
 	])('stay refused in the model: %s', (_name, code) => {
 		expect(refused(rule, code)).toHaveLength(1);
 	});
+
+	// A count of the errors cannot see the text of an error. The remedy for
+	// a module of a platform is a port, and the remedy for a module of the
+	// engine is a move into the model. One message carries both, so this
+	// test reads the message itself.
+	it('sends a platform import to a port, and not into the model', () => {
+		const message = refused(rule, OBSIDIAN)[0];
+		expect(message).toContain('src/adapters/');
+		expect(message).toContain('port');
+	});
+
+	it('sends an engine import into the model, and names the allowed form', () => {
+		const message = refused(rule, ENGINE_TYPE)[0];
+		expect(message).toContain(MODEL);
+		expect(message).toContain("'./name'");
+	});
 });
 
 describe('the files that the rule covers', () => {
 	it('covers every source file of the model', async () => {
 		expect(modelSources.length).toBeGreaterThan(0);
 		for (const name of modelSources) {
-			const rule = await importRule(`${MODEL}/${name}`);
+			const rule = await importRule(join(MODEL, String(name)));
 			expect(refused(rule, ENGINE_TYPE)).toHaveLength(1);
 		}
 	});
 
+	// The resolver answers for a path, and it does not read the file at that
+	// path. A test that names a path which no longer exists would therefore
+	// pass and hold nothing.
 	it('leaves the engine free to read the model', async () => {
-		const rule = await importRule('src/core/ics/stamp.ts');
+		expect(existsSync(join(ROOT, ENGINE_FILE))).toBe(true);
+		const rule = await importRule(ENGINE_FILE);
 		expect(refused(rule, MODEL_FROM_ENGINE)).toEqual([]);
 	});
 
-	it('leaves a test file beside a model file free to take its tools', async () => {
-		const rule = await importRule(`${MODEL}/record.test.ts`);
-		expect(refused(rule, VITEST)).toEqual([]);
-	});
+	// The exemption for a test file drops the whole rule, and not the
+	// imports of the test tools alone. These two imports record that
+	// decision. A test file is not part of the engine, so an import in a
+	// test file makes no dependency between the folders.
+	it.each([
+		['the test tools', VITEST],
+		['a module of another folder of the engine', ENGINE_TYPE],
+	])(
+		'leaves a test file beside a model file free to import %s',
+		async (_name, code) => {
+			const rule = await importRule(`${MODEL}/record.test.ts`);
+			expect(refused(rule, code)).toEqual([]);
+		},
+	);
 });
