@@ -21,21 +21,29 @@ const nodeBuiltinPatterns = [
 //
 // Each entry is a regular expression, and an entry must match the whole
 // specifier. Two properties of the composition constrain a new entry. The
-// pattern below puts an anchor at each end, so an entry that carries an
-// anchor of its own composes wrongly. ESLint compiles the pattern with the
-// flags `iu`, because the `caseSensitive` option of the rule defaults to
-// false, so an entry that spells a folder name also matches that name in
-// another case.
+// pattern below puts an anchor at each end of the alternation, so an entry
+// that carries an anchor of its own composes wrongly. ESLint compiles the
+// pattern with the flags `iu`, because the `caseSensitive` option of the
+// rule defaults to false, so an entry that spells a folder name also
+// matches that name in another case.
 const modelImportAllowance = [
 	// One segment after the dot and the slash. Such a specifier names a
 	// file of the same folder. It also names a folder of the same folder,
-	// and the index file of that folder then loads. Both files are inside
-	// src/core/model/.
+	// and the index file of that folder then loads.
 	'\\./[^/]+',
 ];
 // The pattern refuses a specifier when no entry above matches the whole of
 // it.
 const modelImportPattern = `^(?!(?:${modelImportAllowance.join('|')})$)`;
+
+// One dot and two dots each have the form that the allowance permits, and
+// each spells a folder instead of a module of that folder. Two dots spell
+// the folder above src/core/model/, and the index file of that folder then
+// loads, which leaves the model. One dot spells the folder of the file
+// itself. This pattern refuses both forms, so the allowance list above
+// stays free of the exception, and a later entry in that list cannot open
+// this form again.
+const modelTraversalPattern = '^\\./\\.\\.?$';
 
 // no-restricted-globals only sees bare identifiers, so member spellings
 // (window.fetch, globalThis.setTimeout) need selector-based guards too.
@@ -445,17 +453,21 @@ export default defineConfig(
 		},
 	},
 	// The other folders of the engine import the domain types from this
-	// folder, and this folder imports nothing from those folders. A file
-	// here names a module with a specifier of the form `./name`. A specifier
-	// of that form points inside src/core/model/, so no import of the model
-	// reaches another folder.
+	// folder, and this folder imports nothing from those folders. Two
+	// patterns hold that direction. The first permits a specifier of the
+	// form `./name` and refuses every other form. The second refuses a name
+	// of one dot and a name of two dots, which have that form and spell a
+	// folder. A specifier that both patterns permit therefore spells a path
+	// inside src/core/model/, and no import of the model reaches another
+	// folder.
 	//
 	// The core boundary sets an import rule for every file of src/core/. For
 	// a file of the model, the rule below takes the place of that rule. The
-	// model keeps each ban of the core boundary, because the pattern refuses
-	// every specifier that does not have the form above. The specifier of
-	// the Obsidian API does not have that form. The specifier of Electron
-	// does not have it. The specifier of a node builtin does not have it.
+	// model keeps each ban of the core boundary, because the first pattern
+	// refuses every specifier that does not have the form above. The
+	// specifier of the Obsidian API does not have that form. The specifier
+	// of Electron does not have it. The specifier of a node builtin does not
+	// have it.
 	//
 	// The rule does not apply to a test file beside a model file. The
 	// exemption drops the whole rule for such a file, and not the imports of
@@ -476,6 +488,11 @@ export default defineConfig(
 							regex: modelImportPattern,
 							message:
 								"A file in src/core/model/ can name a module with a specifier of the form './name'. Such a file cannot use another form. Move the module that the model needs into src/core/model/. The engine takes a module of a platform through a port in src/adapters/.",
+						},
+						{
+							regex: modelTraversalPattern,
+							message:
+								"The specifier './..' names the folder above src/core/model/, and the specifier './.' names the model folder itself. Name the module that the model needs.",
 						},
 					],
 				},

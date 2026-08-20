@@ -1,11 +1,13 @@
 /**
  * The other folders of the engine import the domain types from
  * src/core/model/, and no file of the model imports anything from those
- * folders. One lint rule holds this direction: a file of the model names a
- * module with a specifier of the form `./name`, and with no other form. A
- * specifier of that form points inside src/core/model/. It names a file of
- * the same folder, or it names a folder of the same folder, and the index
- * file of that folder then loads.
+ * folders. Two patterns of one lint rule hold this direction. The first
+ * permits a specifier of the form `./name` and refuses every other form. The
+ * second refuses a name of one dot and a name of two dots, which have that
+ * form and spell a folder. A specifier that both patterns permit therefore
+ * spells a path inside src/core/model/. Such a specifier names a file of the
+ * same folder, or it names a folder of the same folder, and the index file
+ * of that folder then loads.
  *
  * This file tests that rule in the form that the repository configures. Each
  * test asks the lint configuration which import rule it gives to one file.
@@ -50,6 +52,25 @@ const SIBLING_EXPORT = "export type { EventFields } from './event';";
  * specifier from the one above.
  */
 const SIBLING_FOLDER = "import type { Piece } from './parts';";
+
+/**
+ * A specifier of one segment whose segment is one dot. It spells the folder
+ * of the file itself. The second pattern refuses it.
+ */
+const OWN_FOLDER = "import type { Inside } from './.';";
+
+/**
+ * A specifier of one segment whose segment is two dots. It spells the folder
+ * above src/core/model/, and the index file of that folder loads. The second
+ * pattern refuses it.
+ */
+const PARENT_FOLDER = "import type { Escaped } from './..';";
+
+/**
+ * A file name that starts with two dots. The second pattern must leave this
+ * name alone, because the name does not spell a folder.
+ */
+const DOTTED_NAME = "import type { X } from './..foo';";
 
 /**
  * An import that names a module of the ICS folder of the engine. The rule
@@ -154,6 +175,8 @@ describe('the import rule of a file in the model', () => {
 		['an adapter', ADAPTER_TYPE],
 		['a folder under the model', NESTED],
 		['a module of the model through the parent folder', PARENT_TO_MODEL],
+		['the folder above the model, through the allowed form', PARENT_FOLDER],
+		['the model folder itself, through the allowed form', OWN_FOLDER],
 	])('reports the import of %s', (_name, code) => {
 		expect(refused(rule, code)).toHaveLength(1);
 	});
@@ -174,6 +197,22 @@ describe('the import rule of a file in the model', () => {
 	// records the behaviour as a decision.
 	it('reports nothing for a folder of the model that loads its index file', () => {
 		expect(refused(rule, SIBLING_FOLDER)).toEqual([]);
+	});
+
+	// The second pattern refuses a name of one dot and a name of two dots. A
+	// file name that starts with two dots is a name and not a folder, so the
+	// pattern must leave it alone.
+	it('reports nothing for a file name that starts with two dots', () => {
+		expect(refused(rule, DOTTED_NAME)).toEqual([]);
+	});
+
+	// The two patterns give two different messages. A specifier that spells
+	// a folder gets the message of the second pattern, which names both
+	// forms that spell a folder.
+	it('names the folder forms in the message of the second pattern', () => {
+		const message = refused(rule, PARENT_FOLDER)[0];
+		expect(message).toContain("'./..'");
+		expect(message).toContain("'./.'");
 	});
 });
 
