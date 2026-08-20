@@ -115,15 +115,15 @@ export default defineConfig(
 						'tools/frontmatter-probe/*.mjs',
 						'tools/timezone-table/*.mjs',
 					],
-					// The patterns above name sixteen paths. The linter
-					// counts the fourteen that hold code: this file, and
+					// The patterns above name seventeen paths. The linter
+					// counts the fifteen that hold code: this file, and
 					// each .mjs entry point under scripts/ and tools/.
 					// Each of these files is outside tsconfig.json, so the
 					// linter builds a program of its own for the file. The
 					// default limit is eight files, and the linter stops
 					// past that limit. The limit guards the run time of the
-					// lint. The number below gives room for a few more tool
-					// files.
+					// lint. The number below gives room for one more file.
+					// A change that adds a second one must raise it.
 					maximumDefaultProjectFileMatchCount_THIS_WILL_SLOW_DOWN_LINTING: 16,
 				},
 				tsconfigRootDir: import.meta.dirname,
