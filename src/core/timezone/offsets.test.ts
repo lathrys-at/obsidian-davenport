@@ -7,7 +7,8 @@ import {
 	stateAt,
 } from './offsets';
 import type { WallInstant } from './offsets';
-import type { TimezoneRules, TimezoneState } from './table';
+import { civilSeconds, dayOfMonth } from './calendar';
+import type { TerminalChange, TimezoneRules, TimezoneState } from './table';
 import { timezoneNames, timezoneRules } from './table';
 
 function rulesOf(name: string): TimezoneRules {
@@ -274,22 +275,89 @@ describe('an instant that stands before the table', () => {
 });
 
 describe('the window that the search for a wall time reads', () => {
+	const WINDOW = 52 * 3600;
+
+	/**
+	 * The instant of one change of a repeating pair, in the given year.
+	 * This repeats the arithmetic that the lookup applies, so that the
+	 * walk below reaches the years that the committed changes do not hold.
+	 */
+	function terminalInstant(
+		change: TerminalChange,
+		year: number,
+		offsetBefore: number,
+	): number {
+		return (
+			civilSeconds(
+				year,
+				change.month,
+				dayOfMonth(year, change.month, change.day),
+			) +
+			change.wallSeconds -
+			offsetBefore
+		);
+	}
+
+	/** Every change of one zone, from 1970 into the repeating years. */
+	function walk(name: string): readonly number[] {
+		const rules = timezoneRules(name);
+		if (rules === undefined) {
+			return [];
+		}
+		const instants = rules.changes.map((change) => change.at);
+		const terminal = rules.terminal;
+		if (terminal !== undefined) {
+			const last = instants[instants.length - 1] ?? 0;
+			const from = new Date(last * 1000).getUTCFullYear();
+			for (let year = from; year <= from + 8; year += 1) {
+				const pair = [
+					terminalInstant(
+						terminal.start,
+						year,
+						terminal.standard.offset,
+					),
+					terminalInstant(
+						terminal.end,
+						year,
+						terminal.daylight.offset,
+					),
+				].sort((left, right) => left - right);
+				for (const at of pair) {
+					if (at > last) {
+						instants.push(at);
+					}
+				}
+			}
+		}
+		return instants;
+	}
+
 	it('holds every zone of the table to one change in 52 hours', () => {
 		// The search reads the offset at each end of a window of 52 hours
 		// and reads no instant inside it. A zone that changed its offset
-		// two times inside that window would break the search.
-		const window = 52 * 3600;
+		// two times inside that window would break the search. The walk
+		// covers the changes that the table holds and then eight years of
+		// the repeating pair, so it also covers the step from the last
+		// change of a zone into the years that the pair states.
 		const tooClose: string[] = [];
+		let closest = Number.POSITIVE_INFINITY;
 		for (const name of timezoneNames()) {
-			const changes = timezoneRules(name)?.changes ?? [];
-			for (let index = 1; index < changes.length; index += 1) {
-				const gap =
-					(changes[index]?.at ?? 0) - (changes[index - 1]?.at ?? 0);
-				if (gap < window) {
-					tooClose.push(`${name} at ${String(changes[index]?.at)}`);
+			const instants = walk(name);
+			for (let index = 1; index < instants.length; index += 1) {
+				const gap = (instants[index] ?? 0) - (instants[index - 1] ?? 0);
+				closest = Math.min(closest, gap);
+				if (gap < WINDOW) {
+					tooClose.push(`${name} at ${String(instants[index])}`);
 				}
 			}
 		}
 		expect(tooClose).toEqual([]);
+		// The margin is wide. On this release the closest pair stands 166
+		// hours apart, at America/Cambridge_Bay in 2000. The step from the
+		// last change of a zone into the repeating years is 1033 hours at
+		// its closest, and two changes of one repeating pair stand 3024
+		// hours apart at their closest. A release that narrowed any of the
+		// three would show here before it reached the search.
+		expect(closest).toBeGreaterThan(3 * WINDOW);
 	});
 });

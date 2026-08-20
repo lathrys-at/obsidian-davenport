@@ -95,8 +95,8 @@ function terminalChange(
  * The span matters. A zone can leave its seasonal rules for some years
  * and then take them up again. Over those years the rules state changes
  * that the zone did not make. A test that reads one change alone would
- * drop the change that ends such a span, and the reader would then apply
- * the terminal rule over the whole span.
+ * drop the change that ends such a span. The reader would then apply the
+ * terminal rule over the whole span.
  */
 export function truncate(
 	changes: readonly ZoneChange[],

@@ -1,11 +1,11 @@
 /**
  * The expansion of the timezone source into clock changes.
  *
- * A zone in the source is a list of lines, and each line states a
- * standard offset, a set of seasonal rules, and the moment at which the
- * line stops. This module walks those lines in order and states the
- * result as a list of clock changes: at this instant, the offset from
- * universal time becomes this, and the abbreviation becomes this.
+ * A zone in the source is a list of lines. Each line states a standard
+ * offset, a set of seasonal rules, and the moment at which the line stops.
+ * This module walks those lines in order. It states the result as a list
+ * of clock changes: at this instant, the offset from universal time
+ * becomes this, and the abbreviation becomes this.
  *
  * The expansion keeps two things for each zone. The first is the list of
  * the changes from the start of 1970. The second is the terminal rule:
@@ -33,8 +33,9 @@ import { ruleSet, sameType, zoneType } from './zone.ts';
 
 /**
  * The year through which the expansion writes changes out. A terminal
- * rule covers every year after the last change that the expansion writes,
- * so this value only has to pass the last explicit year of the release.
+ * rule covers every year after the last change that the expansion writes.
+ * This value therefore only has to pass the last explicit year of the
+ * release.
  *
  * The expansion refuses a rule whose last year reaches this one. Such a
  * rule would lose its later changes without a word, and the table would

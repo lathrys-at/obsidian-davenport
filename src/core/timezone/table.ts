@@ -330,18 +330,42 @@ function terminalChange(text: string, name: string): TerminalChange {
 			`the timezone table holds a month outside the year for ${name}`,
 		);
 	}
+	const wallSeconds = wholeNumber(parts[2] ?? '', name, 'a time of day');
+	if (
+		wallSeconds < EARLIEST_CHANGE_SECONDS ||
+		wallSeconds > LATEST_CHANGE_SECONDS
+	) {
+		throw new Error(
+			`the timezone table holds a time of day outside the day for ${name}`,
+		);
+	}
 	return {
 		month,
 		day: terminalDay(parts[1] ?? '', name),
-		wallSeconds: wholeNumber(parts[2] ?? '', name, 'a time of day'),
+		wallSeconds,
 	};
 }
+
+/**
+ * The bounds of the time of a repeating change, in seconds from the start
+ * of the local day.
+ *
+ * The bounds follow from the format. The release states such a time from
+ * the start of a day to 25 hours after it. The generator moves that time
+ * by the offset that runs before the change, and no offset of the release
+ * stands more than 26 hours from universal time. A time outside these
+ * bounds therefore states nothing that the release can hold. A time inside
+ * them can be negative, and the release holds one: a change that the
+ * release states on the universal clock, in a zone that stands behind it.
+ */
+const EARLIEST_CHANGE_SECONDS = -26 * 3600;
+const LATEST_CHANGE_SECONDS = 25 * 3600 + 26 * 3600;
 
 function terminalDay(text: string, name: string): RuleDay {
 	const mark = text.slice(0, 1);
 	const rest = text.slice(1);
 	if (mark === 'd') {
-		return { kind: 'fixed', day: wholeNumber(rest, name, 'a day') };
+		return { kind: 'fixed', day: dayOfTheMonth(rest, name) };
 	}
 	if (mark === 'l') {
 		return { kind: 'last', weekday: weekday(rest, name) };
@@ -349,7 +373,7 @@ function terminalDay(text: string, name: string): RuleDay {
 	const stop = rest.indexOf('.');
 	if ((mark === 'a' || mark === 'b') && stop !== -1) {
 		const weekday_ = weekday(rest.slice(0, stop), name);
-		const day = wholeNumber(rest.slice(stop + 1), name, 'a day');
+		const day = dayOfTheMonth(rest.slice(stop + 1), name);
 		return mark === 'a'
 			? { kind: 'onOrAfter', weekday: weekday_, day }
 			: { kind: 'onOrBefore', weekday: weekday_, day };
@@ -363,6 +387,17 @@ function weekday(text: string, name: string): number {
 	if (found < 0 || found > 6) {
 		throw new Error(
 			`the timezone table holds a weekday outside the week for ${name}`,
+		);
+	}
+	return found;
+}
+
+/** One day of a month of the table, from the first through the last. */
+function dayOfTheMonth(text: string, name: string): number {
+	const found = wholeNumber(text, name, 'a day');
+	if (found < 1 || found > 31) {
+		throw new Error(
+			`the timezone table holds a day outside the month for ${name}`,
 		);
 	}
 	return found;

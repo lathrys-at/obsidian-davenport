@@ -1,24 +1,24 @@
 {
 	"total": {
 		"statements": {
-			"total": 668,
-			"covered": 637,
-			"pct": 95.35
+			"total": 677,
+			"covered": 646,
+			"pct": 95.42
 		},
 		"branches": {
-			"total": 497,
-			"covered": 445,
-			"pct": 89.53
+			"total": 505,
+			"covered": 453,
+			"pct": 89.7
 		},
 		"functions": {
-			"total": 137,
-			"covered": 137,
+			"total": 138,
+			"covered": 138,
 			"pct": 100
 		},
 		"lines": {
-			"total": 664,
-			"covered": 633,
-			"pct": 95.33
+			"total": 673,
+			"covered": 642,
+			"pct": 95.39
 		}
 	},
 	"files": [
@@ -554,23 +554,23 @@
 		{
 			"path": "src/core/timezone/table.ts",
 			"statements": {
-				"total": 112,
-				"covered": 112,
+				"total": 121,
+				"covered": 121,
 				"pct": 100
 			},
 			"branches": {
-				"total": 91,
-				"covered": 80,
-				"pct": 87.91
+				"total": 99,
+				"covered": 88,
+				"pct": 88.88
 			},
 			"functions": {
-				"total": 20,
-				"covered": 20,
+				"total": 21,
+				"covered": 21,
 				"pct": 100
 			},
 			"lines": {
-				"total": 111,
-				"covered": 111,
+				"total": 120,
+				"covered": 120,
 				"pct": 100
 			}
 		},

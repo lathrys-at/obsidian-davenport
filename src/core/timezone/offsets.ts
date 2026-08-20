@@ -10,14 +10,16 @@
  * gives the state of the clock at that instant. The other direction takes
  * a wall time and gives the instant that it names.
  *
- * The table covers the period from the start of 1970, and every function
- * here refuses an instant before that period. The refusal is the contract.
- * The oldest state that the table holds is the state at the start of 1970,
- * and the table does not say how far back that state reaches. To give that
- * state for an earlier instant would be a guess, and the guess is wrong
- * for any zone that changed its clock in the years before 1970. The device
- * holds a timezone database that reaches further back, and no result from
- * that database may reach the bytes of a record.
+ * The table covers the period from the start of 1970. Every function here
+ * refuses an instant before that period, and the refusal is the contract.
+ *
+ * The oldest state that the table holds is the state at the start of 1970.
+ * The table does not say how far back that state reaches. To give that
+ * state for an earlier instant is a guess. The guess is wrong for a zone
+ * that changed its clock in the years before 1970.
+ *
+ * The device holds a timezone database that reaches further back. No
+ * result from that database may reach the bytes of a record.
  *
  * A caller that meets a refusal states the limit to the user. It does not
  * fall back to the database of the device.
@@ -112,10 +114,10 @@ export function offsetAt(
 /**
  * The instant that a wall time names in one zone.
  *
- * The caller states the wall time as the count of seconds from the start
- * of 1970 to that time, read as if the wall clock were the universal
- * clock. The function refuses a wall time that names an instant before the
- * start of 1970.
+ * The caller states the wall time as a count of seconds. The count runs
+ * from the start of 1970 to that time, and it reads the wall clock as if
+ * the wall clock were the universal clock. The function refuses a wall
+ * time that names an instant before the start of 1970.
  *
  * A change of the clock makes two wall times that need a rule.
  *

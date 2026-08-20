@@ -178,6 +178,41 @@ describe('a table that is damaged', () => {
 		expect(() => table.rules('Zone/One')).toThrow(/outside the year/);
 	});
 
+	it('refuses a day below the first of the month', () => {
+		const table = readTimezoneTable(
+			'Zone/One|0,0,ONE;3600,1,TWO|0||0,1,3:d-5:7200,10:l0:7200\n',
+		);
+		expect(() => table.rules('Zone/One')).toThrow(/outside the month/);
+	});
+
+	it('refuses a day past the last of the month', () => {
+		const table = readTimezoneTable(
+			'Zone/One|0,0,ONE;3600,1,TWO|0||0,1,3:d99:7200,10:l0:7200\n',
+		);
+		expect(() => table.rules('Zone/One')).toThrow(/outside the month/);
+	});
+
+	it('refuses such a day in the form that names a weekday', () => {
+		const table = readTimezoneTable(
+			'Zone/One|0,0,ONE;3600,1,TWO|0||0,1,3:a0.99:7200,10:l0:7200\n',
+		);
+		expect(() => table.rules('Zone/One')).toThrow(/outside the month/);
+	});
+
+	it('refuses a time of day past what the format can hold', () => {
+		const table = readTimezoneTable(
+			'Zone/One|0,0,ONE;3600,1,TWO|0||0,1,3:l0:999999,10:l0:7200\n',
+		);
+		expect(() => table.rules('Zone/One')).toThrow(/outside the day/);
+	});
+
+	it('refuses a time of day below what the format can hold', () => {
+		const table = readTimezoneTable(
+			'Zone/One|0,0,ONE;3600,1,TWO|0||0,1,3:l0:-999999,10:l0:7200\n',
+		);
+		expect(() => table.rules('Zone/One')).toThrow(/outside the day/);
+	});
+
 	it('refuses a weekday outside the week', () => {
 		const table = readTimezoneTable(
 			'Zone/One|0,0,ONE;3600,1,TWO|0||0,1,3:l9:7200,10:l0:7200\n',
@@ -227,6 +262,32 @@ describe('a table that a test states', () => {
 			'Zone/Step|0,0,ONE;3600,1,TWO|0|z.7,1|-\n',
 		);
 		expect(table.rules('Zone/Step')?.changes[0]?.at).toBe(35 * 60 + 7);
+	});
+
+	it('takes the times of day that the release itself holds', () => {
+		// The release states one change on the universal clock in a zone
+		// that stands behind it, which gives a time below the start of the
+		// day. It states another at the end of a day. Both are legal and
+		// the bounds must not refuse them.
+		for (const time of ['-7200', '0', '86400']) {
+			const table = readTimezoneTable(
+				`Zone/One|0,0,ONE;3600,1,TWO|0||0,1,3:l0:${time},10:l0:7200\n`,
+			);
+			expect(
+				table.rules('Zone/One')?.terminal?.start.wallSeconds,
+				`the reader refuses the time of day ${time}`,
+			).toBe(Number(time));
+		}
+	});
+
+	it('takes the last day of a month', () => {
+		const table = readTimezoneTable(
+			'Zone/One|0,0,ONE;3600,1,TWO|0||0,1,3:d31:7200,10:l0:7200\n',
+		);
+		expect(table.rules('Zone/One')?.terminal?.start.day).toEqual({
+			kind: 'fixed',
+			day: 31,
+		});
 	});
 
 	it('reads each of the four forms of a day', () => {

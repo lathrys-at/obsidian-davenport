@@ -16,8 +16,8 @@
  * A year of the argument is the whole year, and it stands at 100 or above.
  * The host reads a year below 100 as a year of the twentieth century, so
  * the year 50 would give 1950. The rules of a timezone reach back to the
- * nineteenth century and no further, and the table starts in 1970, so no
- * caller of this module reaches that range.
+ * nineteenth century and no further. The table starts in 1970. No caller
+ * of this module therefore reaches that range.
  */
 
 /**
