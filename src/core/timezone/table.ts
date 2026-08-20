@@ -1,0 +1,404 @@
+/**
+ * The reader of the bundled timezone table.
+ *
+ * The plugin ships one table of timezone rules. Every device that runs
+ * one build of the plugin holds the same table, and every computation
+ * whose result can reach the bytes of a record reads it. The database of
+ * the operating system is a different dataset: it differs from device to
+ * device, and a byte of a record must never follow from it.
+ *
+ * The generator under `tools/timezone-table/` writes the table from one
+ * release of the timezone database. This module reads the table back.
+ *
+ * The form of a line of the table:
+ *
+ *     <name>|<types>|<initial>|<changes>|<terminal>
+ *     <name>=<name>
+ *
+ * The second form states that this identifier holds the same clock as the
+ * identifier on the right. The reader keeps the name that the caller
+ * asked for, and never the name on the right. The release gives more than
+ * one name to one zone, and the name that a user wrote is the name that
+ * the plugin stores.
+ *
+ * - `<types>` states the states of the clock, with a semicolon between
+ *   them. Each state is the offset from universal time in seconds, then 1
+ *   for a daylight offset or 0 for a standard offset, then the
+ *   abbreviation, with a comma between the three.
+ * - `<initial>` is the place of the state that holds at the start of
+ *   1970, counted from 0.
+ * - `<changes>` states the changes after the start of 1970, with a
+ *   semicolon between them. Each change is the count of minutes from the
+ *   change before it in base 36, then a comma, then the place of the
+ *   state that the change gives. The first change counts from the start
+ *   of 1970. A change that does not fall on a whole minute carries a full
+ *   stop and the seconds after the count of minutes.
+ * - `<terminal>` states the pair of changes that the zone repeats every
+ *   year after its last change, or a dash where the zone repeats no such
+ *   pair. The pair is the place of the standard state, the place of the
+ *   daylight state, the change that starts the daylight offset, and the
+ *   change that ends it, with a comma between them. Each change is a
+ *   month from 1, then the day, then the time of the change in seconds
+ *   from the start of the local day, with a colon between them. The local
+ *   day reads the clock that runs before the change.
+ *
+ * The reader reads no clock and it reads no file. It decodes one zone at
+ * the first request for that zone, and it keeps the result.
+ */
+
+import type { RuleDay } from './calendar';
+import { TIMEZONE_TABLE, TIMEZONE_TABLE_RELEASE } from './table-data';
+
+export { TIMEZONE_TABLE_RELEASE };
+export type { RuleDay };
+
+/** One state of the clock of a zone. */
+export interface TimezoneState {
+	/** The offset from universal time, in seconds. */
+	readonly offset: number;
+	readonly isDaylight: boolean;
+	readonly abbreviation: string;
+}
+
+/** One change of the clock of a zone. */
+export interface TimezoneChange {
+	/** The instant of the change, in seconds from the start of 1970. */
+	readonly at: number;
+	readonly state: TimezoneState;
+}
+
+/** One of the two changes that a zone repeats every year. */
+export interface TerminalChange {
+	/** The month, from 1 for January through 12 for December. */
+	readonly month: number;
+	readonly day: RuleDay;
+	/**
+	 * The time of the change, in seconds from the start of the local day.
+	 * The local day reads the clock that runs before the change.
+	 */
+	readonly wallSeconds: number;
+}
+
+/** The pair of changes that a zone repeats every year. */
+export interface TerminalRule {
+	readonly standard: TimezoneState;
+	readonly daylight: TimezoneState;
+	readonly start: TerminalChange;
+	readonly end: TerminalChange;
+}
+
+/** The rules of one zone. */
+export interface TimezoneRules {
+	/** The name that the caller asked for, and never another name. */
+	readonly name: string;
+	/** The state of the clock at the start of 1970. */
+	readonly initial: TimezoneState;
+	/** The changes after the start of 1970, in order. */
+	readonly changes: readonly TimezoneChange[];
+	/** Absent where the zone repeats no pair of changes. */
+	readonly terminal: TerminalRule | undefined;
+}
+
+/** A reader over one table text. */
+export interface TimezoneTable {
+	/** The rules of one zone, or nothing where the table holds no such name. */
+	rules(name: string): TimezoneRules | undefined;
+	/** Every identifier that the table holds, in order. */
+	names(): readonly string[];
+	/** True when the table holds the given identifier. */
+	has(name: string): boolean;
+}
+
+/**
+ * A reader over the given table text. The reader decodes one zone at the
+ * first request for that zone, and it keeps the result.
+ */
+export function readTimezoneTable(text: string): TimezoneTable {
+	const lines = new Map<string, string>();
+	for (const line of text.split('\n')) {
+		if (line.length === 0) {
+			continue;
+		}
+		const cut = firstSeparator(line);
+		if (cut === -1) {
+			throw new Error(`the timezone table holds a line with no name`);
+		}
+		const name = line.slice(0, cut);
+		if (lines.has(name)) {
+			throw new Error(
+				`the timezone table holds the name ${name} two times`,
+			);
+		}
+		lines.set(name, line.slice(cut));
+	}
+	const decoded = new Map<string, TimezoneRules>();
+	return {
+		names: () => [...lines.keys()],
+		has: (name) => lines.has(name),
+		rules(name) {
+			const known = decoded.get(name);
+			if (known !== undefined) {
+				return known;
+			}
+			const body = bodyOf(lines, name);
+			if (body === undefined) {
+				return undefined;
+			}
+			const rules = { name, ...decodeBody(body, name) };
+			decoded.set(name, rules);
+			return rules;
+		},
+	};
+}
+
+/** The rules of one zone, or nothing where the table holds no such name. */
+export function timezoneRules(name: string): TimezoneRules | undefined {
+	return bundled().rules(name);
+}
+
+/** Every identifier that the bundled table holds, in order. */
+export function timezoneNames(): readonly string[] {
+	return bundled().names();
+}
+
+/** True when the bundled table holds the given identifier. */
+export function isTimezoneName(name: string): boolean {
+	return bundled().has(name);
+}
+
+let bundled_: TimezoneTable | undefined;
+
+function bundled(): TimezoneTable {
+	bundled_ ??= readTimezoneTable(TIMEZONE_TABLE);
+	return bundled_;
+}
+
+/**
+ * The place of the character that ends the name of a line. A name holds
+ * neither of the two characters that can stand there.
+ */
+function firstSeparator(line: string): number {
+	const bar = line.indexOf('|');
+	const equals = line.indexOf('=');
+	if (bar === -1) {
+		return equals;
+	}
+	if (equals === -1) {
+		return bar;
+	}
+	return Math.min(bar, equals);
+}
+
+/** The body of a line, with a name that points at another name followed. */
+function bodyOf(
+	lines: ReadonlyMap<string, string>,
+	name: string,
+): string | undefined {
+	const tail = lines.get(name);
+	if (tail === undefined) {
+		return undefined;
+	}
+	if (tail.startsWith('|')) {
+		return tail.slice(1);
+	}
+	const target = lines.get(tail.slice(1));
+	if (!target?.startsWith('|')) {
+		throw new Error(
+			`the timezone table points ${name} at a name that holds no rules`,
+		);
+	}
+	return target.slice(1);
+}
+
+function decodeBody(body: string, name: string): Omit<TimezoneRules, 'name'> {
+	const parts = body.split('|');
+	if (parts.length !== 4) {
+		throw new Error(`the timezone table holds a damaged line for ${name}`);
+	}
+	const states = (parts[0] ?? '').split(';').map((text) => state(text, name));
+	const at = (place: string): TimezoneState => {
+		const found = states[Number(place)];
+		if (found === undefined) {
+			throw new Error(
+				`the timezone table names a state that ${name} does not hold`,
+			);
+		}
+		return found;
+	};
+	const initial = at(parts[1] ?? '');
+	const changesText = parts[2] ?? '';
+	const changes: TimezoneChange[] = [];
+	let previous = 0;
+	if (changesText.length > 0) {
+		for (const text of changesText.split(';')) {
+			const comma = text.lastIndexOf(',');
+			previous += seconds(text.slice(0, comma), name);
+			changes.push({ at: previous, state: at(text.slice(comma + 1)) });
+		}
+	}
+	const terminalText = parts[3] ?? '';
+	return {
+		initial,
+		changes,
+		terminal:
+			terminalText === '-' ? undefined : terminal(terminalText, at, name),
+	};
+}
+
+function state(text: string, name: string): TimezoneState {
+	const first = text.indexOf(',');
+	const second = text.indexOf(',', first + 1);
+	if (first === -1 || second === -1) {
+		throw new Error(`the timezone table holds a damaged state for ${name}`);
+	}
+	return {
+		offset: wholeNumber(text.slice(0, first), name, 'an offset'),
+		isDaylight: text.slice(first + 1, second) === '1',
+		abbreviation: text.slice(second + 1),
+	};
+}
+
+/**
+ * The seconds that a count of minutes in base 36 states. A count runs
+ * forward, because the changes of a zone stand in order.
+ */
+function seconds(text: string, name: string): number {
+	const stop = text.indexOf('.');
+	const minutes = stop === -1 ? text : text.slice(0, stop);
+	if (!/^[0-9a-z]+$/.test(minutes)) {
+		throw new Error(
+			`the timezone table holds a damaged count of minutes for ${name}`,
+		);
+	}
+	const rest =
+		stop === -1
+			? 0
+			: wholeNumber(text.slice(stop + 1), name, 'a count of seconds');
+	if (rest < 0 || rest > 59) {
+		throw new Error(
+			`the timezone table holds a count of seconds outside a minute for ${name}`,
+		);
+	}
+	const total = Number.parseInt(minutes, 36) * 60 + rest;
+	if (total <= 0) {
+		throw new Error(
+			`the timezone table holds a change that does not run forward for ${name}`,
+		);
+	}
+	return total;
+}
+
+/** One whole number of the table, refused where the text states none. */
+function wholeNumber(text: string, name: string, what: string): number {
+	if (!/^-?[0-9]+$/.test(text)) {
+		throw new Error(
+			`the timezone table holds ${what} that is not a whole number for ${name}`,
+		);
+	}
+	return Number(text);
+}
+
+function terminal(
+	text: string,
+	at: (place: string) => TimezoneState,
+	name: string,
+): TerminalRule {
+	const parts = text.split(',');
+	if (parts.length !== 4) {
+		throw new Error(
+			`the timezone table holds a damaged repeating pair for ${name}`,
+		);
+	}
+	return {
+		standard: at(parts[0] ?? ''),
+		daylight: at(parts[1] ?? ''),
+		start: terminalChange(parts[2] ?? '', name),
+		end: terminalChange(parts[3] ?? '', name),
+	};
+}
+
+function terminalChange(text: string, name: string): TerminalChange {
+	const parts = text.split(':');
+	if (parts.length !== 3) {
+		throw new Error(
+			`the timezone table holds a damaged repeating change for ${name}`,
+		);
+	}
+	const month = wholeNumber(parts[0] ?? '', name, 'a month');
+	if (month < 1 || month > 12) {
+		throw new Error(
+			`the timezone table holds a month outside the year for ${name}`,
+		);
+	}
+	const wallSeconds = wholeNumber(parts[2] ?? '', name, 'a time of day');
+	if (
+		wallSeconds < EARLIEST_CHANGE_SECONDS ||
+		wallSeconds > LATEST_CHANGE_SECONDS
+	) {
+		throw new Error(
+			`the timezone table holds a time of day outside the day for ${name}`,
+		);
+	}
+	return {
+		month,
+		day: terminalDay(parts[1] ?? '', name),
+		wallSeconds,
+	};
+}
+
+/**
+ * The bounds of the time of a repeating change, in seconds from the start
+ * of the local day.
+ *
+ * The bounds follow from the format. The release states such a time from
+ * the start of a day to 25 hours after it. The generator moves that time
+ * by the offset that runs before the change, and no offset of the release
+ * stands more than 26 hours from universal time. A time outside these
+ * bounds therefore states nothing that the release can hold. A time inside
+ * them can be negative, and the release holds one: a change that the
+ * release states on the universal clock, in a zone that stands behind it.
+ */
+const EARLIEST_CHANGE_SECONDS = -26 * 3600;
+const LATEST_CHANGE_SECONDS = 25 * 3600 + 26 * 3600;
+
+function terminalDay(text: string, name: string): RuleDay {
+	const mark = text.slice(0, 1);
+	const rest = text.slice(1);
+	if (mark === 'd') {
+		return { kind: 'fixed', day: dayOfTheMonth(rest, name) };
+	}
+	if (mark === 'l') {
+		return { kind: 'last', weekday: weekday(rest, name) };
+	}
+	const stop = rest.indexOf('.');
+	if ((mark === 'a' || mark === 'b') && stop !== -1) {
+		const weekday_ = weekday(rest.slice(0, stop), name);
+		const day = dayOfTheMonth(rest.slice(stop + 1), name);
+		return mark === 'a'
+			? { kind: 'onOrAfter', weekday: weekday_, day }
+			: { kind: 'onOrBefore', weekday: weekday_, day };
+	}
+	throw new Error(`the timezone table holds a damaged day for ${name}`);
+}
+
+/** One weekday of the table, 0 for Sunday through 6 for Saturday. */
+function weekday(text: string, name: string): number {
+	const found = wholeNumber(text, name, 'a weekday');
+	if (found < 0 || found > 6) {
+		throw new Error(
+			`the timezone table holds a weekday outside the week for ${name}`,
+		);
+	}
+	return found;
+}
+
+/** One day of a month of the table, from the first through the last. */
+function dayOfTheMonth(text: string, name: string): number {
+	const found = wholeNumber(text, name, 'a day');
+	if (found < 1 || found > 31) {
+		throw new Error(
+			`the timezone table holds a day outside the month for ${name}`,
+		);
+	}
+	return found;
+}

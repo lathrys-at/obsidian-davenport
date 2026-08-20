@@ -1,24 +1,24 @@
 {
 	"total": {
 		"statements": {
-			"total": 479,
-			"covered": 449,
-			"pct": 93.73
+			"total": 677,
+			"covered": 646,
+			"pct": 95.42
 		},
 		"branches": {
-			"total": 354,
-			"covered": 317,
-			"pct": 89.54
+			"total": 505,
+			"covered": 453,
+			"pct": 89.7
 		},
 		"functions": {
-			"total": 97,
-			"covered": 97,
+			"total": 138,
+			"covered": 138,
 			"pct": 100
 		},
 		"lines": {
-			"total": 477,
-			"covered": 447,
-			"pct": 93.71
+			"total": 673,
+			"covered": 642,
+			"pct": 95.39
 		}
 	},
 	"files": [
@@ -456,6 +456,121 @@
 			"lines": {
 				"total": 0,
 				"covered": 0,
+				"pct": 100
+			}
+		},
+		{
+			"path": "src/core/timezone/calendar.ts",
+			"statements": {
+				"total": 13,
+				"covered": 13,
+				"pct": 100
+			},
+			"branches": {
+				"total": 6,
+				"covered": 6,
+				"pct": 100
+			},
+			"functions": {
+				"total": 6,
+				"covered": 6,
+				"pct": 100
+			},
+			"lines": {
+				"total": 13,
+				"covered": 13,
+				"pct": 100
+			}
+		},
+		{
+			"path": "src/core/timezone/names.ts",
+			"statements": {
+				"total": 5,
+				"covered": 5,
+				"pct": 100
+			},
+			"branches": {
+				"total": 4,
+				"covered": 4,
+				"pct": 100
+			},
+			"functions": {
+				"total": 3,
+				"covered": 3,
+				"pct": 100
+			},
+			"lines": {
+				"total": 5,
+				"covered": 5,
+				"pct": 100
+			}
+		},
+		{
+			"path": "src/core/timezone/offsets.ts",
+			"statements": {
+				"total": 57,
+				"covered": 56,
+				"pct": 98.24
+			},
+			"branches": {
+				"total": 42,
+				"covered": 38,
+				"pct": 90.47
+			},
+			"functions": {
+				"total": 11,
+				"covered": 11,
+				"pct": 100
+			},
+			"lines": {
+				"total": 56,
+				"covered": 55,
+				"pct": 98.21
+			}
+		},
+		{
+			"path": "src/core/timezone/table-data.ts",
+			"statements": {
+				"total": 2,
+				"covered": 2,
+				"pct": 100
+			},
+			"branches": {
+				"total": 0,
+				"covered": 0,
+				"pct": 100
+			},
+			"functions": {
+				"total": 0,
+				"covered": 0,
+				"pct": 100
+			},
+			"lines": {
+				"total": 2,
+				"covered": 2,
+				"pct": 100
+			}
+		},
+		{
+			"path": "src/core/timezone/table.ts",
+			"statements": {
+				"total": 121,
+				"covered": 121,
+				"pct": 100
+			},
+			"branches": {
+				"total": 99,
+				"covered": 88,
+				"pct": 88.88
+			},
+			"functions": {
+				"total": 21,
+				"covered": 21,
+				"pct": 100
+			},
+			"lines": {
+				"total": 120,
+				"covered": 120,
 				"pct": 100
 			}
 		},

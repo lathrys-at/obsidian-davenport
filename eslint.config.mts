@@ -70,12 +70,19 @@ export default defineConfig(
 			},
 			parserOptions: {
 				projectService: {
+					// The entry point of each tool and each script is a
+					// .mjs file, which no tsconfig includes. The project
+					// service needs a project for every file that it
+					// parses, and this list gives those files the default
+					// one. The count below only has to hold the list.
+					maximumDefaultProjectFileMatchCount_THIS_WILL_SLOW_DOWN_LINTING: 12,
 					allowDefaultProject: [
 						'eslint.config.mts',
 						'manifest.json',
 						'scripts/*.mjs',
 						'tools/frontmatter-probe/manifest.json',
 						'tools/frontmatter-probe/*.mjs',
+						'tools/timezone-table/*.mjs',
 					],
 					// The patterns above match nine files. Each of these
 					// files is outside tsconfig.json, so the linter
