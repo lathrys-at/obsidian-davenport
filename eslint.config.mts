@@ -84,7 +84,7 @@ export default defineConfig(
 						'tools/frontmatter-probe/*.mjs',
 						'tools/timezone-table/*.mjs',
 					],
-					// The patterns above match nine files. Each of these
+					// The patterns above match ten files. Each of these
 					// files is outside tsconfig.json, so the linter
 					// builds a program of its own for the file. The
 					// default limit is eight files, and the linter stops
