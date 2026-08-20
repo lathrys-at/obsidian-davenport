@@ -119,6 +119,50 @@ describe('the blocks of prose', () => {
 		).toStrictEqual([['text'], ['more'], ['last']]);
 	});
 
+	it('passes over a key that holds a space, and a key that quotes hold', () => {
+		expect(
+			blocksOf(
+				document(
+					'---',
+					'date created: 2024-01-01 09:15',
+					'"date modified": 2024-06-02',
+					'aliases: []',
+					'---',
+					'text',
+				),
+			),
+		).toStrictEqual([['text']]);
+	});
+
+	it('passes over a block that holds nothing', () => {
+		expect(blocksOf(document('---', '---', 'text'))).toStrictEqual([
+			['text'],
+		]);
+	});
+
+	it('keeps the prose below a break that a blank line follows', () => {
+		expect(
+			blocksOf(
+				document('---', '', '- one item', '  and its rest', '', '---'),
+			),
+		).toStrictEqual([['- one item', '  and its rest']]);
+	});
+
+	it('keeps the prose below a break that an indented line follows', () => {
+		expect(
+			blocksOf(document('---', '  text', '  and more', '', '---')),
+		).toStrictEqual([['  text', '  and more']]);
+	});
+
+	// An item of a sequence below the opening hyphens is an item of a YAML
+	// sequence and an item of a markdown list, in the same characters. The
+	// corpus states that shape as frontmatter, and the check reads it so.
+	it('takes an item of a sequence below the opening hyphens as frontmatter', () => {
+		expect(
+			blocksOf(document('---', '- one', '- two', '---', 'text')),
+		).toStrictEqual([['text']]);
+	});
+
 	it('passes over the frontmatter of a document that a windows host wrote', () => {
 		expect(
 			blocksOf(windows('---', 'title: a', '---', 'text')),
@@ -368,6 +412,25 @@ describe('the defects of one document, in order', () => {
 			['orphan', 2],
 			['trailing space', 3],
 		]);
+	});
+
+	// Read as prose, this block gives two orphans: two of its lines are
+	// short beside the first line, and the start of the line below each one
+	// fits. The frontmatter of a note in a vault holds keys of this shape.
+	it('reports no defect in the frontmatter of a note of a vault', () => {
+		const text = document(
+			'---',
+			'date created: 2024-01-01 09:15, in the studio on the second floor',
+			'title: A note',
+			'description: a note that the vault holds, and that a person wrote',
+			'cssclass: wide',
+			'publish: false',
+			'---',
+			'',
+			'A paragraph that a person wrapped by hand at the width of this,',
+			'and a second line that carries the rest of the words of it.',
+		);
+		expect(defectsOf(text)).toStrictEqual([]);
 	});
 
 	it('reads the prose between a break on the first line and a later break', () => {

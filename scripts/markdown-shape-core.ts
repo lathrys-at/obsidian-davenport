@@ -61,10 +61,25 @@ const RULE = /^\s*(?:-{3,}|\*{3,}|_{3,}|={3,})\s*$/;
 const TRAILING = /[ \t]$/;
 
 /**
- * A line that the frontmatter of a document can hold: a key, an item of a
- * sequence, a comment, or a line that continues the line above it.
+ * A line that can stand first in the frontmatter of a document: a key, an
+ * item of a sequence, or a comment. A key holds any characters except a
+ * colon, so `date created:` and `"date created":` are keys. A colon that
+ * stands inside a value is therefore not a key, because the first colon of
+ * the line ends the key.
+ *
+ * The first line of the frontmatter carries the weight of the test. YAML
+ * gives that line no indent and no blank, so a document that opens with a
+ * thematic break and holds an indented line, a blank line, or a line of
+ * prose below the break keeps every line of that block.
  */
-const FRONT_MATTER_LINE = /^(?:[^\s:#]+\s*:(?:\s|$)|-(?:\s|$)|#|\s)/;
+const FRONT_MATTER_TOP = /^(?:[^\s#][^:]*:(?:\s|$)|-(?:\s|$)|#)/;
+
+/**
+ * A line that the frontmatter can hold below its first line: a line of the
+ * kinds above, or a line that continues the line above it. YAML indents
+ * such a continuation.
+ */
+const FRONT_MATTER_LINE = /^(?:\s|[^\s#][^:]*:(?:\s|$)|-(?:\s|$)|#)/;
 
 /** One document, and the text that the document holds. */
 export interface Document {
@@ -194,18 +209,32 @@ export function proseBlocks(text: string): readonly Block[] {
 /**
  * The line after the frontmatter, or the first line when the document holds
  * no frontmatter. Frontmatter opens with three hyphens on the first line of
- * the document, and it closes with three hyphens on a later line. Every
- * line between the two must be a line that frontmatter can hold: a key, an
- * item of a sequence, a comment, a line that continues the line above it, or
- * a blank line.
+ * the document, and it closes with three hyphens on a later line. Three
+ * conditions make the lines between the two frontmatter:
  *
- * A document can also open with a thematic break of three hyphens, and hold
- * one more break further down. The test on each line between the two keeps
- * the prose of such a document, because a line of prose is not a line that
- * frontmatter can hold.
+ * - the line directly below the opening hyphens is a key, an item of a
+ *   sequence, or a comment, or it is the closing hyphens of an empty block;
+ * - each line below that one is a line of the same kinds, a line that
+ *   continues the line above it, or a blank line;
+ * - the closing hyphens stand somewhere below.
+ *
+ * A document can also open with a thematic break of three hyphens and hold
+ * one more break further down. The conditions above keep the lines between
+ * the two breaks, because a paragraph, a blank line, and an indented line
+ * are each something that the first line of frontmatter cannot be.
+ *
+ * A sequence directly below the opening hyphens is the one shape that the
+ * conditions cannot separate. `- one` below three hyphens is an item of a
+ * YAML sequence, and it is also an item of a markdown list, and the two are
+ * the same characters. The check reads that shape as frontmatter, because
+ * the note corpus states that shape as frontmatter.
  */
 function skipFrontMatter(lines: readonly string[]): number {
 	if (lines[0] !== '---') {
+		return 0;
+	}
+	const first = lines[1] ?? '';
+	if (first !== '---' && !FRONT_MATTER_TOP.test(first)) {
 		return 0;
 	}
 	for (let at = 1; at < lines.length; at += 1) {
