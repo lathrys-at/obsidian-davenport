@@ -12,11 +12,15 @@
  * 1. The record holds a timezone definition that the plugin wrote, and
  *    not one that the server sent.
  * 2. The record holds a repeating series whose end stands in universal
- *    time, under a time that names a timezone. That time is the anchor
- *    of the series, and the anchor is the start of an event or the due
- *    date of a task. The format states the end of such a series in
- *    universal time, so an edit of that end converts a local time
- *    through the bundled table.
+ *    time, under a time that names a timezone and that governs the
+ *    series. The time that governs the series is the start of the
+ *    component, or the due date where the component states no start.
+ *    That time states a date and a time of day, and so does the end of
+ *    the series. The format states such a series end in universal time,
+ *    so an edit of that end converts a local time through the bundled
+ *    table. A series that states its end as a date reaches no such
+ *    conversion, and a series whose governing time states a date reaches
+ *    none either.
  * 3. The record holds the date of an instance that the plugin computed in
  *    the zone of the event.
  *
@@ -26,11 +30,12 @@
  * - Reach 1 comes from the caller, which names each timezone whose
  *   definition the plugin wrote into the record. A definition that the
  *   plugin wrote and a definition that the server sent look the same in
- *   the bytes, and a rule that reads the bytes alone cannot tell the two
- *   apart. The code that writes a definition from the bundled table knows
- *   which definitions it wrote, and that code gives this module the
- *   names. No code in the plugin writes a definition yet, so every caller
- *   names an empty list today.
+ *   the bytes. A rule that reads the bytes alone cannot tell the two
+ *   apart. The synthesiser writes a definition from the bundled table,
+ *   and the code that puts such a definition into a record names the zone
+ *   of that definition here. The reach reads the record as well as the
+ *   caller: a name that no definition of the record carries reaches no
+ *   byte of that record, and the reach passes over such a name.
  * - Reaches 2 and 3 read the shape of the record, and they do not ask
  *   which device computed a value. A device computes the end of a series
  *   and sends that end to the server. The server sends the same end back,
@@ -55,7 +60,12 @@ import type {
 	NormalizationStamp,
 	NormalizationVersions,
 } from '../model/normalization';
-import type { JCalComponent, JCalProperty, JCalRecur } from './jcal';
+import type {
+	JCalComponent,
+	JCalProperty,
+	JCalRecur,
+	JCalRecurPart,
+} from './jcal';
 import { jcalValues } from './jcal';
 
 /**
@@ -106,10 +116,62 @@ export interface TimezoneReaches {
 /** The reaches of the bundled table that the record shows. */
 export function timezoneReaches(subject: StampSubject): TimezoneReaches {
 	return {
-		writtenZone: subject.writtenZoneIds.length > 0,
+		writtenZone: writtenZonesInRecord(subject).length > 0,
 		universalTime: holdsSeriesEndInAZone(subject.calendar),
 		instanceDate: subject.instanceDates.length > 0,
 	};
+}
+
+/**
+ * The names that the caller states and the record carries a definition
+ * for. The first reach reads the record, so a name that no definition of
+ * the record carries reaches no byte of it.
+ */
+export function writtenZonesInRecord(subject: StampSubject): readonly string[] {
+	const carried = definedZoneIds(subject.calendar);
+	return subject.writtenZoneIds.filter((name) => carried.has(name));
+}
+
+/**
+ * The names that the caller states and the record carries no definition
+ * for. An empty list is the answer for every caller that states what it
+ * wrote. A caller that reads a name here wrote no definition under that
+ * name, and the caller refuses the record.
+ *
+ * The other direction of this check cannot read the bytes. A definition
+ * that the plugin wrote and a definition that the server sent look the
+ * same. A caller that writes a definition and states no name for it
+ * therefore leaves no mark. The code that writes a definition states each
+ * name, and that duty stays with the code.
+ */
+export function writtenZonesNotInRecord(
+	subject: StampSubject,
+): readonly string[] {
+	const carried = definedZoneIds(subject.calendar);
+	return subject.writtenZoneIds.filter((name) => !carried.has(name));
+}
+
+/** Every name that a timezone definition of the calendar states. */
+function definedZoneIds(calendar: JCalComponent): ReadonlySet<string> {
+	const names = new Set<string>();
+	collectZoneIds(calendar, names);
+	return names;
+}
+
+function collectZoneIds(component: JCalComponent, names: Set<string>): void {
+	if (component[0].toLowerCase() === 'vtimezone') {
+		for (const property of component[1]) {
+			if (property[0].toLowerCase() === 'tzid') {
+				const value = property[3];
+				if (typeof value === 'string') {
+					names.add(value);
+				}
+			}
+		}
+	}
+	for (const inside of component[2]) {
+		collectZoneIds(inside, names);
+	}
 }
 
 /** True when the record carries the timezone component. */
@@ -156,42 +218,76 @@ export function skewDecision(
 }
 
 /**
- * The properties that anchor a repeating series. An event anchors its
- * series on the start, and a task anchors its series on the due date.
+ * The properties that can govern a repeating series, in the order of their
+ * rank. The start governs the series where the component states one. The
+ * due date governs the series of a task that states no start.
  */
 const ANCHOR_PROPERTIES: readonly string[] = ['dtstart', 'due'];
 
+/** The name of the value type of a date with a time of day. */
+const DATE_TIME_TYPE = 'date-time';
+
 /**
- * True when the calendar states the end of a repeating series and states
- * the anchor of that series in a named zone. The format writes the end of
- * such a series in universal time, so a device converts a local time
- * through the bundled table to write it.
+ * True when the calendar states the end of a repeating series in universal
+ * time, and states the time that governs that series in a named zone. The
+ * format writes such a series end in universal time, so a device converts
+ * a local time through the bundled table to write it.
  */
 function holdsSeriesEndInAZone(calendar: JCalComponent): boolean {
 	return someComponent(
 		calendar,
 		(component) =>
-			holdsRepeatRuleWithEnd(component[1]) &&
-			holdsZonedAnchor(component[1]),
+			holdsUniversalSeriesEnd(component[1]) &&
+			governedByAZonedTime(component[1]),
 	);
 }
 
-function holdsRepeatRuleWithEnd(properties: readonly JCalProperty[]): boolean {
+function holdsUniversalSeriesEnd(properties: readonly JCalProperty[]): boolean {
 	return properties.some(
 		(property) =>
 			property[0].toLowerCase() === 'rrule' &&
 			jcalValues(property).some(
-				(value) => isRecur(value) && 'until' in value,
+				(value) => isRecur(value) && isUniversalTime(value.until),
 			),
 	);
 }
 
-function holdsZonedAnchor(properties: readonly JCalProperty[]): boolean {
-	return properties.some(
-		(property) =>
-			ANCHOR_PROPERTIES.includes(property[0].toLowerCase()) &&
-			'tzid' in property[1],
+/**
+ * True when a series end states a date and a time of day in universal
+ * time. The parse library writes such a value with the mark of universal
+ * time at its end. A value that states a date alone carries no such mark,
+ * and neither does a value that states a time of day with no zone.
+ */
+function isUniversalTime(value: JCalRecurPart | undefined): boolean {
+	return typeof value === 'string' && value.endsWith('Z');
+}
+
+/**
+ * True when the time that governs the series names a timezone and states a
+ * time of day. A component that states a start is governed by that start,
+ * whatever else the component states.
+ */
+function governedByAZonedTime(properties: readonly JCalProperty[]): boolean {
+	const anchor = governingAnchor(properties);
+	return (
+		anchor !== undefined &&
+		'tzid' in anchor[1] &&
+		anchor[2].toLowerCase() === DATE_TIME_TYPE
 	);
+}
+
+function governingAnchor(
+	properties: readonly JCalProperty[],
+): JCalProperty | undefined {
+	for (const name of ANCHOR_PROPERTIES) {
+		const found = properties.find(
+			(property) => property[0].toLowerCase() === name,
+		);
+		if (found !== undefined) {
+			return found;
+		}
+	}
+	return undefined;
 }
 
 function someComponent(

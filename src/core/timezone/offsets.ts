@@ -27,7 +27,8 @@
  * The module reads no clock: the caller states every instant.
  */
 
-import { civilSeconds, dayOfMonth, yearOf } from './calendar';
+import { yearOf } from './calendar';
+import { repeatOnset } from './repeat';
 import type {
 	TerminalChange,
 	TerminalRule,
@@ -270,15 +271,20 @@ function terminalChangesOfYear(
 	return start.at <= end.at ? [start, end] : [end, start];
 }
 
-function terminalInstant(
+/**
+ * The instant of one repeating change in one year, in seconds from the
+ * start of 1970. The caller states the offset that runs before the change,
+ * because the table states the time of such a change on the clock that
+ * runs before it.
+ *
+ * The code that writes a timezone definition reads this function too. The
+ * definition states the first occurrence of each repeating change, and
+ * that occurrence must stand at the instant that the lookup gives.
+ */
+export function terminalInstant(
 	change: TerminalChange,
 	year: number,
 	offsetBefore: number,
 ): number {
-	const day = dayOfMonth(year, change.month, change.day);
-	return (
-		civilSeconds(year, change.month, day) +
-		change.wallSeconds -
-		offsetBefore
-	);
+	return repeatOnset(change, year) - offsetBefore;
 }
