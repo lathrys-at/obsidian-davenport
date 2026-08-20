@@ -1,6 +1,6 @@
-import type { NormalizationStamp } from '../ics/stamp';
 import type { EventFields } from './event';
 import type { EventIdentity } from './identity';
+import type { NormalizationStamp } from './normalization';
 import type { Tombstone } from './tombstone';
 
 /**
@@ -115,8 +115,7 @@ export interface RecordData {
 	 * The stamp has two components. Every record carries the core
 	 * component. A record carries the timezone component only when the
 	 * bundled timezone table reaches the bytes of that record.
-	 * {@link NormalizationStamp} states both components and the rules that
-	 * decide the second one.
+	 * {@link NormalizationStamp} states both components.
 	 */
 	readonly normalizationVersion: NormalizationStamp;
 	/**
