@@ -4,6 +4,7 @@
  * - the names that the script accepts, and the names that it draws;
  * - the verdict that it reaches on a probe already installed in a vault;
  * - what it makes of a vault that it walked;
+ * - what it makes of a probe build that did not end with the status 0;
  * - the wording that it prints around all of that.
  *
  * The script itself only walks a tree and copies files. Therefore the module
@@ -14,7 +15,6 @@
  * the words in that line.
  */
 
-import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
 	existsSync,
@@ -36,6 +36,7 @@ import {
 import type { NameCheck } from '../scripts/vault-core';
 import {
 	NAME_LIMIT,
+	WINDOWS_ABORT_STATUS,
 	checkName,
 	classifyInstall,
 	generateName,
@@ -45,10 +46,17 @@ import {
 	HELP,
 	PROBE_ID,
 	formatOutcome,
+	probeBuildFailure,
 	vaultReadme,
 	vaultUri,
 } from '../scripts/vault-text';
-import { runNode } from './harness/run-node';
+import type { GitHost } from './harness/run-git';
+import { LS_FILES_ANSWERS, runGit } from './harness/run-git';
+import type { ProcessResult } from './harness/run-node';
+import {
+	WINDOWS_ABORT_STATUS as HARNESS_ABORT_STATUS,
+	runNode,
+} from './harness/run-node';
 
 const bytes = (text: string): Uint8Array => new TextEncoder().encode(text);
 
@@ -552,6 +560,44 @@ describe('what the script prints', () => {
 	});
 });
 
+describe('what the script says about a build that did not pass', () => {
+	it('names the status of a build that failed', () => {
+		const said = probeBuildFailure(1, 'linux');
+		expect(said).toContain('the probe build failed with the status 1');
+		expect(said).toContain('its output is above');
+	});
+
+	it('names a status that a signal took away', () => {
+		expect(probeBuildFailure(null, 'linux')).toContain('the status null');
+	});
+
+	// The build did not write the abort status. A build that ends with that
+	// status did not fail. A message that calls this a failure of the build
+	// sends the reader to the build for a fault that is not there.
+	it('names the abort of a host that stopped the build', () => {
+		const said = probeBuildFailure(WINDOWS_ABORT_STATUS, 'win32');
+		expect(said).toContain('the host aborted the probe build');
+		expect(said).toContain(String(WINDOWS_ABORT_STATUS));
+		expect(said).toContain('0xC0000409');
+		expect(said).toContain('the build did not fail');
+		expect(said).toContain('Run the command one more time');
+		expect(said).not.toContain('the probe build failed');
+	});
+
+	it('reads the abort status as a plain failure on another host', () => {
+		expect(probeBuildFailure(WINDOWS_ABORT_STATUS, 'darwin')).toContain(
+			`the probe build failed with the status ${String(WINDOWS_ABORT_STATUS)}`,
+		);
+	});
+
+	// The script must not depend on a module of the test harness. Therefore
+	// the abort status stands in the script and in the harness, and this case
+	// holds the two numbers together.
+	it('holds the abort status that the harness holds', () => {
+		expect(WINDOWS_ABORT_STATUS).toBe(HARNESS_ABORT_STATUS);
+	});
+});
+
 describe('the script as a process', () => {
 	const script = fileURLToPath(
 		new URL('../scripts/vault.mjs', import.meta.url),
@@ -809,14 +855,42 @@ describe('the wiring between the repository and the script', () => {
 		expect(read('.prettierignore')).toContain('.vaults');
 	});
 
+	/**
+	 * Asks git which files it tracks under the vaults folder. git ls-files
+	 * gives 0 for a list and 0 for an empty list. The harness refuses every
+	 * other status. Therefore a command that a host aborted fails its case,
+	 * and the empty output of that command reaches no assertion.
+	 */
+	const tracked = (host?: GitHost): ProcessResult =>
+		runGit(
+			{
+				args: ['ls-files', '.vaults'],
+				answers: LS_FILES_ANSWERS,
+				cwd: fileURLToPath(root),
+			},
+			host,
+		);
+
 	// The ignore rule is worth having only while it works. This test asks git
 	// itself what it tracks. Therefore a vault that got into the index fails
 	// here, and not in a review of a pull request.
 	it('tracks no file under .vaults', () => {
-		const tracked = spawnSync('git', ['ls-files', '.vaults'], {
-			cwd: fileURLToPath(root),
-			encoding: 'utf8',
-		});
-		expect(tracked.stdout).toBe('');
+		expect(tracked().stdout).toBe('');
+	});
+
+	// The case above passes when the output is empty. A host that aborts git
+	// also leaves the output empty. This case runs the same command against
+	// a host that aborts git. The command fails, and the failure names the
+	// status.
+	it('fails and names the status when a host aborts git', () => {
+		const aborted: GitHost = {
+			platform: 'win32',
+			run: () => ({
+				status: HARNESS_ABORT_STATUS,
+				stdout: '',
+				stderr: '',
+			}),
+		};
+		expect(() => tracked(aborted)).toThrow(/3221226505/u);
 	});
 });
