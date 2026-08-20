@@ -15,6 +15,16 @@ updates:
           npm:
               patterns:
                   - '*'
+      # This entry holds typescript at major 5. typescript-eslint does
+      # not accept a typescript major above 5 as a peer dependency.
+      # npm ci cannot resolve a dependency tree that holds a typescript
+      # version above major 5, and the command stops with an error.
+      # Every job of the ci-ok check then fails before it starts.
+      # Remove this entry when typescript-eslint accepts the new major.
+      ignore:
+          - dependency-name: typescript
+            versions:
+                - '>=6'
       commit-message:
           prefix: chore
           prefix-development: chore
