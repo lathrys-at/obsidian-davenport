@@ -1,7 +1,7 @@
 /**
  * The stamp that this build writes into one record, and the skew rule
- * that compares two stamps. {@link NormalizationStamp} states what a
- * stamp is, and what each component covers.
+ * that compares two stamps. The file normalization.ts states what a stamp
+ * is, and what each component covers.
  *
  * A record carries the timezone component only when the record shows one
  * of the three reaches below. The list holds the reaches that are known,

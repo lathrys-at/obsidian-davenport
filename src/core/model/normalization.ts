@@ -22,9 +22,12 @@
  * release of the timezone table that the plugin bundles. The second input
  * is the code that writes a timezone definition from that table. The
  * component covers every byte of a record that the bundled table can
- * reach. A record carries the timezone component only when the bundled
- * table can reach the bytes of that record. The ICS engine holds the list
- * of the known reaches, and the predicates that find each one.
+ * reach.
+ *
+ * A record carries the timezone component only when the bundled table can
+ * reach the bytes of that record. Each way that the table can reach those
+ * bytes is one reach. The file stamp.ts holds the list of the known
+ * reaches, and the predicates that find each one.
  */
 
 /** The two components as one record carries them. */
