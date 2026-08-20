@@ -407,14 +407,12 @@ describe('the definition inside a record', () => {
 		expect(parsed.ok).toBe(true);
 	});
 
-	it('carries the timezone component of the stamp through the caller', () => {
-		const definition = definitionOf('America/New_York');
+	it('writes a definition for every name that a record can reference', () => {
 		const parsed = parseIcs(
 			[
 				'BEGIN:VCALENDAR',
 				'VERSION:2.0',
 				'PRODID:-//Davenport//synthesiser//EN',
-				serializeCalendar(definition).trimEnd(),
 				'BEGIN:VEVENT',
 				'UID:one',
 				'DTSTART;TZID=America/New_York:20260302T090000',
@@ -426,31 +424,35 @@ describe('the definition inside a record', () => {
 		if (!parsed.ok) {
 			throw new Error('the boundary refused the calendar');
 		}
-		const subject = {
-			calendar: parsed.calendar,
-			writtenZoneIds: [valueOf(definition[1], 'tzid')],
-			instanceDates: [],
-		};
+		const subject = { calendar: parsed.calendar, instanceDates: [] };
 		expect(timezoneReaches(subject)).toEqual({
-			writtenZone: true,
+			knownZone: true,
 			universalTime: false,
 			instanceDate: false,
 		});
 		expect(normalizationStamp(subject).timezone).toBe(
 			TIMEZONE_NORMALIZATION_VERSION,
 		);
+		expect(synthesiseTimezone('America/New_York').ok).toBe(true);
 	});
 
-	it('carries no timezone component where the caller wrote no definition', () => {
+	it('refuses a name that the table does not hold, and such a record carries no timezone component', () => {
 		const parsed = parseIcs(
 			[
 				'BEGIN:VCALENDAR',
 				'VERSION:2.0',
 				'PRODID:-//Davenport//synthesiser//EN',
-				serializeCalendar(definitionOf('America/New_York')).trimEnd(),
+				'BEGIN:VTIMEZONE',
+				'TZID:Mars/Olympus',
+				'BEGIN:STANDARD',
+				'DTSTART:19700101T000000',
+				'TZOFFSETFROM:+0000',
+				'TZOFFSETTO:+0000',
+				'END:STANDARD',
+				'END:VTIMEZONE',
 				'BEGIN:VEVENT',
 				'UID:one',
-				'DTSTART;TZID=America/New_York:20260302T090000',
+				'DTSTART;TZID=Mars/Olympus:20260302T090000',
 				'END:VEVENT',
 				'END:VCALENDAR',
 				'',
@@ -459,11 +461,8 @@ describe('the definition inside a record', () => {
 		if (!parsed.ok) {
 			throw new Error('the boundary refused the calendar');
 		}
-		const subject = {
-			calendar: parsed.calendar,
-			writtenZoneIds: [],
-			instanceDates: [],
-		};
+		const subject = { calendar: parsed.calendar, instanceDates: [] };
 		expect(normalizationStamp(subject).timezone).toBeUndefined();
+		expect(synthesiseTimezone('Mars/Olympus').ok).toBe(false);
 	});
 });

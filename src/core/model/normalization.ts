@@ -13,21 +13,21 @@
  *
  * The core component covers three inputs to the byte form. The first
  * input is the rules of the canonical serializer. The second input is the
- * serializer of the parse library. The third input is the code that
- * writes the frontmatter of a record. The third input has no code yet,
- * and the core component covers that code from the day that the code
- * lands. Every record carries the core component.
+ * serializer of the parse library. The third input is the emitter that
+ * writes the frontmatter of a record. The plugin owns that emitter, so no
+ * version of a library can move those bytes. Every record carries the
+ * core component.
  *
  * The timezone component covers two inputs. The first input is the
  * release of the timezone table that the plugin bundles. The second input
  * is the code that writes a timezone definition from that table. The
- * component covers every byte of a record that the bundled table can
- * reach.
+ * component states which release and which code answer a zone name that
+ * the record carries.
  *
- * A record carries the timezone component only when the bundled table can
- * reach the bytes of that record. Each way that the table can reach those
- * bytes is one reach. The file stamp.ts holds the list of the known
- * reaches, and the predicates that find each one.
+ * A record carries the timezone component only when the bundled table
+ * reaches that record. Each way that the table reaches a record is one
+ * reach. The file stamp.ts holds the list of the known reaches, and the
+ * predicates that find each one.
  */
 
 /** The two components as one record carries them. */

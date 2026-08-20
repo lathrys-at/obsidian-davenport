@@ -9,11 +9,10 @@ import {
 	NORMALIZATION_VERSIONS,
 	TIMEZONE_NORMALIZATION_VERSION,
 	carriesTimezoneComponent,
+	knownZonesInRecord,
 	normalizationStamp,
 	skewDecision,
 	timezoneReaches,
-	writtenZonesInRecord,
-	writtenZonesNotInRecord,
 } from './stamp';
 
 const HEAD = [
@@ -36,9 +35,8 @@ function calendarOf(...lines: string[]): JCalComponent {
 function subject(
 	calendar: JCalComponent,
 	instanceDates: readonly string[] = [],
-	writtenZoneIds: readonly string[] = [],
 ): StampSubject {
-	return { calendar, writtenZoneIds, instanceDates };
+	return { calendar, instanceDates };
 }
 
 const SERIES_IN_A_ZONE = calendarOf(
@@ -138,6 +136,37 @@ const EVENT_WITH_A_DEFINITION = calendarOf(
 	'END:VEVENT',
 );
 
+const EVENT_IN_A_ZONE = calendarOf(
+	'BEGIN:VEVENT',
+	'UID:stamp',
+	'DTSTART;TZID=America/New_York:20260302T090000',
+	'END:VEVENT',
+);
+
+const EVENT_IN_A_STRANGE_ZONE = calendarOf(
+	'BEGIN:VTIMEZONE',
+	'TZID:Mars/Olympus',
+	'BEGIN:STANDARD',
+	'DTSTART:19700101T000000',
+	'TZOFFSETFROM:+0000',
+	'TZOFFSETTO:+0000',
+	'END:STANDARD',
+	'END:VTIMEZONE',
+	'BEGIN:VEVENT',
+	'UID:stamp',
+	'DTSTART;TZID=Mars/Olympus:20260302T090000',
+	'END:VEVENT',
+);
+
+const EVENT_IN_TWO_ZONES = calendarOf(
+	'BEGIN:VEVENT',
+	'UID:stamp',
+	'DTSTART;TZID=America/New_York:20260302T090000',
+	'DTEND;TZID=Europe/London:20260302T150000',
+	'DUE;TZID=Mars/Olympus:20260302T160000',
+	'END:VEVENT',
+);
+
 const ONE_EVENT = calendarOf(
 	'BEGIN:VEVENT',
 	'UID:stamp',
@@ -208,20 +237,20 @@ describe('the carriage of the timezone component', () => {
 		// The due date names a zone, and the start governs the series. The
 		// conversion of the series end therefore reads no zone of the table.
 		expect(
-			carriesTimezoneComponent(subject(TASK_WITH_A_UNIVERSAL_START)),
+			timezoneReaches(subject(TASK_WITH_A_UNIVERSAL_START)).universalTime,
 		).toBe(false);
 	});
 
 	it('reads no universal-time reach in a series that ends on a date', () => {
 		expect(
-			carriesTimezoneComponent(subject(SERIES_THAT_ENDS_ON_A_DATE)),
+			timezoneReaches(subject(SERIES_THAT_ENDS_ON_A_DATE)).universalTime,
 		).toBe(false);
 	});
 
 	it('reads no universal-time reach in a series of whole days', () => {
-		expect(carriesTimezoneComponent(subject(SERIES_OF_WHOLE_DAYS))).toBe(
-			false,
-		);
+		expect(
+			timezoneReaches(subject(SERIES_OF_WHOLE_DAYS)).universalTime,
+		).toBe(false);
 	});
 
 	it('reads a reach in a record that holds the date of an instance', () => {
@@ -233,54 +262,37 @@ describe('the carriage of the timezone component', () => {
 		).toBe(true);
 	});
 
-	it('reads no written zone when the caller names none', () => {
-		expect(timezoneReaches(subject(SERIES_IN_A_ZONE)).writtenZone).toBe(
-			false,
-		);
+	it('reads a known zone from the name of a definition that the record carries', () => {
+		expect(knownZonesInRecord(EVENT_WITH_A_DEFINITION)).toEqual([
+			'America/New_York',
+		]);
 	});
 
-	it('reads a written zone when the caller names one that the record carries', () => {
-		const written = subject(
-			EVENT_WITH_A_DEFINITION,
-			[],
-			['America/New_York'],
-		);
-		expect(timezoneReaches(written).writtenZone).toBe(true);
-		expect(carriesTimezoneComponent(written)).toBe(true);
-		expect(normalizationStamp(written)).toEqual({
+	it('reads a known zone in a record that names one', () => {
+		const named = subject(EVENT_IN_A_ZONE);
+		expect(timezoneReaches(named).knownZone).toBe(true);
+		expect(carriesTimezoneComponent(named)).toBe(true);
+		expect(normalizationStamp(named)).toEqual({
 			core: CORE_NORMALIZATION_VERSION,
 			timezone: TIMEZONE_NORMALIZATION_VERSION,
 		});
 	});
 
-	it('reads no written zone for a name that the record carries no definition for', () => {
-		const written = subject(ONE_EVENT, [], ['America/New_York']);
-		expect(timezoneReaches(written).writtenZone).toBe(false);
-		expect(carriesTimezoneComponent(written)).toBe(false);
+	it('reads no known zone in a record that names a zone the table does not hold', () => {
+		const named = subject(EVENT_IN_A_STRANGE_ZONE);
+		expect(timezoneReaches(named).knownZone).toBe(false);
+		expect(carriesTimezoneComponent(named)).toBe(false);
 	});
 
-	it('names the zones that the caller states and the record carries', () => {
-		expect(
-			writtenZonesInRecord(
-				subject(
-					EVENT_WITH_A_DEFINITION,
-					[],
-					['America/New_York', 'Europe/London'],
-				),
-			),
-		).toEqual(['America/New_York']);
+	it('reads no known zone in a record that names no zone at all', () => {
+		expect(timezoneReaches(subject(ONE_EVENT)).knownZone).toBe(false);
 	});
 
-	it('names the zones that the caller states and the record does not carry', () => {
-		expect(
-			writtenZonesNotInRecord(
-				subject(
-					EVENT_WITH_A_DEFINITION,
-					[],
-					['America/New_York', 'Europe/London'],
-				),
-			),
-		).toEqual(['Europe/London']);
+	it('names the zones of the record that the table holds', () => {
+		expect(knownZonesInRecord(EVENT_IN_TWO_ZONES)).toEqual([
+			'America/New_York',
+			'Europe/London',
+		]);
 	});
 
 	it('reads the name past the other properties of a definition', () => {
@@ -300,9 +312,7 @@ describe('the carriage of the timezone component', () => {
 			'DTSTART;TZID=America/New_York:20260302T090000',
 			'END:VEVENT',
 		);
-		expect(
-			writtenZonesInRecord(subject(calendar, [], ['America/New_York'])),
-		).toEqual(['America/New_York']);
+		expect(knownZonesInRecord(calendar)).toEqual(['America/New_York']);
 	});
 
 	it('reads no name from a definition whose name carries no value', () => {
@@ -315,36 +325,40 @@ describe('the carriage of the timezone component', () => {
 			[],
 			[['vtimezone', [['tzid', {}, 'text']], []]],
 		];
-		expect(
-			writtenZonesInRecord(subject(calendar, [], ['America/New_York'])),
-		).toEqual([]);
-		expect(
-			writtenZonesNotInRecord(
-				subject(calendar, [], ['America/New_York']),
-			),
-		).toEqual(['America/New_York']);
+		expect(knownZonesInRecord(calendar)).toEqual([]);
+		expect(carriesTimezoneComponent(subject(calendar))).toBe(false);
 	});
 
-	it('names no zone for a caller that states what the record carries', () => {
-		expect(
-			writtenZonesNotInRecord(
-				subject(EVENT_WITH_A_DEFINITION, [], ['America/New_York']),
-			),
-		).toEqual([]);
-	});
-
-	it('carries no timezone component for any file of the corpus', () => {
+	it('carries the timezone component for the corpus files that name a zone of the table', () => {
+		const carried: string[] = [];
 		for (const fixture of icsCorpus()) {
 			const parsed = parseIcs(fixture.content);
 			expect(parsed.ok).toBe(true);
-			if (parsed.ok) {
-				expect(carriesTimezoneComponent(subject(parsed.calendar))).toBe(
-					false,
-				);
+			if (
+				parsed.ok &&
+				carriesTimezoneComponent(subject(parsed.calendar))
+			) {
+				carried.push(fixture.id);
 			}
 		}
+		expect(carried.sort()).toEqual(CORPUS_WITH_A_TIMEZONE_REACH);
 	});
 });
+
+/**
+ * The files of the corpus that reach the bundled table. Each of these
+ * files names a zone that the table holds, so a record of that file
+ * carries a reference and the timezone component. A file that names no
+ * zone, and a file that names a zone the table does not hold, reaches no
+ * byte of the table.
+ */
+const CORPUS_WITH_A_TIMEZONE_REACH: readonly string[] = [
+	'exdate-multiple-forms',
+	'vtimezone-dateline-apia',
+	'vtimezone-half-hour-lord-howe',
+	'vtimezone-pre-1970-amsterdam',
+	'vtimezone-rdate-only-troll',
+];
 
 /**
  * One shape of the time that can govern a repeating series. The flag
