@@ -18,11 +18,12 @@ export default {
 	packageManager: 'npm',
 	testRunner: 'vitest',
 
-	// The tool mutates the source files, and it mutates no test file. A test
-	// compares this selection against the files that the coverage instrument
-	// reads. The two selections must name the same files. A file outside the
+	// The tool mutates the source files, and it mutates no test file. A case
+	// in `test/stryker-config.test.ts` compares this list against the files
+	// that the coverage instrument reads. This list is the `include` list of
+	// that instrument, with the test files taken back out. A file outside the
 	// coverage selection has no floor for its lines, and a file outside this
-	// selection gets no mutants at all.
+	// list gets no mutants at all.
 	mutate: ['src/**/*.ts', '!src/**/*.test.ts'],
 
 	// A person needs the HTML report. The two text reporters put the score

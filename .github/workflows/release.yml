@@ -29,6 +29,21 @@ jobs:
                   npm ci
                   npm run build
 
+            # This step runs the build two times and compares what the two
+            # runs wrote. A file whose bytes are not the same in the two runs
+            # fails the step, and the release then does not happen. The bytes
+            # that a release carries must be a function of the source alone.
+            #
+            # The place of this step in the job is part of the check. The
+            # script removes `main.js` and writes the file again, and it
+            # leaves the files of its second run on disk. The steps below
+            # therefore read the output of the second run, and the file that
+            # the attestation covers is the file that this step compared. A
+            # run of this script after the attestation would cover a file
+            # that nobody attested.
+            - name: Check that the build repeats itself
+              run: node scripts/repeat-build.mjs
+
             - name: Check for optional styles
               id: styles
               run: |
