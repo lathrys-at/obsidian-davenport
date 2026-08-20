@@ -253,6 +253,29 @@
 			}
 		},
 		{
+			"path": "src/core/model/normalization.ts",
+			"statements": {
+				"total": 0,
+				"covered": 0,
+				"pct": 100
+			},
+			"branches": {
+				"total": 0,
+				"covered": 0,
+				"pct": 100
+			},
+			"functions": {
+				"total": 0,
+				"covered": 0,
+				"pct": 100
+			},
+			"lines": {
+				"total": 0,
+				"covered": 0,
+				"pct": 100
+			}
+		},
+		{
 			"path": "src/core/model/record.ts",
 			"statements": {
 				"total": 0,

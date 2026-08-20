@@ -1,32 +1,13 @@
 /**
- * The normalization stamp of a record.
+ * The stamp that this build writes into one record, and the skew rule
+ * that compares two stamps. The file normalization.ts states what a stamp
+ * is, and what each component covers.
  *
- * The bytes of a record follow from three things: the bytes that the
- * server sent, the intent that the vault holds, and the value of each
- * component of this stamp that the record carries. The code that writes
- * those bytes changes from one plugin version to the next, so a record
- * states which version of that code wrote it. The statement is the stamp.
- * A device reads the stamp before it compares bytes.
- *
- * The stamp has two components. Each component is one whole number, and a
- * component never decreases from one plugin version to the next.
- *
- * The core component covers three inputs to the byte form. The first
- * input is the rules of the canonical serializer. The second input is the
- * serializer of the parse library. The third input is the code that
- * writes the frontmatter of a record. The third input has no code yet,
- * and the core component covers that code from the day that the code
- * lands. Every record carries the core component.
- *
- * The timezone component covers two inputs. The first input is the
- * release of the timezone table that the plugin bundles. The second input
- * is the code that writes a timezone definition from that table. The
- * component covers every byte of a record that the bundled table can
- * reach. A record carries the timezone component only when the record
- * shows one of the three reaches below. The list holds the reaches that
- * are known, and the list is not closed. A change that gives the bundled
- * table a new reach into the bytes of a record must add that reach to the
- * list, in the same change.
+ * A record carries the timezone component only when the record shows one
+ * of the three reaches below. The list holds the reaches that are known,
+ * and the list is not closed. A change that gives the bundled table a new
+ * reach into the bytes of a record must add that reach to the list, in
+ * the same change.
  *
  * 1. The record holds a timezone definition that the plugin wrote, and
  *    not one that the server sent.
@@ -70,6 +51,10 @@
  * stop.
  */
 
+import type {
+	NormalizationStamp,
+	NormalizationVersions,
+} from '../model/normalization';
 import type { JCalComponent, JCalProperty, JCalRecur } from './jcal';
 import { jcalValues } from './jcal';
 
@@ -87,19 +72,6 @@ export const CORE_NORMALIZATION_VERSION = 1;
  * that writes a timezone definition from it.
  */
 export const TIMEZONE_NORMALIZATION_VERSION = 1;
-
-/** The two components as one record carries them. */
-export interface NormalizationStamp {
-	readonly core: number;
-	/** The component is absent from a record that shows no reach of the table. */
-	readonly timezone?: number;
-}
-
-/** The value that this build holds for each component. */
-export interface NormalizationVersions {
-	readonly core: number;
-	readonly timezone: number;
-}
 
 /** The values of this build. */
 export const NORMALIZATION_VERSIONS: NormalizationVersions = {

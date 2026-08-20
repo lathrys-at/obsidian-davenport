@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { icsCorpus } from '../../../test/harness/fixtures/ics-corpus';
+import type { NormalizationStamp } from '../model/normalization';
 import type { JCalComponent } from './jcal';
 import { parseIcs } from './parse';
-import type { NormalizationStamp, StampSubject } from './stamp';
+import type { StampSubject } from './stamp';
 import {
 	CORE_NORMALIZATION_VERSION,
 	NORMALIZATION_VERSIONS,
