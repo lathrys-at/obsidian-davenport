@@ -11,9 +11,8 @@ node_modules
 # test coverage output
 coverage/
 
-# The mutation run writes the reports of the run into this directory.
-# scripts/mutation-ratchet.mjs reads the JSON report, and a person reads the
-# HTML report.
+# The mutation run writes the reports of the run into this directory. A
+# person reads the HTML report.
 reports/
 
 # The mutation run copies the repository into this directory, and it makes
@@ -24,9 +23,8 @@ reports/
 # They should be uploaded to GitHub releases instead.
 main.js
 
-# The build writes this record of the bundle. scripts/bundle-size.mjs reads
-# the record, measures the built files, and compares the sizes against the
-# committed bundle-baseline.json.
+# The build writes this record of the bundle. The record says which module
+# holds which bytes of the output, and a person reads it.
 bundle-meta.json
 
 # Exclude sourcemaps

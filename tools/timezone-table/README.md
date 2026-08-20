@@ -158,7 +158,8 @@ the bytes that the plugin ships.
    those bytes.
 
 6. Run the gates: `npm test`, `npm run lint`, `npm run typecheck`,
-   `npm run build`, and the bundle and coverage checks.
+   `npm run build` with `node scripts/scan-bundle.mjs`, and
+   `npm run coverage` with `node scripts/coverage-ratchet.mjs`.
 
 Steps 1 to 4 need a network one time, for the release itself. Nothing in
 the build reaches a network, and no test reaches a network.

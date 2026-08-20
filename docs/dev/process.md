@@ -122,6 +122,29 @@ and open questions reach the user early, and not after the plan hardens. The
 consensus that survives this process is what plan mode presents for
 approval.
 
+## Spec and plan changes
+
+A change to [`docs/davenport-spec.md`](../davenport-spec.md) or to
+[`docs/davenport-test-plan.md`](../davenport-test-plan.md) obeys two rules.
+
+**Every reference resolves.** A section number, an appendix item, a test ID,
+or a link must name something that the document holds after the change. A
+reference that names nothing is a defect of the change.
+
+**Every sentence traces to a source.** The source is the issue that records
+the decision, another sentence of the same document, or a fact that the
+repository holds. A sentence that no source carries is invented text. Take
+that sentence out.
+
+The rule also works in the other direction. A source can require a sentence,
+and a change can remove that sentence. The source then requires text that the
+document no longer holds. That removal is a defect too.
+
+An earlier rule also held the counts of these two documents flat: a change
+kept each count of the file the same, except for the changes of a count that
+the change stated. That rule is gone. A change can add a section, remove a
+section, or move text. The two rules above are the whole test of the change.
+
 ## Filesystem state
 
 All mutable dev-session state lives under `~/.cache/davenport-dev/`. This
