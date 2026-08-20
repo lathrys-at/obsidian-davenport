@@ -25,6 +25,39 @@ const UNTIL_YEAR = 2100;
 /** A leap year. February holds one more day in such a year. */
 const LEAP_YEAR = 2000;
 
+/**
+ * The number of zones that one test of the whole table reads.
+ *
+ * Two checks below read every zone. Each one takes most of a second over
+ * the whole table on a fast host, and the host that runs the build is
+ * several times slower than that. One test that held the whole table
+ * would stand close to the limit that the runner gives a test. The two
+ * checks therefore run in batches, and each batch states the first and
+ * the last zone that it holds.
+ */
+const ZONES_IN_A_BATCH = 25;
+
+/** One batch of zones, with the first name and the last name in it. */
+interface ZoneBatch {
+	readonly first: string;
+	readonly last: string;
+	readonly names: readonly string[];
+}
+
+/** The names of the table, in batches. */
+function zoneBatches(names: readonly string[]): readonly ZoneBatch[] {
+	const batches: ZoneBatch[] = [];
+	for (let start = 0; start < names.length; start += ZONES_IN_A_BATCH) {
+		const batch = names.slice(start, start + ZONES_IN_A_BATCH);
+		batches.push({
+			first: batch[0] ?? '',
+			last: batch[batch.length - 1] ?? '',
+			names: batch,
+		});
+	}
+	return batches;
+}
+
 /** The patterns of one change, as one text. */
 function patternText(patterns: readonly RepeatPattern[]): string {
 	return patterns
@@ -239,21 +272,25 @@ describe('every definition of the bundled table', () => {
 		}
 	});
 
-	it('stands in the order that the canonical serializer gives', () => {
-		const moved: string[] = [];
-		for (const name of names) {
-			const component = definitionOf(name);
-			if (
-				serializeCalendar(component) !== textInComponentOrder(component)
-			) {
-				moved.push(name);
+	it.each(zoneBatches(names))(
+		'stands in the order that the canonical serializer gives, from $first to $last',
+		(batch) => {
+			const moved: string[] = [];
+			for (const name of batch.names) {
+				const component = definitionOf(name);
+				if (
+					serializeCalendar(component) !==
+					textInComponentOrder(component)
+				) {
+					moved.push(name);
+				}
 			}
-		}
-		expect(
-			moved,
-			'the synthesiser writes a component that the canonical serializer must not move. The order rules of the serializer and the order that the synthesiser writes are one rule, and this test holds them together.',
-		).toEqual([]);
-	});
+			expect(
+				moved,
+				'the synthesiser writes a component that the canonical serializer must not move. The order rules of the serializer and the order that the synthesiser writes are one rule, and this test holds them together.',
+			).toEqual([]);
+		},
+	);
 
 	it('starts before every change of its zone', () => {
 		const early: string[] = [];
@@ -298,30 +335,35 @@ describe('every definition of the bundled table', () => {
 		).toEqual([]);
 	});
 
-	it('gives the offset that the table gives, at every change', () => {
-		const wrong: string[] = [];
-		for (const name of names) {
-			const rules = timezoneRules(name);
-			if (rules === undefined) {
-				continue;
-			}
-			const definition = definitionChanges(
-				timezoneDefinition(rules),
-				UNTIL_YEAR,
-			);
-			for (const instant of probeInstants(rules)) {
-				const table = offsetAt(rules, instant);
-				if (!table.ok) {
+	it.each(zoneBatches(names))(
+		'gives the offset that the table gives at every change, from $first to $last',
+		(batch) => {
+			const wrong: string[] = [];
+			for (const name of batch.names) {
+				const rules = timezoneRules(name);
+				if (rules === undefined) {
 					continue;
 				}
-				if (definitionOffset(definition, instant) !== table.offset) {
-					wrong.push(`${name} at ${String(instant)}`);
-					break;
+				const definition = definitionChanges(
+					timezoneDefinition(rules),
+					UNTIL_YEAR,
+				);
+				for (const instant of probeInstants(rules)) {
+					const table = offsetAt(rules, instant);
+					if (!table.ok) {
+						continue;
+					}
+					if (
+						definitionOffset(definition, instant) !== table.offset
+					) {
+						wrong.push(`${name} at ${String(instant)}`);
+						break;
+					}
 				}
 			}
-		}
-		expect(wrong).toEqual([]);
-	});
+			expect(wrong).toEqual([]);
+		},
+	);
 });
 
 /** Every instant at which a definition and the table must agree. */
