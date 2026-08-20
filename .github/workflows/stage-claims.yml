@@ -1,0 +1,53 @@
+# This workflow is the stage-and-claim traceability lane. The test plan gives
+# each test ID to a stage, and the issue tree gives each test ID to a
+# milestone. scripts/stage-claims.mjs compares the two and reports each
+# disagreement.
+#
+# The lane runs once a week, and it runs on request. The lane is not part of
+# the required ci-ok check, and no merge waits for it. The reason is the second
+# half of the check: it reads the bodies and the milestones of the issues. That
+# state changes when nobody changes the tree. A check of that state on every
+# commit would therefore turn red on a commit that changed nothing, and the
+# author of that commit could do nothing about it.
+name: Stage claims
+
+on:
+    # The time is UTC. GitHub starts a scheduled workflow on the default
+    # branch alone. GitHub also delays a run that starts on a busy minute.
+    schedule:
+        - cron: '41 5 * * 1'
+    workflow_dispatch:
+
+# The check reads the issues of this repository through the GitHub command
+# line tool. The tool reads the token below.
+permissions:
+    contents: read
+    issues: read
+
+# One run of this lane at a time. A second run of the same commit gives the
+# same result for the plan, and the newer run gives the newer issues.
+concurrency:
+    group: stage-claims
+    cancel-in-progress: false
+
+# Each uses field below names an action by commit SHA. The comment
+# after a SHA gives the release tag of that SHA. Do not replace a SHA
+# with a tag. The owner of an action can move a tag to different code.
+jobs:
+    stage-claims:
+        runs-on: ubuntu-latest
+        timeout-minutes: 10
+        steps:
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+            - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+              with:
+                  node-version-file: .nvmrc
+                  cache: npm
+            - run: npm ci
+
+            # The option --require-issues makes the run fail when the check
+            # cannot read the issues. A run of this lane that read the plan
+            # alone did half of its work, and it must not report success.
+            - run: node scripts/stage-claims.mjs --require-issues
+              env:
+                  GH_TOKEN: ${{ github.token }}

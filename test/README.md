@@ -86,6 +86,59 @@ A mutant that survives is work, and not a broken build. A mutant that shows a
 gap in the tests becomes an issue. A mutant that no test can kill gets a
 Stryker disable comment at the line, with one sentence that states why.
 
+## The stage-and-claim lane
+
+Part 8 of the test plan gives each test ID to a stage. The issue tree gives
+each test ID to a milestone: one line of the issue body states which IDs the
+issue delivers, and the milestone of the issue states the stage.
+[`scripts/stage-claims.mjs`](../scripts/stage-claims.mjs) compares the two.
+
+```bash
+node scripts/stage-claims.mjs
+```
+
+Write the claim of an issue as a list item of the body:
+
+```markdown
+- Test plan: FM-1..4, UI-16 (read subset)
+```
+
+The line takes four forms of an ID list, and a stage list of Part 8 takes the
+same four: one ID (`DL-3`), a range (`ID-1..ID-6`), a group behind one prefix
+(`UI-1/2/8`), and a suite tag that stands for the whole suite (`LG`, or
+`CD complete`, with `except` to take IDs back out). A suite tag counts where
+the tag opens an entry of a stage list. A tag inside a phrase names a thing,
+and the check reports each tag that it passed over in that way.
+
+Two things fail the check:
+
+- the plan gives a test ID to no stage;
+- an issue claims an ID that no stage holds.
+
+The check reports, and does not fail on, each disagreement between a stage
+list and a milestone. Staging moves as the work proceeds. The check also fails
+when the plan or the issue tree gives it nothing to compare: a plan with no
+stage list, a stage with no test ID, a set of issues with no issue, and a set
+of issues in which no body carries a claim line.
+
+Some disagreements are correct as they stand. A person adjudicates such a
+mention, and `ADJUDICATED` in
+[`scripts/stage-claims-core.ts`](../scripts/stage-claims-core.ts) holds it with
+one sentence that says why. The check names each of these in the report, and
+it names an entry that meets no disagreement any more.
+
+The check reads the plan from a file and the issues from GitHub, through the
+`gh` command line tool. A machine that cannot reach GitHub runs the first half
+alone, and the check says which half it ran. The option `--require-issues`
+makes a run that cannot read the issues a failure. The option
+`--issues=<file>` reads the issues from a file that holds the answer of the
+command, and the tests of the check use that option to reach no server.
+
+A workflow runs the check once a week and on request. The lane is not part of
+the required `ci-ok` check, and no merge waits for it. The issue bodies and the
+milestones change when nobody changes the tree, so a check of that state on
+every commit would turn red on a commit that changed nothing.
+
 ## Order and seeds
 
 Files run in a random order. The tests inside each file also run in a random
