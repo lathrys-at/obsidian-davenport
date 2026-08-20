@@ -1,6 +1,8 @@
 /**
  * The decisions behind the markdown shape check:
  *
+ * - where each line ends, on a file that Linux wrote and on a file that
+ *   Windows wrote;
  * - which lines hold prose that the check measures, and which lines hold
  *   something else;
  * - where one block of prose ends, and where the next block starts;
@@ -19,7 +21,7 @@
  * prints.
  */
 
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -29,6 +31,7 @@ import {
 	blockDefects,
 	defectsOf,
 	firstUnit,
+	linesOf,
 	proseBlocks,
 	short,
 	survey,
@@ -48,6 +51,11 @@ function document(...lines: readonly string[]): string {
 	return `${lines.join('\n')}\n`;
 }
 
+/** The same document, as a host that ends each line with two octets wrote it. */
+function windows(...lines: readonly string[]): string {
+	return `${lines.join('\r\n')}\r\n`;
+}
+
 /** The lines of each block that this text holds. */
 function blocksOf(text: string): readonly (readonly string[])[] {
 	return proseBlocks(text).map((block) => block.lines);
@@ -62,6 +70,28 @@ function block(...lines: readonly string[]): Block {
 function kindsOf(defects: readonly Defect[]): readonly string[] {
 	return defects.map((defect) => defect.kind);
 }
+
+describe('the lines of a document', () => {
+	it('takes the line feed at the end of the text as the end of a line', () => {
+		expect(linesOf('one\ntwo\n')).toStrictEqual(['one', 'two']);
+	});
+
+	it('keeps the last line of a text that ends without a line feed', () => {
+		expect(linesOf('one\ntwo')).toStrictEqual(['one', 'two']);
+	});
+
+	it('gives no line for a text that holds nothing', () => {
+		expect(linesOf('')).toStrictEqual([]);
+	});
+
+	it('keeps a blank line that a second line feed makes', () => {
+		expect(linesOf('one\n\n')).toStrictEqual(['one', '']);
+	});
+
+	it('takes the carriage return of a windows line off the line', () => {
+		expect(linesOf(windows('one', 'two'))).toStrictEqual(['one', 'two']);
+	});
+});
 
 describe('the blocks of prose', () => {
 	it('takes the lines between two blank lines as one block', () => {
@@ -81,6 +111,34 @@ describe('the blocks of prose', () => {
 			['text'],
 			['more'],
 		]);
+	});
+
+	it('takes a break on the first line as a break, and keeps the prose after it', () => {
+		expect(
+			blocksOf(document('---', 'text', '', 'more', '---', 'last')),
+		).toStrictEqual([['text'], ['more'], ['last']]);
+	});
+
+	it('passes over the frontmatter of a document that a windows host wrote', () => {
+		expect(
+			blocksOf(windows('---', 'title: a', '---', 'text')),
+		).toStrictEqual([['text']]);
+	});
+
+	it('passes over the frontmatter of every note of the corpus', () => {
+		const opens = NOTE_FIXTURES.filter((note) =>
+			note.content.startsWith('---\n'),
+		);
+		expect(opens.length).toBe(NOTE_FIXTURES.length - 1);
+		for (const note of opens) {
+			const closes = linesOf(note.content).indexOf('---', 1) + 1;
+			expect(closes).toBeGreaterThan(1);
+			const starts = proseBlocks(note.content).map((each) => each.start);
+			expect({
+				id: note.id,
+				before: starts.filter((at) => at <= closes),
+			}).toStrictEqual({ id: note.id, before: [] });
+		}
 	});
 
 	it('passes over a fenced block and the fences of it', () => {
@@ -125,6 +183,27 @@ describe('the blocks of prose', () => {
 
 	it('counts the lines of a document from one', () => {
 		expect(proseBlocks(document('', '', 'text'))[0]?.start).toBe(3);
+	});
+
+	// The two cases below hold the two shapes that a test on the first
+	// character of a line cannot separate. The check accepts both shapes.
+	// A change of that decision changes these two cases.
+	it('passes over the prose of a block quote with the quote', () => {
+		expect(
+			blocksOf(
+				document(
+					'> A first line that runs out to the width of this quote here.',
+					'> gap.',
+					'> a third line that carries the rest of the words of the quote.',
+				),
+			),
+		).toStrictEqual([]);
+	});
+
+	it('takes a row of a table that starts with a cell as prose', () => {
+		expect(blocksOf(document('a | b', '--- | ---', 'x | y'))).toStrictEqual(
+			[['a | b', '--- | ---', 'x | y']],
+		);
 	});
 });
 
@@ -268,6 +347,12 @@ describe('the white space at the end of a line', () => {
 	it('reports no defect in a document that ends each line cleanly', () => {
 		expect(defectsOf(document('text', 'more text'))).toStrictEqual([]);
 	});
+
+	it('reports a line of a document that a windows host wrote', () => {
+		expect(defectsOf(windows('text ', 'more text'))).toStrictEqual([
+			{ kind: 'trailing space', line: 1, text: 'text ' },
+		]);
+	});
 });
 
 describe('the defects of one document, in order', () => {
@@ -284,6 +369,37 @@ describe('the defects of one document, in order', () => {
 			['trailing space', 3],
 		]);
 	});
+
+	it('reads the prose between a break on the first line and a later break', () => {
+		const text = document(
+			'---',
+			'A first line that runs out to the width that this block states.',
+			'short',
+			'a third line that carries the rest of the words of this block.',
+			'',
+			'---',
+		);
+		expect(
+			defectsOf(text).map((defect) => [defect.kind, defect.line]),
+		).toStrictEqual([['orphan', 3]]);
+	});
+
+	it('counts the characters of a line that a windows host wrote', () => {
+		const text = windows(
+			'A first line that runs out to the width that this block states.',
+			'short',
+			'a third line that carries the rest of the words of this block.',
+		);
+		expect(defectsOf(text)).toStrictEqual([
+			{
+				kind: 'orphan',
+				line: 2,
+				text: 'short',
+				width: 63,
+				unit: 'a',
+			},
+		]);
+	});
 });
 
 describe('the survey of many documents', () => {
@@ -293,7 +409,7 @@ describe('the survey of many documents', () => {
 			{ path: 'b.md', text: document('three') },
 		]);
 		expect(result.documents).toBe(2);
-		expect(result.lines).toBe(5);
+		expect(result.lines).toBe(3);
 		expect(result.sites).toStrictEqual([]);
 	});
 
@@ -324,7 +440,9 @@ describe('the survey of many documents', () => {
 
 describe('the words that the check prints', () => {
 	it('says how many documents and lines it read', () => {
-		const lines = reportLines(survey([{ path: 'a.md', text: 'one\n' }]));
+		const lines = reportLines(
+			survey([{ path: 'a.md', text: document('one', 'two') }]),
+		);
 		expect(lines[0]).toBe(say('the check read 1 document and 2 lines'));
 	});
 
@@ -346,7 +464,18 @@ describe('the words that the check prints', () => {
 		);
 		expect(lines[0]).toContain('a.md:1');
 		expect(lines[0]).toContain('ends with white space');
-		expect(lines[1]).toBe('  text ');
+		expect(lines[1]).toBe('  text |');
+	});
+
+	it('marks the end of a line that ends with white space, and no other line', () => {
+		const text = document(
+			'A first line that runs out to the width that this block states.',
+			'short',
+			'a third line that carries the rest of the words of this block.',
+		);
+		const lines = failureLines(survey([{ path: 'a.md', text }]));
+		expect(lines[0]).toContain('a.md:2');
+		expect(lines[1]).toBe('  short');
 	});
 
 	it('names the width of the block and the part that fits', () => {
@@ -397,6 +526,48 @@ describe('the check as a process', () => {
 		expect(run.stdout).toContain('the check read 0 documents');
 		expect(run.status).toBe(1);
 	});
+
+	it('passes over a folder below the corpus, and one note of it', () => {
+		const notes = join(REPOSITORY, 'test', 'harness', 'fixtures', 'notes');
+		const note = join(notes, 'lists.md');
+		const runs = [notes, note].map((path) => {
+			const run = runNode([SCRIPT, path]);
+			return {
+				path,
+				read: run.stdout.includes('the check read 0 documents'),
+				status: run.status,
+			};
+		});
+		expect(runs).toStrictEqual([
+			{ path: notes, read: true, status: 1 },
+			{ path: note, read: true, status: 1 },
+		]);
+	});
+
+	// Windows gives the right to make a symbolic link to an administrator and
+	// to a machine in developer mode, and the runner of the tests is neither.
+	// This case cannot make its link there.
+	it.skipIf(process.platform === 'win32')(
+		'reads a document one time, and passes over a link to it',
+		() => {
+			const linked = mkdtempSync(join(tmpdir(), 'markdown-shape-link-'));
+			try {
+				writeFileSync(
+					join(linked, 'a.md'),
+					document('one', 'two'),
+					'utf8',
+				);
+				symlinkSync(join(linked, 'a.md'), join(linked, 'b.md'));
+				const run = runNode([SCRIPT, linked]);
+				expect(run.stdout).toContain(
+					'the check read 1 document and 2 lines',
+				);
+				expect(run.status).toBe(0);
+			} finally {
+				rmSync(linked, { recursive: true, force: true });
+			}
+		},
+	);
 
 	it('refuses a document that holds an orphan, and names the line', () => {
 		const bad = join(folder, 'orphan.md');

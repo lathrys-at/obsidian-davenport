@@ -1,6 +1,8 @@
 /**
  * The decisions behind the markdown shape check:
  *
+ * - where each line of a document ends, on a file that Linux wrote and on a
+ *   file that Windows wrote;
  * - which lines of a document hold prose, and which lines hold something
  *   else;
  * - where one block of prose ends, and where the next block starts;
@@ -58,6 +60,12 @@ const RULE = /^\s*(?:-{3,}|\*{3,}|_{3,}|={3,})\s*$/;
 /** A line that ends with a space or a tab. */
 const TRAILING = /[ \t]$/;
 
+/**
+ * A line that the frontmatter of a document can hold: a key, an item of a
+ * sequence, a comment, or a line that continues the line above it.
+ */
+const FRONT_MATTER_LINE = /^(?:[^\s:#]+\s*:(?:\s|$)|-(?:\s|$)|#|\s)/;
+
 /** One document, and the text that the document holds. */
 export interface Document {
 	readonly path: string;
@@ -103,6 +111,22 @@ export interface Survey {
 }
 
 /**
+ * The lines of a text. A line feed at the end of the text closes the last
+ * line of the text, and it does not start one more line. A carriage return
+ * in front of a line feed belongs to the end of the line, and it is not
+ * part of the text of the line. Therefore a file that Windows wrote gives
+ * the same lines as a file that Linux wrote, and the count of the lines is
+ * the count of the lines that a person sees.
+ */
+export function linesOf(text: string): readonly string[] {
+	const lines = text.split('\n').map((line) => line.replace(/\r$/, ''));
+	if (lines[lines.length - 1] === '') {
+		lines.pop();
+	}
+	return lines;
+}
+
+/**
  * The blocks of prose in a document. A block holds the lines of one
  * paragraph, or the lines of one item of a list. The function passes over
  * the frontmatter, the fenced code, the comments of HTML, the headings, the
@@ -111,7 +135,7 @@ export interface Survey {
  * because each item of a list wraps on its own.
  */
 export function proseBlocks(text: string): readonly Block[] {
-	const lines = text.split('\n');
+	const lines = linesOf(text);
 	const blocks: Block[] = [];
 	let current: string[] = [];
 	let start = 0;
@@ -167,20 +191,42 @@ export function proseBlocks(text: string): readonly Block[] {
 	return blocks;
 }
 
-/** The line after the frontmatter, or the first line when there is none. */
+/**
+ * The line after the frontmatter, or the first line when the document holds
+ * no frontmatter. Frontmatter opens with three hyphens on the first line of
+ * the document, and it closes with three hyphens on a later line. Every
+ * line between the two must be a line that frontmatter can hold: a key, an
+ * item of a sequence, a comment, a line that continues the line above it, or
+ * a blank line.
+ *
+ * A document can also open with a thematic break of three hyphens, and hold
+ * one more break further down. The test on each line between the two keeps
+ * the prose of such a document, because a line of prose is not a line that
+ * frontmatter can hold.
+ */
 function skipFrontMatter(lines: readonly string[]): number {
 	if (lines[0] !== '---') {
 		return 0;
 	}
 	for (let at = 1; at < lines.length; at += 1) {
-		if (lines[at] === '---') {
+		const line = lines[at] ?? '';
+		if (line === '---') {
 			return at + 1;
+		}
+		if (line.trim() !== '' && !FRONT_MATTER_LINE.test(line)) {
+			return 0;
 		}
 	}
 	return 0;
 }
 
-/** True for a line that holds no prose that the check can measure. */
+/**
+ * True for a line that holds no prose that the check can measure. The test
+ * reads the first character of the line, and it reads no more. Two shapes
+ * follow from that, and the check accepts both. A block quote holds prose,
+ * and the check passes over the whole quote. A row of a table that starts
+ * with a cell, and not with a bar, reads as prose.
+ */
 function skipped(trimmed: string, line: string): boolean {
 	return (
 		trimmed === '' ||
@@ -262,7 +308,7 @@ export function blockDefects(block: Block): readonly Defect[] {
 /** The defects of one document, in the order of the lines. */
 export function defectsOf(text: string): readonly Defect[] {
 	const found: Defect[] = [];
-	const lines = text.split('\n');
+	const lines = linesOf(text);
 	for (let at = 0; at < lines.length; at += 1) {
 		const line = lines[at] ?? '';
 		if (TRAILING.test(line)) {
@@ -280,7 +326,7 @@ export function survey(documents: readonly Document[]): Survey {
 	const sites: Site[] = [];
 	let lines = 0;
 	for (const document of documents) {
-		lines += document.text.split('\n').length;
+		lines += linesOf(document.text).length;
 		for (const defect of defectsOf(document.text)) {
 			sites.push({ path: document.path, defect });
 		}
@@ -291,7 +337,7 @@ export function survey(documents: readonly Document[]): Survey {
 /**
  * True when the check must fail. A survey that holds a site fails. A survey
  * of no document also fails: a check that reads nothing reports success on
- * every repository, and such a report proves nothing.
+ * every repository, and such a report shows nothing.
  */
 export function surveyFails(result: Survey): boolean {
 	return result.documents === 0 || result.sites.length > 0;

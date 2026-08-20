@@ -23,7 +23,7 @@
  * below names the folder of that corpus.
  *
  * The check fails when it finds no document at all. A check that matches no
- * file reports success on every repository, and that report proves nothing.
+ * file reports success on every repository, and that report shows nothing.
  * This check therefore never becomes an empty claim.
  *
  * The check reads the markdown files of this repository. If you give one
@@ -80,10 +80,32 @@ function skipped(name) {
 }
 
 /**
+ * True for a path that holds data. The test holds for a directory that the
+ * list above names, and it holds for every path below such a directory.
+ * Therefore an argument reaches no file of data, whichever path of the
+ * corpus that argument gives.
+ */
+function data(path) {
+	const name = shown(path);
+	for (const entry of DATA) {
+		if (name === entry || name.startsWith(`${entry}/`)) {
+			return true;
+		}
+	}
+	return false;
+}
+
+/**
  * The markdown files under one path, at any depth. A path that names a file
- * gives that one file. A path that names a folder of data gives no file, and
+ * gives that one file. A path of data gives no file: the rule holds for the
+ * folder of the corpus, for a folder below it, and for one file of it, and
  * the rule holds for a path that an argument gives as well. Git carries no
  * empty directory, so a directory that does not exist gives an empty list.
+ *
+ * The walk passes over a symbolic link. `CLAUDE.md` is a link to
+ * `AGENTS.md`, and the walk finds `AGENTS.md` itself. A link that the walk
+ * takes would give the same text to the check two times, and the check would
+ * then report one defect as two places.
  */
 function documentsUnder(path) {
 	let entry;
@@ -92,14 +114,17 @@ function documentsUnder(path) {
 	} catch {
 		return [];
 	}
+	if (data(path)) {
+		return [];
+	}
 	if (!entry.isDirectory()) {
 		return path.endsWith(EXTENSION) ? [path] : [];
 	}
-	if (DATA.has(shown(path))) {
-		return [];
-	}
 	const found = [];
 	for (const child of readdirSync(path, { withFileTypes: true })) {
+		if (child.isSymbolicLink()) {
+			continue;
+		}
 		if (child.isDirectory()) {
 			if (!skipped(child.name)) {
 				found.push(...documentsUnder(join(path, child.name)));

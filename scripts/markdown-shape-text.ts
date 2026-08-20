@@ -12,6 +12,9 @@
 
 import type { Defect, Site, Survey } from './markdown-shape-core.ts';
 
+/** The mark that shows where a line of the document ends. */
+const END = '|';
+
 /** The lines of the report. The report says how much the check read. */
 export function reportLines(result: Survey): readonly string[] {
 	return [
@@ -28,9 +31,11 @@ export function reportLines(result: Survey): readonly string[] {
 export function failureLines(result: Survey): readonly string[] {
 	if (result.documents === 0) {
 		return [
-			say('the check found no document, and it therefore proves nothing'),
 			say(
-				'point the check at a directory that holds markdown files, or repair the walk that finds them',
+				'the check found no document, so this run shows nothing about the documents',
+			),
+			say(
+				'give the check a directory that holds markdown files, or repair the code that finds the files',
 			),
 		];
 	}
@@ -49,16 +54,28 @@ export function failureLines(result: Survey): readonly string[] {
 	return lines;
 }
 
-/** The lines that describe one place that holds a defect. */
+/**
+ * The lines that describe one place that holds a defect. The second line
+ * shows the line of the document. White space at the end of a line shows
+ * nothing, so a vertical line marks the end of a line that ends with white
+ * space. The reader can then see the defect that the first line names.
+ */
 function siteLines(site: Site): readonly string[] {
 	const where = `${site.path}:${String(site.defect.line)}`;
-	return [say(`${where}: ${reason(site.defect)}`), `  ${site.defect.text}`];
+	const end = site.defect.kind === 'trailing space' ? END : '';
+	return [
+		say(`${where}: ${reason(site.defect)}`),
+		`  ${site.defect.text}${end}`,
+	];
 }
 
 /** What is wrong at one place, and what to do about it. */
 function reason(defect: Defect): string {
 	if (defect.kind === 'trailing space') {
-		return 'the line ends with white space. Remove the white space at the end of the line.';
+		return (
+			`the line ends with white space. The report puts "${END}" after the text of the line, because nobody sees white space. ` +
+			'Remove the white space at the end of the line.'
+		);
 	}
 	return (
 		`the line holds ${count(defect.text.length, 'character')}, and the line stands in the middle of a paragraph. ` +
