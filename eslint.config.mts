@@ -327,13 +327,22 @@ export default defineConfig(
 	},
 	// All network I/O flows through the transport port; the Obsidian
 	// adapter backs it with requestUrl. A direct fetch breaks on mobile.
+	//
+	// The block covers the .mjs commands of scripts/ and tools/ as well as
+	// the TypeScript files. None of those commands ships, but the ban is on
+	// the spelling and not on the destination of the code. The recommended
+	// set of the plugin reports a bare fetch in such a file already, and the
+	// selectors below are the only rules that report the member spellings
+	// and the Reflect.get spelling there.
 	{
 		name: 'davenport/no-global-fetch',
 		files: [
 			'src/**/*.ts',
 			'test/**/*.ts',
 			'tools/**/*.ts',
+			'tools/**/*.mjs',
 			'scripts/**/*.ts',
+			'scripts/**/*.mjs',
 		],
 		rules: {
 			'no-restricted-globals': [

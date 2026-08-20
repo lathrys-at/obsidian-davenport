@@ -49,10 +49,10 @@ const TIMEOUT = 60;
 
 /**
  * The count of bytes that the script takes from the server. The archive
- * of a release is under one megabyte. The limit stops an address that
- * answers with something else.
+ * of the pinned release is 475,694 bytes. The limit is about eight times
+ * that count, and it stops an address that answers with something else.
  */
-const LIMIT = 64 * 1024 * 1024;
+const LIMIT = 4 * 1024 * 1024;
 
 /** The answers that name another address. */
 const MOVED = new Set([301, 302, 303, 307, 308]);
@@ -209,7 +209,23 @@ function getBytes(url, hops) {
 					);
 					return;
 				}
-				resolve(getBytes(new URL(next, url).toString(), hops - 1));
+				// The server writes this address, and a server can write
+				// an address that no reader can read. A throw here is
+				// outside the executor of the promise, and it would stop
+				// the script with the status of a checksum that
+				// disagrees.
+				let address;
+				try {
+					address = new URL(next, url).toString();
+				} catch (error) {
+					reject(
+						new Error(
+							`the server names the address ${next}, and the script cannot read it: ${String(error)}`,
+						),
+					);
+					return;
+				}
+				resolve(getBytes(address, hops - 1));
 				return;
 			}
 			if (status !== 200) {

@@ -19,7 +19,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { Linter } from 'eslint';
+import { ESLint, Linter } from 'eslint';
 import { createJiti } from 'jiti';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { GitHost } from './harness/run-git';
@@ -43,6 +43,11 @@ interface ConfigBlock {
 	readonly rules?: Readonly<Record<string, unknown>>;
 }
 
+/** The configuration that the whole lint setup gives to one file. */
+interface ResolvedConfig {
+	readonly rules?: Readonly<Record<string, Linter.RuleEntry>>;
+}
+
 const REFLECT_CALL = "Reflect.get(globalThis, 'fetch')('https://a.test/');";
 const REFLECT_HOLDER = "const read = Reflect.get(holder, 'fetch');";
 const REFLECT_TEMPLATE = 'const read = Reflect.get(holder, `fetch`);';
@@ -50,8 +55,13 @@ const REFLECT_INTERPOLATED =
 	'const read = Reflect.get(holder, `fet${middle}ch`);';
 const REFLECT_ELSEWHERE = "const url = Reflect.get(input, 'url');";
 const MEMBER_CALL = "window.fetch('https://a.test/');";
+const BRACKET_CALL = "globalThis['fetch']('https://a.test/');";
+const BARE_CALL = "fetch('https://a.test/');";
+
+const ROOT = fileURLToPath(new URL('..', import.meta.url));
 
 const linter = new Linter();
+const eslint = new ESLint({ cwd: ROOT });
 let config: readonly ConfigBlock[] = [];
 
 beforeAll(async () => {
@@ -144,6 +154,75 @@ describe('the lint exemption for the fetch poison', () => {
 		expect(refused(name, REFLECT_HOLDER)).toEqual([]);
 		expect(refused(name, REFLECT_TEMPLATE)).toEqual([]);
 		expect(refused(name, MEMBER_CALL)).toHaveLength(1);
+	});
+});
+
+/**
+ * The guards must reach the .mjs commands of the repository too. A command
+ * that gets a file from a server is written in that form, and the ban is on
+ * the spelling of the global and not on the destination of the code. These
+ * cases ask the whole configuration what it gives to a real path, so a later
+ * block that takes a rule away from such a path fails a case here.
+ */
+describe('the fetch guards over the .mjs commands', () => {
+	const COMMANDS = ['tools/timezone-table/download.mjs', 'scripts/vault.mjs'];
+
+	/** The two fetch rules that the whole configuration gives to this file. */
+	async function fetchRules(path: string): Promise<Linter.RulesRecord> {
+		const config = (await eslint.calculateConfigForFile(
+			join(ROOT, path),
+		)) as ResolvedConfig;
+		const rules: Linter.RulesRecord = {};
+		for (const name of ['no-restricted-globals', 'no-restricted-syntax']) {
+			const entry = config.rules?.[name];
+			if (entry === undefined) {
+				throw new Error(
+					`the lint configuration gives ${path} no ${name} rule`,
+				);
+			}
+			rules[name] = entry;
+		}
+		return rules;
+	}
+
+	/** The messages that these rules report over this source. */
+	function reports(rules: Linter.RulesRecord, code: string): string[] {
+		return linter.verify(code, { rules }).map((message) => message.message);
+	}
+
+	it('names the .mjs commands beside the TypeScript files', () => {
+		expect(blockNamed('davenport/no-global-fetch').files).toEqual([
+			'src/**/*.ts',
+			'test/**/*.ts',
+			'tools/**/*.ts',
+			'tools/**/*.mjs',
+			'scripts/**/*.ts',
+			'scripts/**/*.mjs',
+		]);
+	});
+
+	it.each(COMMANDS)('reports every spelling of fetch in %s', async (path) => {
+		const rules = await fetchRules(path);
+		expect(reports(rules, BARE_CALL)).toHaveLength(1);
+		expect(reports(rules, MEMBER_CALL)).toHaveLength(1);
+		expect(reports(rules, BRACKET_CALL)).toHaveLength(1);
+		expect(reports(rules, REFLECT_CALL)).toHaveLength(1);
+		expect(reports(rules, REFLECT_HOLDER)).toHaveLength(1);
+	});
+
+	it.each(COMMANDS)(
+		'gives the message of this repository in %s',
+		async (path) => {
+			const rules = await fetchRules(path);
+			for (const message of reports(rules, MEMBER_CALL)) {
+				expect(message).toContain('transport port');
+			}
+		},
+	);
+
+	it.each(COMMANDS)('reports another property in %s never', async (path) => {
+		const rules = await fetchRules(path);
+		expect(reports(rules, REFLECT_ELSEWHERE)).toEqual([]);
 	});
 });
 

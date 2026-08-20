@@ -290,12 +290,49 @@ describe('the reader of the archive', () => {
 		expect(read.get('africa')?.toString('utf8')).toBe('rules');
 	});
 
-	it('takes no bytes from an entry that is not a file', () => {
+	it('gives back no name that the caller did not ask for', () => {
+		// The caller joins each key of this map onto a directory of the
+		// cache. The reader is therefore the place that decides which
+		// names can become a path, and it gives back the names of the
+		// caller and no name of the archive. A reader that gave back
+		// every entry would hand the caller the two names below.
+		const read = readTarFiles(
+			archive(
+				entry('../../../../tmp/pwned', 'escape'),
+				entry('/etc/passwd', 'escape'),
+				entry('africa', 'the rules of africa'),
+			),
+			['africa'],
+		);
+		expect([...read.keys()]).toEqual(['africa']);
+		expect(read.get('africa')?.toString('utf8')).toBe(
+			'the rules of africa',
+		);
+	});
+
+	it.each([
+		['a symlink', '2'],
+		['a link', '1'],
+		['a directory', '5'],
+	])('takes no bytes from a wanted name that stands as %s', (_name, type) => {
 		expect(() =>
-			readTarFiles(archive(entry('africa', '', { type: '5' })), [
-				'africa',
-			]),
+			readTarFiles(archive(entry('africa', '', { type })), ['africa']),
 		).toThrow(/holds no file named africa/);
+	});
+
+	it('steps over an entry that is not a file and reads the file after it', () => {
+		// A symlink that claims a wanted name does not hide the file of
+		// that name, and the caller gets the bytes of the file.
+		const read = readTarFiles(
+			archive(
+				entry('africa', '', { type: '2' }),
+				entry('africa', 'the rules of africa'),
+			),
+			['africa'],
+		);
+		expect(read.get('africa')?.toString('utf8')).toBe(
+			'the rules of africa',
+		);
 	});
 
 	it('stops at the blocks that end the archive', () => {
@@ -355,6 +392,16 @@ describe('the reader of the archive', () => {
 		);
 		expect(read.get('africa')?.toString('utf8')).toBe(
 			'the rules of africa',
+		);
+	});
+
+	it('refuses a gzip that gives more bytes than the limit', () => {
+		// A small input can give a very large output. The reader stops at
+		// the limit, and it does not put the whole output in memory.
+		const large = gzipSync(Buffer.alloc(12 * 1024 * 1024));
+		expect(large.length).toBeLessThan(100000);
+		expect(() => readReleaseArchive(large, ['africa'])).toThrow(
+			/Cannot create a Buffer larger than/,
 		);
 	});
 });

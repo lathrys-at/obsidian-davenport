@@ -8,12 +8,26 @@
  * itself. Two blocks of zero bytes end the archive.
  *
  * This module reads those headers and gives back the files that the
- * caller names. The module reads the archive of one release. It therefore
- * takes the form that the release ships and no other form: a name of at
- * most 255 characters, a count of bytes in octal digits, and one entry
- * for each name. The module refuses every other shape. The next release
- * comes through this same code, and a reader that guesses would put bytes
- * into the cache that no checksum states.
+ * caller names. The module gives back no other name, so a name that the
+ * archive states cannot become a path of the caller. The module reads the
+ * entries that the caller named, and it steps over every other entry.
+ *
+ * The module reads the archive of one release, and it therefore takes the
+ * form that the release ships: a name of at most 255 characters, and a
+ * count of bytes in octal digits. The module refuses each of these:
+ *
+ * - a block that states no checksum, and a header whose bytes do not give
+ *   the checksum that it states;
+ * - a count of bytes that is not octal digits, and a count that goes past
+ *   the end of the archive;
+ * - a name that the caller asked for and that no file of the archive
+ *   gives, which includes a name that the archive holds as a link or as a
+ *   directory;
+ * - a name that the caller asked for and that the archive holds two times
+ *   as a file.
+ *
+ * The next release comes through this same code, and a reader that
+ * guesses would put bytes into the cache that no checksum states.
  */
 
 import { gunzipSync } from 'node:zlib';
@@ -31,15 +45,28 @@ const PREFIX = { at: 345, size: 155 };
 /** The type that a header states for the bytes of a file. */
 const FILE_TYPE = '0';
 
+/**
+ * The count of bytes that the gzip may give. The archive of the pinned
+ * release gives 1,433,600 bytes. The limit is more than five times that
+ * count, and it stops a small input that gives a very large output.
+ */
+const EXPANDED_LIMIT = 8 * 1024 * 1024;
+
 /** The files that the caller named, from the gzip archive of a release. */
 export function readReleaseArchive(
 	archive: Uint8Array,
 	wanted: readonly string[],
 ): ReadonlyMap<string, Buffer> {
-	return readTarFiles(gunzipSync(archive), wanted);
+	return readTarFiles(
+		gunzipSync(archive, { maxOutputLength: EXPANDED_LIMIT }),
+		wanted,
+	);
 }
 
-/** The files that the caller named, from the bytes of a tar archive. */
+/**
+ * The files that the caller named, from the bytes of a tar archive. The
+ * keys of the map are always the names that the caller asked for.
+ */
 export function readTarFiles(
 	tar: Buffer,
 	wanted: readonly string[],
