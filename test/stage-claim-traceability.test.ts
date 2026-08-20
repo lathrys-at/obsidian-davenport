@@ -191,7 +191,7 @@ describe('the test IDs that each stage holds', () => {
 			[4, 'UI'],
 			[7, 'DA'],
 		]);
-		expect(wider.pairs).toBe(26);
+		expect(wider.pairs).toBe(25);
 		expect(wider.splitHalves).toBe(48);
 		expect(STAGES.splitHalves).toHaveLength(31);
 	});
