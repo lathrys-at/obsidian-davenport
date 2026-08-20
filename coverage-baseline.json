@@ -1,24 +1,24 @@
 {
 	"total": {
 		"statements": {
-			"total": 677,
-			"covered": 646,
-			"pct": 95.42
+			"total": 803,
+			"covered": 771,
+			"pct": 96.01
 		},
 		"branches": {
-			"total": 505,
-			"covered": 453,
-			"pct": 89.7
+			"total": 564,
+			"covered": 509,
+			"pct": 90.24
 		},
 		"functions": {
-			"total": 138,
-			"covered": 138,
+			"total": 172,
+			"covered": 172,
 			"pct": 100
 		},
 		"lines": {
-			"total": 673,
-			"covered": 642,
-			"pct": 95.39
+			"total": 795,
+			"covered": 763,
+			"pct": 95.97
 		}
 	},
 	"files": [
@@ -163,23 +163,23 @@
 		{
 			"path": "src/core/ics/stamp.ts",
 			"statements": {
-				"total": 24,
-				"covered": 24,
+				"total": 49,
+				"covered": 49,
 				"pct": 100
 			},
 			"branches": {
+				"total": 35,
+				"covered": 35,
+				"pct": 100
+			},
+			"functions": {
 				"total": 24,
 				"covered": 24,
 				"pct": 100
 			},
-			"functions": {
-				"total": 16,
-				"covered": 16,
-				"pct": 100
-			},
 			"lines": {
-				"total": 22,
-				"covered": 22,
+				"total": 45,
+				"covered": 45,
 				"pct": 100
 			}
 		},
@@ -485,8 +485,8 @@
 		{
 			"path": "src/core/timezone/calendar.ts",
 			"statements": {
-				"total": 13,
-				"covered": 13,
+				"total": 15,
+				"covered": 15,
 				"pct": 100
 			},
 			"branches": {
@@ -495,13 +495,13 @@
 				"pct": 100
 			},
 			"functions": {
-				"total": 6,
-				"covered": 6,
+				"total": 7,
+				"covered": 7,
 				"pct": 100
 			},
 			"lines": {
-				"total": 13,
-				"covered": 13,
+				"total": 15,
+				"covered": 15,
 				"pct": 100
 			}
 		},
@@ -531,14 +531,14 @@
 		{
 			"path": "src/core/timezone/offsets.ts",
 			"statements": {
-				"total": 57,
-				"covered": 56,
-				"pct": 98.24
+				"total": 56,
+				"covered": 55,
+				"pct": 98.21
 			},
 			"branches": {
 				"total": 42,
-				"covered": 38,
-				"pct": 90.47
+				"covered": 39,
+				"pct": 92.85
 			},
 			"functions": {
 				"total": 11,
@@ -546,9 +546,55 @@
 				"pct": 100
 			},
 			"lines": {
-				"total": 56,
-				"covered": 55,
-				"pct": 98.21
+				"total": 55,
+				"covered": 54,
+				"pct": 98.18
+			}
+		},
+		{
+			"path": "src/core/timezone/repeat.ts",
+			"statements": {
+				"total": 36,
+				"covered": 36,
+				"pct": 100
+			},
+			"branches": {
+				"total": 24,
+				"covered": 22,
+				"pct": 91.66
+			},
+			"functions": {
+				"total": 10,
+				"covered": 10,
+				"pct": 100
+			},
+			"lines": {
+				"total": 34,
+				"covered": 34,
+				"pct": 100
+			}
+		},
+		{
+			"path": "src/core/timezone/synthesiser.ts",
+			"statements": {
+				"total": 64,
+				"covered": 63,
+				"pct": 98.43
+			},
+			"branches": {
+				"total": 24,
+				"covered": 22,
+				"pct": 91.66
+			},
+			"functions": {
+				"total": 15,
+				"covered": 15,
+				"pct": 100
+			},
+			"lines": {
+				"total": 64,
+				"covered": 63,
+				"pct": 98.43
 			}
 		},
 		{
