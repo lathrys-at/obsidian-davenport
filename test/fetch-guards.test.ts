@@ -23,6 +23,7 @@ import { fileURLToPath } from 'node:url';
 import { Linter } from 'eslint';
 import { createJiti } from 'jiti';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { runNode } from './harness/run-node';
 
 interface RestrictedSyntax {
 	readonly selector: string;
@@ -205,9 +206,7 @@ describe('the bundle scan', () => {
 	function scan(bundle: string): { status: number | null; output: string } {
 		const file = join(directory, 'bundle.js');
 		writeFileSync(file, bundle, 'utf8');
-		const result = spawnSync(process.execPath, [script, file], {
-			encoding: 'utf8',
-		});
+		const result = runNode([script, file]);
 		return { status: result.status, output: result.stdout + result.stderr };
 	}
 

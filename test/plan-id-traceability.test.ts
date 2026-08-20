@@ -25,7 +25,6 @@
  * includes the exit status, and not only the words that the run prints.
  */
 
-import { spawnSync } from 'node:child_process';
 import {
 	mkdirSync,
 	mkdtempSync,
@@ -55,6 +54,7 @@ import {
 	reportLines,
 } from '../scripts/plan-ids-text';
 import { readTitles } from '../scripts/plan-ids-titles';
+import { runNode } from './harness/run-node';
 
 const PLAN_PATH = fileURLToPath(
 	new URL('../docs/davenport-test-plan.md', import.meta.url),
@@ -903,9 +903,7 @@ describe('the check as a process', () => {
 		out: string;
 		err: string;
 	} {
-		const result = spawnSync(process.execPath, [SCRIPT, ...argv], {
-			encoding: 'utf8',
-		});
+		const result = runNode([SCRIPT, ...argv]);
 		return {
 			status: result.status,
 			out: result.stdout,

@@ -20,7 +20,6 @@
  * prints.
  */
 
-import { spawnSync } from 'node:child_process';
 import {
 	existsSync,
 	mkdtempSync,
@@ -55,6 +54,7 @@ import {
 	untestedOf,
 } from '../scripts/mutation-ratchet-core';
 import { failureLines, reportLines } from '../scripts/mutation-ratchet-text';
+import { runNode } from './harness/run-node';
 
 const SCRIPT = fileURLToPath(
 	new URL('../scripts/mutation-ratchet.mjs', import.meta.url),
@@ -616,9 +616,7 @@ describe('the check as a process', () => {
 		status: number | null;
 		output: string;
 	} {
-		const result = spawnSync(process.execPath, [SCRIPT, ...argv], {
-			encoding: 'utf8',
-		});
+		const result = runNode([SCRIPT, ...argv]);
 		return { status: result.status, output: result.stdout + result.stderr };
 	}
 
@@ -821,16 +819,12 @@ describe('the files that the lane mutates', () => {
 	 */
 	it('gives Stryker the list that this repository pins', () => {
 		const url = new URL('../stryker.config.mjs', import.meta.url).href;
-		const result = spawnSync(
-			process.execPath,
-			[
-				'--input-type=module',
-				'-e',
-				`import config from ${JSON.stringify(url)};
+		const result = runNode([
+			'--input-type=module',
+			'-e',
+			`import config from ${JSON.stringify(url)};
 				process.stdout.write(JSON.stringify(config.mutate));`,
-			],
-			{ encoding: 'utf8' },
-		);
+		]);
 		expect(result.stderr).toBe('');
 		expect(result.status).toBe(0);
 		expect(JSON.parse(result.stdout) as unknown).toStrictEqual([
