@@ -6,9 +6,9 @@
  * This module turns the table text into that source.
  *
  * The text sits in a template string. The writer refuses a table that
- * holds a character which such a string reads as code, so the module
- * never carries an escape and the bytes of the table stay the bytes that
- * the reader receives.
+ * holds a character which such a string reads as code. The module
+ * therefore never carries an escape, and the bytes of the table stay the
+ * bytes that the reader receives.
  */
 
 /** The path of the module, for the message that the generator prints. */

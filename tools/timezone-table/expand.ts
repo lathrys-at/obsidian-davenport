@@ -26,24 +26,45 @@ import type {
 	SourceZone,
 	TimezoneSource,
 } from './source.ts';
+import { LAST_YEAR } from './source.ts';
 import { terminalRuleOf, truncate } from './terminal.ts';
 import type { ExpandedZone, ZoneChange, ZoneType } from './zone.ts';
 import { ruleSet, sameType, zoneType } from './zone.ts';
 
 /**
- * The year through which the expansion writes changes out. The rules of
- * the pinned release state their last explicit year well below this one,
- * and a terminal rule covers every year after the last change that it
- * writes. The value therefore only has to pass the last explicit year of
- * the release.
+ * The year through which the expansion writes changes out. A terminal
+ * rule covers every year after the last change that the expansion writes,
+ * so this value only has to pass the last explicit year of the release.
+ *
+ * The expansion refuses a rule whose last year reaches this one. Such a
+ * rule would lose its later changes without a word, and the table would
+ * then state a wrong offset for every instant after this year.
  */
 const MATERIAL_YEAR = 2200;
 
 /** Every zone of the release, expanded, in the order of their names. */
 export function expandZones(source: TimezoneSource): readonly ExpandedZone[] {
+	refuseDistantRules(source);
 	return source.zones
 		.map((zone) => expandZone(zone, source))
 		.sort((left, right) => compareNames(left.name, right.name));
+}
+
+/**
+ * Refuses a release that states a rule with an explicit last year at or
+ * past the horizon of the expansion. A rule that repeats with no last year
+ * carries the year that stands for that, and it passes.
+ */
+function refuseDistantRules(source: TimezoneSource): void {
+	for (const [name, set] of source.rules) {
+		for (const rule of set) {
+			if (rule.lastYear !== LAST_YEAR && rule.lastYear >= MATERIAL_YEAR) {
+				throw new Error(
+					`the rule set ${name} states the year ${String(rule.lastYear)}, and the expansion writes changes out to ${String(MATERIAL_YEAR)}. Raise MATERIAL_YEAR in tools/timezone-table/expand.ts past that year.`,
+				);
+			}
+		}
+	}
 }
 
 /** One zone, expanded. */
@@ -77,11 +98,12 @@ export function expandZone(
  * A line of a zone starts at the instant at which the line before it
  * stops. A rule can state a change at that same instant, and then the
  * two are one change. The reader of a rule therefore asks which clock
- * runs at the instant of the change. A rule that runs at or before the
- * start of a line reads the clock of the line before it, and the state
- * that the rule leaves becomes the state at the start of the line. A
- * rule that runs after the start of a line reads the clock of the line
- * itself, and the rule makes a change of its own.
+ * runs at the instant of the change.
+ *
+ * A rule that runs at or before the start of a line reads the clock of
+ * the line before it. The state that such a rule leaves becomes the state
+ * at the start of the line. A rule that runs after the start of a line
+ * reads the clock of the line itself, and it makes a change of its own.
  *
  * The compiler that the release ships states the same result, and the
  * tests of this module compare the two over every zone.
@@ -136,7 +158,11 @@ function allChanges(
 			}
 			if (!folded) {
 				save = 0;
-				letters = standardLetters(instances.slice(next));
+				letters = standardLetters(
+					instances.slice(next),
+					line.format,
+					zone.name,
+				);
 			}
 			raw.push({ at: lineStart, type: typeOf(save, letters) });
 			for (const instance of instances.slice(next)) {
@@ -197,12 +223,24 @@ function orderedInstances(
  * that starts before every rule of its set states the standard offset,
  * and the abbreviation of that offset comes from the first rule that
  * states it.
+ *
+ * The function refuses a line that stops before its own rules start, where
+ * the format of that line asks for letters. No rule states the letters,
+ * and an empty set of letters would make an abbreviation that no rule of
+ * the release states. The compiler of the release refuses the same shape.
  */
-function standardLetters(instances: readonly RuleInstance[]): string {
-	return (
-		instances.find((instance) => instance.rule.save === 0)?.rule.letters ??
-		''
-	);
+function standardLetters(
+	instances: readonly RuleInstance[],
+	format: string,
+	zoneName: string,
+): string {
+	const found = instances.find((instance) => instance.rule.save === 0);
+	if (found === undefined && format.includes('%s')) {
+		throw new Error(
+			`the zone ${zoneName} states the format ${format} on a line that stops before its rules start, and no rule states the letters for it`,
+		);
+	}
+	return found?.rule.letters ?? '';
 }
 
 /**

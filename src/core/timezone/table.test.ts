@@ -127,6 +127,70 @@ describe('a table that is damaged', () => {
 		expect(table.rules('Zone/One')?.initial.abbreviation).toBe('G=T');
 	});
 
+	it('refuses an offset that is not a whole number', () => {
+		const table = readTimezoneTable('Zone/One|xx,0,UTC|0||-\n');
+		expect(() => table.rules('Zone/One')).toThrow(/not a whole number/);
+	});
+
+	it('refuses a count of minutes that holds a character it cannot read', () => {
+		const table = readTimezoneTable(
+			'Zone/One|0,0,ONE;3600,1,TWO|0|zz$$,1|-\n',
+		);
+		expect(() => table.rules('Zone/One')).toThrow(
+			/damaged count of minutes/,
+		);
+	});
+
+	it('refuses a count of minutes that states a sign', () => {
+		const table = readTimezoneTable(
+			'Zone/One|0,0,ONE;3600,1,TWO|0|-5,1|-\n',
+		);
+		expect(() => table.rules('Zone/One')).toThrow(
+			/damaged count of minutes/,
+		);
+	});
+
+	it('refuses a change that does not run forward', () => {
+		const table = readTimezoneTable(
+			'Zone/One|0,0,ONE;3600,1,TWO|0|0,1|-\n',
+		);
+		expect(() => table.rules('Zone/One')).toThrow(/does not run forward/);
+	});
+
+	it('refuses a count of seconds that a minute does not hold', () => {
+		const table = readTimezoneTable(
+			'Zone/One|0,0,ONE;3600,1,TWO|0|z.90,1|-\n',
+		);
+		expect(() => table.rules('Zone/One')).toThrow(/outside a minute/);
+	});
+
+	it('refuses a time of day that is not a whole number', () => {
+		const table = readTimezoneTable(
+			'Zone/One|0,0,ONE;3600,1,TWO|0||0,1,3:l0:zz,10:l0:7200\n',
+		);
+		expect(() => table.rules('Zone/One')).toThrow(/not a whole number/);
+	});
+
+	it('refuses a month outside the year', () => {
+		const table = readTimezoneTable(
+			'Zone/One|0,0,ONE;3600,1,TWO|0||0,1,13:l0:7200,10:l0:7200\n',
+		);
+		expect(() => table.rules('Zone/One')).toThrow(/outside the year/);
+	});
+
+	it('refuses a weekday outside the week', () => {
+		const table = readTimezoneTable(
+			'Zone/One|0,0,ONE;3600,1,TWO|0||0,1,3:l9:7200,10:l0:7200\n',
+		);
+		expect(() => table.rules('Zone/One')).toThrow(/outside the week/);
+	});
+
+	it('refuses one name that stands on two lines', () => {
+		expect(() =>
+			readTimezoneTable('Zone/One|0,0,GMT|0||-\nZone/One|0,0,UTC|0||-\n'),
+		).toThrow(/two times/);
+	});
+
 	it('refuses a day that it does not know', () => {
 		const table = readTimezoneTable(
 			'Zone/One|0,0,GMT|0||0,0,3:q9:7200,10:l0:7200\n',

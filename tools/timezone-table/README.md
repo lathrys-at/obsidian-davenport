@@ -22,7 +22,9 @@ and through nothing else.
 | `vendor/`      | The data files of the pinned release, byte for byte        |
 | `pin.json`     | The release, the form, and the checksum of every file      |
 | `source.ts`    | The reader of the file format of the release               |
+| `zone.ts`      | The states of a clock, and the code that builds one        |
 | `expand.ts`    | The rules of a zone, turned into changes of the clock      |
+| `terminal.ts`  | The pair that repeats every year, and the truncation       |
 | `encode.ts`    | The writer of the table text                               |
 | `module.ts`    | The writer of the module that carries the table            |
 | `generate.mjs` | The command that writes the module                         |
@@ -64,6 +66,12 @@ node tools/timezone-table/generate.mjs --check   # compare, write nothing
 
 The generator stops when the checksum of a vendored file does not agree
 with `pin.json`.
+
+`pin.json` records the checksum that the person who moved the pin computed
+from the archive. The timezone project publishes no checksum file for an
+archive; it publishes a detached signature. `pin.json` names that signature
+file, and the step that verifies it is step 1 below. The record names where
+the signature is. The record does not state that somebody ran the check.
 
 ## Move the pin to a new release
 

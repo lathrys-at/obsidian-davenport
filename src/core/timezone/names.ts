@@ -2,20 +2,21 @@
  * The check of a timezone name against the bundled table.
  *
  * The plugin stores the name that the user wrote. It never replaces that
- * name with another name. The timezone database gives more than one name
- * to one zone, and two of those names can both be current: a user who
- * writes `Asia/Calcutta` keeps `Asia/Calcutta`, and a user who writes
- * `Asia/Kolkata` keeps `Asia/Kolkata`. The two names read the same rules.
- * A store that replaced one name with the other would rewrite what the
- * user wrote, and it would also rewrite the bytes of every record that
- * holds the name.
+ * name with another name.
+ *
+ * The timezone database gives more than one name to one zone, and two of
+ * those names can both be current. A user who writes `Asia/Calcutta`
+ * keeps `Asia/Calcutta`. A user who writes `Asia/Kolkata` keeps
+ * `Asia/Kolkata`. The two names read the same rules. A store that replaced
+ * one name with the other would rewrite what the user wrote. It would also
+ * rewrite the bytes of every record that holds the name.
  *
  * The check reads the bundled table and not the database of the device.
  * The list of the device differs from device to device, and it leaves out
  * names that the database still states.
  */
 
-import { isTimezoneName, timezoneNames, timezoneRules } from './table';
+import { isTimezoneName, timezoneNames } from './table';
 
 /** Why a timezone name is not usable. */
 export type TimezoneNameFailure = 'empty' | 'unknown';
@@ -46,33 +47,4 @@ export function isKnownTimezoneName(name: string): boolean {
 /** Every timezone name that the bundled table states, in order. */
 export function knownTimezoneNames(): readonly string[] {
 	return timezoneNames();
-}
-
-/**
- * True when two names read one set of rules. The plugin keeps both names
- * apart in what it stores, and this function answers only about the
- * rules.
- */
-export function namesShareRules(left: string, right: string): boolean {
-	const first = timezoneRules(left);
-	const second = timezoneRules(right);
-	if (first === undefined || second === undefined) {
-		return false;
-	}
-	return (
-		first.initial.offset === second.initial.offset &&
-		first.initial.abbreviation === second.initial.abbreviation &&
-		first.changes.length === second.changes.length &&
-		first.changes.every((change, index) => {
-			const other = second.changes[index];
-			if (other === undefined) {
-				return false;
-			}
-			return (
-				other.at === change.at &&
-				other.state.offset === change.state.offset &&
-				other.state.abbreviation === change.state.abbreviation
-			);
-		})
-	);
 }

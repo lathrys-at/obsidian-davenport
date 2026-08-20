@@ -365,6 +365,38 @@ describe('the expansion of one zone', () => {
 		);
 	});
 
+	it('refuses a line that stops before its own rules start', () => {
+		// The compiler of the release refuses this shape: it can name no
+		// abbreviation for the span between the start of the line and the
+		// first rule of the set.
+		const read = source(
+			'Rule\tPb\t1979\tmax\t-\tFeb\tlastSun\t0:00\t1:00\tD\n' +
+				'Rule\tPb\t1979\tmax\t-\tJun\tSun>=1\t0:00\t0\tS\n' +
+				'Zone\tTest/Mid\t-4:00\t-\tAST\t1972 Jan 1\n' +
+				'\t\t\t-6:00\tPb\tC%sT\t1975 Jan 1\n' +
+				'\t\t\t-5:00\t-\tEST\n',
+		);
+		const zone = read.zones[0];
+		expect(zone).toBeDefined();
+		expect(() => zone && expandZone(zone, read)).toThrow(
+			/no rule states the letters/,
+		);
+	});
+
+	it('takes such a line where its format asks for no letters', () => {
+		const read = source(
+			'Rule\tPb\t1979\tmax\t-\tFeb\tlastSun\t0:00\t1:00\tD\n' +
+				'Rule\tPb\t1979\tmax\t-\tJun\tSun>=1\t0:00\t0\tS\n' +
+				'Zone\tTest/Mid\t-4:00\t-\tAST\t1972 Jan 1\n' +
+				'\t\t\t-6:00\tPb\tCST\t1975 Jan 1\n' +
+				'\t\t\t-5:00\t-\tEST\n',
+		);
+		const zone = read.zones[0];
+		expect(zone && expandZone(zone, read).changes.length).toBeGreaterThan(
+			0,
+		);
+	});
+
 	it('writes the abbreviation of an offset in digits', () => {
 		const read = source('Zone\tTest/One\t-3:30\t-\t%z\n');
 		const zone = read.zones[0];
@@ -403,6 +435,54 @@ describe('the expansion of one zone', () => {
 		const expanded = zone && expandZone(zone, read);
 		expect(expanded?.terminal?.standard.abbreviation).toBe('GMT');
 		expect(expanded?.terminal?.daylight.abbreviation).toBe('BST');
+	});
+});
+
+describe('the horizon of the expansion', () => {
+	const source = (text: string) =>
+		parseTimezoneSource([{ name: 'test', text }]);
+
+	it('refuses a rule whose last year reaches the horizon', () => {
+		const read = source(
+			'Rule\tFar\t1990\t2300\t-\tMar\tlastSun\t2:00\t1:00\tD\n' +
+				'Zone\tTest/Far\t1:00\tFar\tC%sT\n',
+		);
+		expect(() => expandZones(read)).toThrow(/Raise MATERIAL_YEAR/);
+	});
+
+	it('names the year and the constant in the refusal', () => {
+		const read = source(
+			'Rule\tFar\t1990\t2300\t-\tMar\tlastSun\t2:00\t1:00\tD\n' +
+				'Zone\tTest/Far\t1:00\tFar\tC%sT\n',
+		);
+		expect(() => expandZones(read)).toThrow(/2300/);
+		expect(() => expandZones(read)).toThrow(/2200/);
+	});
+
+	it('takes a rule that repeats with no last year', () => {
+		const read = source(
+			'Rule\tOn\t1990\tmax\t-\tMar\tlastSun\t2:00\t1:00\tD\n' +
+				'Rule\tOn\t1990\tmax\t-\tOct\tlastSun\t2:00\t0\tS\n' +
+				'Zone\tTest/On\t1:00\tOn\tC%sT\n',
+		);
+		expect(expandZones(read).length).toBe(1);
+	});
+
+	it('holds the pinned release below the horizon', () => {
+		// The refusal above runs over the pinned release at every test run,
+		// because the generator calls it. This states the margin.
+		const read = parseTimezoneSource(
+			pin.data.map((name) => ({ name, text: vendored(name) })),
+		);
+		let latest = 0;
+		for (const set of read.rules.values()) {
+			for (const rule of set) {
+				if (rule.lastYear !== 9999) {
+					latest = Math.max(latest, rule.lastYear);
+				}
+			}
+		}
+		expect(latest).toBe(2086);
 	});
 });
 

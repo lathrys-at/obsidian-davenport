@@ -123,7 +123,13 @@ export function readTimezoneTable(text: string): TimezoneTable {
 		if (cut === -1) {
 			throw new Error(`the timezone table holds a line with no name`);
 		}
-		lines.set(line.slice(0, cut), line.slice(cut));
+		const name = line.slice(0, cut);
+		if (lines.has(name)) {
+			throw new Error(
+				`the timezone table holds the name ${name} two times`,
+			);
+		}
+		lines.set(name, line.slice(cut));
 	}
 	const decoded = new Map<string, TimezoneRules>();
 	return {
@@ -226,7 +232,7 @@ function decodeBody(body: string, name: string): Omit<TimezoneRules, 'name'> {
 	if (changesText.length > 0) {
 		for (const text of changesText.split(';')) {
 			const comma = text.lastIndexOf(',');
-			previous += seconds(text.slice(0, comma));
+			previous += seconds(text.slice(0, comma), name);
 			changes.push({ at: previous, state: at(text.slice(comma + 1)) });
 		}
 	}
@@ -246,22 +252,50 @@ function state(text: string, name: string): TimezoneState {
 		throw new Error(`the timezone table holds a damaged state for ${name}`);
 	}
 	return {
-		offset: Number(text.slice(0, first)),
+		offset: wholeNumber(text.slice(0, first), name, 'an offset'),
 		isDaylight: text.slice(first + 1, second) === '1',
 		abbreviation: text.slice(second + 1),
 	};
 }
 
-/** The seconds that a count of minutes in base 36 states. */
-function seconds(text: string): number {
+/**
+ * The seconds that a count of minutes in base 36 states. A count runs
+ * forward, because the changes of a zone stand in order.
+ */
+function seconds(text: string, name: string): number {
 	const stop = text.indexOf('.');
-	if (stop === -1) {
-		return Number.parseInt(text, 36) * 60;
+	const minutes = stop === -1 ? text : text.slice(0, stop);
+	if (!/^[0-9a-z]+$/.test(minutes)) {
+		throw new Error(
+			`the timezone table holds a damaged count of minutes for ${name}`,
+		);
 	}
-	return (
-		Number.parseInt(text.slice(0, stop), 36) * 60 +
-		Number(text.slice(stop + 1))
-	);
+	const rest =
+		stop === -1
+			? 0
+			: wholeNumber(text.slice(stop + 1), name, 'a count of seconds');
+	if (rest < 0 || rest > 59) {
+		throw new Error(
+			`the timezone table holds a count of seconds outside a minute for ${name}`,
+		);
+	}
+	const total = Number.parseInt(minutes, 36) * 60 + rest;
+	if (total <= 0) {
+		throw new Error(
+			`the timezone table holds a change that does not run forward for ${name}`,
+		);
+	}
+	return total;
+}
+
+/** One whole number of the table, refused where the text states none. */
+function wholeNumber(text: string, name: string, what: string): number {
+	if (!/^-?[0-9]+$/.test(text)) {
+		throw new Error(
+			`the timezone table holds ${what} that is not a whole number for ${name}`,
+		);
+	}
+	return Number(text);
 }
 
 function terminal(
@@ -290,10 +324,16 @@ function terminalChange(text: string, name: string): TerminalChange {
 			`the timezone table holds a damaged repeating change for ${name}`,
 		);
 	}
+	const month = wholeNumber(parts[0] ?? '', name, 'a month');
+	if (month < 1 || month > 12) {
+		throw new Error(
+			`the timezone table holds a month outside the year for ${name}`,
+		);
+	}
 	return {
-		month: Number(parts[0]),
+		month,
 		day: terminalDay(parts[1] ?? '', name),
-		wallSeconds: Number(parts[2]),
+		wallSeconds: wholeNumber(parts[2] ?? '', name, 'a time of day'),
 	};
 }
 
@@ -301,18 +341,29 @@ function terminalDay(text: string, name: string): RuleDay {
 	const mark = text.slice(0, 1);
 	const rest = text.slice(1);
 	if (mark === 'd') {
-		return { kind: 'fixed', day: Number(rest) };
+		return { kind: 'fixed', day: wholeNumber(rest, name, 'a day') };
 	}
 	if (mark === 'l') {
-		return { kind: 'last', weekday: Number(rest) };
+		return { kind: 'last', weekday: weekday(rest, name) };
 	}
 	const stop = rest.indexOf('.');
 	if ((mark === 'a' || mark === 'b') && stop !== -1) {
-		const weekday = Number(rest.slice(0, stop));
-		const day = Number(rest.slice(stop + 1));
+		const weekday_ = weekday(rest.slice(0, stop), name);
+		const day = wholeNumber(rest.slice(stop + 1), name, 'a day');
 		return mark === 'a'
-			? { kind: 'onOrAfter', weekday, day }
-			: { kind: 'onOrBefore', weekday, day };
+			? { kind: 'onOrAfter', weekday: weekday_, day }
+			: { kind: 'onOrBefore', weekday: weekday_, day };
 	}
 	throw new Error(`the timezone table holds a damaged day for ${name}`);
+}
+
+/** One weekday of the table, 0 for Sunday through 6 for Saturday. */
+function weekday(text: string, name: string): number {
+	const found = wholeNumber(text, name, 'a weekday');
+	if (found < 0 || found > 6) {
+		throw new Error(
+			`the timezone table holds a weekday outside the week for ${name}`,
+		);
+	}
+	return found;
 }

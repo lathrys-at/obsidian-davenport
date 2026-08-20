@@ -1,11 +1,13 @@
 /**
  * The terminal rule of a zone, and the truncation that it pays for.
  *
- * A zone whose last line names a rule set with one pair of changes that
- * repeats every year with no last year needs no change written out for
- * the years that the pair covers. The pair states them. This module finds
- * that pair, states the changes that it gives for one year, and removes
- * the tail of changes that the pair already states.
+ * The last line of a zone can name a rule set with one pair of changes.
+ * Such a pair repeats every year and states no last year. The years that
+ * the pair covers then need no change written out, because the pair
+ * states them.
+ *
+ * This module finds that pair. It states the changes that the pair gives
+ * for one year, and it removes the tail of changes that the pair states.
  */
 
 import {

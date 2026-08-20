@@ -3,7 +3,6 @@ import {
 	checkTimezoneName,
 	isKnownTimezoneName,
 	knownTimezoneNames,
-	namesShareRules,
 } from './names';
 
 describe('the check of a timezone name', () => {
@@ -68,27 +67,5 @@ describe('the list of timezone names', () => {
 		for (const name of knownTimezoneNames()) {
 			expect(isKnownTimezoneName(name), name).toBe(true);
 		}
-	});
-});
-
-describe('two names of one zone', () => {
-	it('read one set of rules', () => {
-		expect(namesShareRules('Asia/Calcutta', 'Asia/Kolkata')).toBe(true);
-		expect(namesShareRules('Europe/Kiev', 'Europe/Kyiv')).toBe(true);
-	});
-
-	it('stay apart from the names of another zone', () => {
-		expect(namesShareRules('Europe/Berlin', 'America/New_York')).toBe(
-			false,
-		);
-	});
-
-	it('answer for a name that the table does not hold', () => {
-		expect(namesShareRules('Asia/Kolkata', 'Mars/Olympus_Mons')).toBe(
-			false,
-		);
-		expect(namesShareRules('Mars/Olympus_Mons', 'Asia/Kolkata')).toBe(
-			false,
-		);
 	});
 });

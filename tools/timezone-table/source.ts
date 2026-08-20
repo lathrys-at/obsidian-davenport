@@ -12,12 +12,13 @@
  * computes no instant and it applies no rule. The expansion does that
  * work.
  *
- * The reader refuses every line that it does not understand, and it names
- * the file and the line number in the refusal. A silent guess here would
- * become wrong bytes in a record, and a reader that refuses is the only
- * form of this module that a person can trust. The reader therefore also
- * refuses a field that the format allows but that the pinned release does
- * not use, because a field that no input exercises is a field that no
+ * The reader refuses every line that it does not understand. It names the
+ * file and the line number in the refusal. A silent guess here would
+ * become wrong bytes in a record, and only a reader that refuses can be
+ * trusted.
+ *
+ * The reader also refuses a field that the format allows and the pinned
+ * release does not use. A field that no input exercises is a field that no
  * test covers.
  */
 

@@ -72,11 +72,3 @@ export function timezoneOffsetFixture(): readonly TimezoneOffsetZone[] {
 	}
 	return zones;
 }
-
-/** The count of the answers that the fixture holds. */
-export function timezoneOffsetRowCount(): number {
-	return timezoneOffsetFixture().reduce(
-		(total, zone) => total + zone.rows.length,
-		0,
-	);
-}
