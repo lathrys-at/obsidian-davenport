@@ -4,21 +4,25 @@
  * accepted or refused its input.
  *
  * Windows can stop a process and give it the status 3221226505, which is
- * 0xC0000409. The host writes that status, and the script does not. A test
- * that reads this status as the answer of the script therefore reports a
- * failure that the script did not cause.
+ * 0xC0000409. This module calls that event an abort. The host writes that
+ * status, and the script does not write it. A test that reads this status as
+ * the answer of the script therefore reports a failure that the script did
+ * not cause.
  *
  * On Windows, and for that status alone, this module runs the child one more
  * time. The module writes one line to the log when it runs the child again.
- * A second run that ends with the same status makes the module throw an
- * error, because the status is still not the answer of the script. For every
- * other status, and on every other host, the module gives back the result of
- * the first run and writes nothing to the log.
+ * A second abort makes the module throw an error, because the status is
+ * still not the answer of the script. For every other status, and on every
+ * other host, the module gives back the result of the first run and writes
+ * nothing to the log.
+ *
+ * A caller must be able to run its child two times. Do not use this module
+ * for a child that makes a change that a second run cannot repeat.
  */
 
 import { spawnSync } from 'node:child_process';
 
-/** The status that Windows gives to a process that the host stopped. */
+/** The status that Windows gives to a process that the host aborted. */
 export const WINDOWS_ABORT_STATUS = 3221226505;
 
 export interface ProcessResult {
@@ -52,7 +56,7 @@ const REAL_HOST: Host = {
 };
 
 /**
- * Tells whether the host stopped this child. Only Windows writes the abort
+ * Tells whether the host aborted this child. Only Windows writes the abort
  * status, so the answer for every other platform is no.
  */
 export function isWindowsAbort(
@@ -72,7 +76,7 @@ function stderrOf(result: ProcessResult): string {
  * output streams of the child.
  *
  * The status in the result never comes from the host. A child that the host
- * stops two times makes this function throw an error.
+ * aborts two times makes this function throw an error.
  */
 export function runNode(
 	args: readonly string[],
@@ -81,8 +85,8 @@ export function runNode(
 	const first = host.run(args);
 	if (!isWindowsAbort(first, host.platform)) return first;
 	console.error(
-		`windows abort: node ${JSON.stringify(args)} exited with ` +
-			`${String(WINDOWS_ABORT_STATUS)} (0xC0000409). The host stopped ` +
+		`Windows abort: node ${JSON.stringify(args)} exited with ` +
+			`${String(WINDOWS_ABORT_STATUS)} (0xC0000409). The host aborted ` +
 			`the process. This status does not come from the script. The ` +
 			`harness runs the child one more time.`,
 	);
@@ -90,9 +94,9 @@ export function runNode(
 	if (!isWindowsAbort(second, host.platform)) return second;
 	throw new Error(
 		[
-			`windows abort: node ${JSON.stringify(args)} exited with ` +
+			`Windows abort: node ${JSON.stringify(args)} exited with ` +
 				`${String(WINDOWS_ABORT_STATUS)} (0xC0000409) two times.`,
-			'The host stopped the process both times. This status does not ' +
+			'The host aborted the process both times. This status does not ' +
 				'come from the script.',
 			`attempt 1: status ${String(first.status)}, stderr ${stderrOf(first)}`,
 			`attempt 2: status ${String(second.status)}, stderr ${stderrOf(second)}`,

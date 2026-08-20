@@ -74,13 +74,13 @@ function countedScript(
 const ABORTED: ProcessResult = {
 	status: WINDOWS_ABORT_STATUS,
 	stdout: '',
-	stderr: 'the host stopped the first run',
+	stderr: 'the host aborted the first run',
 };
 
 const ABORTED_AGAIN: ProcessResult = {
 	status: WINDOWS_ABORT_STATUS,
 	stdout: '',
-	stderr: 'the host stopped the second run',
+	stderr: 'the host aborted the second run',
 };
 
 const PASSED: ProcessResult = { status: 0, stdout: 'the output', stderr: '' };
@@ -166,8 +166,15 @@ describe('the run over a real child', () => {
 		const measured = spawnSync(process.execPath, [
 			scriptThatExits('measure', WINDOWS_ABORT_STATUS),
 		]).status;
+		// The measurement below follows the host. A Windows that reported
+		// another form of the status would stop the retry, and a measurement
+		// alone would follow that change and keep this case green. Windows
+		// therefore also states the number that the retry rule holds.
+		if (process.platform === 'win32') {
+			expect(measured).toBe(WINDOWS_ABORT_STATUS);
+		}
 		const reports = measured === WINDOWS_ABORT_STATUS;
-		const script = countedScript('stops-once', WINDOWS_ABORT_STATUS, 0);
+		const script = countedScript('aborts-once', WINDOWS_ABORT_STATUS, 0);
 		const result = runNode([script.path]);
 		expect(script.runs()).toBe(reports ? 2 : 1);
 		expect(result.status).toBe(reports ? 0 : measured);
@@ -194,7 +201,7 @@ describe('the retry rule', () => {
 	});
 });
 
-describe('the run against a host that stops the child', () => {
+describe('the run against a host that aborts the child', () => {
 	it('runs the child again and gives back the second result', () => {
 		const host = fakeHost('win32', ABORTED, PASSED);
 		expect(runNode(['check.mjs', '--flag'], host)).toStrictEqual(PASSED);
@@ -219,7 +226,7 @@ describe('the run against a host that stops the child', () => {
 		expect(line).toContain('check.mjs');
 	});
 
-	it('throws and names both attempts when the host stops the child twice', () => {
+	it('throws and names both attempts when the host aborts the child twice', () => {
 		const host = fakeHost('win32', ABORTED, ABORTED_AGAIN);
 		const log = vi.spyOn(console, 'error').mockImplementation(() => {
 			// The retry line is not the subject of this case.
@@ -227,9 +234,9 @@ describe('the run against a host that stops the child', () => {
 		const message = messageFrom(() => runNode(['check.mjs'], host));
 		expect(message).toContain('two times');
 		expect(message).toContain('attempt 1');
-		expect(message).toContain('the host stopped the first run');
+		expect(message).toContain('the host aborted the first run');
 		expect(message).toContain('attempt 2');
-		expect(message).toContain('the host stopped the second run');
+		expect(message).toContain('the host aborted the second run');
 		expect(host.calls).toHaveLength(2);
 		expect(log).toHaveBeenCalledTimes(1);
 	});
