@@ -13,6 +13,19 @@ const nodeBuiltinPatterns = [
 	...builtinModules.map((m) => `${m}/*`),
 ];
 
+// The specifier forms that a file in src/core/model/ can import. Each entry
+// is a regular expression, and an entry must match the whole specifier. The
+// other folders of the engine import the domain types from the model, and
+// the model imports nothing from those folders. Add an entry here only for
+// an import that the model must have, and give that entry a comment that
+// says why. The model has no such import today.
+const modelImportAllowance = [
+	// A module of the same folder.
+	'\\./[^/]+',
+];
+// The pattern refuses a specifier when no entry above matches it.
+const modelImportPattern = `^(?!(?:${modelImportAllowance.join('|')})$)`;
+
 // no-restricted-globals only sees bare identifiers, so member spellings
 // (window.fetch, globalThis.setTimeout) need selector-based guards too.
 const globalObjects = '/^(window|globalThis|self|global|activeWindow)$/';
@@ -417,6 +430,38 @@ export default defineConfig(
 					selector,
 					message: 'Timers come from the clock port.',
 				})),
+			],
+		},
+	},
+	// The other folders of the engine import the domain types from this
+	// folder, and this folder imports nothing from those folders. A file
+	// here therefore imports a module of the same folder only.
+	//
+	// The core boundary sets an import rule for every file of src/core/. For
+	// a file of the model, the rule below takes the place of that rule. The
+	// model keeps each ban of the core boundary, because the pattern refuses
+	// every specifier that is not a module of the same folder. The Obsidian
+	// API, Electron, and the node builtins are three such specifiers.
+	//
+	// A test file beside a model file is not part of the engine, and such a
+	// file imports its test tools from a package. The rule does not apply to
+	// a test file.
+	{
+		name: 'davenport/model-boundary',
+		files: ['src/core/model/**/*.ts'],
+		ignores: ['src/core/model/**/*.test.ts'],
+		rules: {
+			'no-restricted-imports': [
+				'error',
+				{
+					patterns: [
+						{
+							regex: modelImportPattern,
+							message:
+								'A file in src/core/model/ imports a module of the same folder only. Move what the model needs into src/core/model/.',
+						},
+					],
+				},
 			],
 		},
 	},
