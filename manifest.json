@@ -2,7 +2,7 @@
 	"id": "davenport",
 	"name": "Davenport",
 	"version": "0.0.1",
-	"minAppVersion": "1.0.0",
+	"minAppVersion": "1.4.4",
 	"description": "Sync calendar events and tasks between your vault and CalDAV servers (iCloud, Fastmail, Nextcloud, Google, and more).",
 	"author": "ren",
 	"isDesktopOnly": false

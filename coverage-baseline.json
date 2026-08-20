@@ -1,27 +1,50 @@
 {
 	"total": {
 		"statements": {
-			"total": 1202,
-			"covered": 1170,
-			"pct": 97.33
+			"total": 1229,
+			"covered": 1197,
+			"pct": 97.39
 		},
 		"branches": {
-			"total": 868,
-			"covered": 813,
-			"pct": 93.66
+			"total": 880,
+			"covered": 825,
+			"pct": 93.75
 		},
 		"functions": {
-			"total": 228,
-			"covered": 228,
+			"total": 238,
+			"covered": 238,
 			"pct": 100
 		},
 		"lines": {
-			"total": 1192,
-			"covered": 1160,
-			"pct": 97.31
+			"total": 1217,
+			"covered": 1185,
+			"pct": 97.37
 		}
 	},
 	"files": [
+		{
+			"path": "src/adapters/note-frontmatter.ts",
+			"statements": {
+				"total": 5,
+				"covered": 5,
+				"pct": 100
+			},
+			"branches": {
+				"total": 2,
+				"covered": 2,
+				"pct": 100
+			},
+			"functions": {
+				"total": 2,
+				"covered": 2,
+				"pct": 100
+			},
+			"lines": {
+				"total": 5,
+				"covered": 5,
+				"pct": 100
+			}
+		},
 		{
 			"path": "src/core/frontmatter/datetime.ts",
 			"statements": {
@@ -226,6 +249,29 @@
 			"lines": {
 				"total": 27,
 				"covered": 27,
+				"pct": 100
+			}
+		},
+		{
+			"path": "src/core/frontmatter/write.ts",
+			"statements": {
+				"total": 22,
+				"covered": 22,
+				"pct": 100
+			},
+			"branches": {
+				"total": 10,
+				"covered": 10,
+				"pct": 100
+			},
+			"functions": {
+				"total": 8,
+				"covered": 8,
+				"pct": 100
+			},
+			"lines": {
+				"total": 20,
+				"covered": 20,
 				"pct": 100
 			}
 		},
