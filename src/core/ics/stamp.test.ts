@@ -306,8 +306,10 @@ describe('the carriage of the timezone component', () => {
 	});
 
 	it('reads no name from a definition whose name carries no value', () => {
-		// The boundary accepts a property that carries no value, so the read
-		// of a name must meet that shape without a name and without a throw.
+		// No text form makes this shape: the parse boundary gives an empty
+		// string for a value-less property. The record writer composes jCal
+		// directly, so the shape can still reach this read, and the read must
+		// meet it without a name and without a throw.
 		const calendar: JCalComponent = [
 			'vcalendar',
 			[],
