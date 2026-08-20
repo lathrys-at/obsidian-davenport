@@ -210,9 +210,8 @@ auto-resolves them.
 ## Defect workflow
 
 A defect that is out of scope for the task in hand must be captured as
-resumable state.
-Nobody fixes this defect inline, and nobody leaves it as prose. The resumable
-state is:
+resumable state. Nobody fixes this defect inline, and nobody leaves it as
+prose. The resumable state is:
 
 1. an issue with a clear problem statement (repro, expected vs actual);
 2. a branch: `fix/…` when the branch carries the fix, or `xfail/…` when the

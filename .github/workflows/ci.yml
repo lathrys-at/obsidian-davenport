@@ -23,6 +23,10 @@ jobs:
             - run: npm ci
             - run: npm run lint
             - run: npm run format:check
+            # Prettier does not read a markdown file, because
+            # .prettierignore holds *.md. This step is the formatting gate
+            # of the markdown documents.
+            - run: npm run markdown:check
 
     typecheck:
         runs-on: ubuntu-latest

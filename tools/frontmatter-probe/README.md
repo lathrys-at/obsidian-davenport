@@ -29,10 +29,9 @@ npm run probe:build
 These commands write `tools/frontmatter-probe/dist/`. That folder holds
 `main.js` and `manifest.json`. The build embeds the note corpus into
 `main.js` at this step. Therefore you must send the same `dist/` to every
-environment.
-A probe that you build two times from the same commit carries the same
-fixtures. The comparison script refuses to compare runs whose fixtures
-differed.
+environment. A probe that you build two times from the same commit carries
+the same fixtures. The comparison script refuses to compare runs whose
+fixtures differed.
 
 ## Install it in a vault
 
