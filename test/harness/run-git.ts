@@ -5,14 +5,24 @@
  * Some of those questions are guards. A guard passes when git finds nothing,
  * and the test reads an empty output as that answer. A git command that did
  * not search also leaves an empty output. The test then passes, and the test
- * reports nothing about the repository. Two things make git leave an empty
- * output without a search. The first is a host that aborts the process. The
- * second is a command that git refuses.
+ * reports nothing about the repository. These events make git leave an empty
+ * output without a search:
+ *
+ * - a host that aborts the process;
+ * - a signal that stops the process;
+ * - a command that git refuses;
+ * - a git that the host could not start.
  *
  * The caller of this module states each exit status that the command gives as
  * an answer. The module gives back the result for those statuses. For every
  * other status the module throws an error, and the error names the status. A
  * guard therefore fails when git did not answer.
+ *
+ * That set of statuses is a property of the command, and it is never the
+ * expectation of the caller. A caller asserts its own expectation after the
+ * call. A caller that leaves out a status that the command gives makes this
+ * module throw for a run that git answered. The module fails closed, and the
+ * error names the status that the caller left out.
  *
  * The module names the abort of a host in that error, in the terms that
  * `run-node.ts` states. The module does not run the command again. A caller
@@ -22,6 +32,13 @@
 import { spawnSync } from 'node:child_process';
 import type { ProcessResult } from './run-node';
 import { WINDOWS_ABORT_STATUS, isWindowsAbort } from './run-node';
+
+/**
+ * The exit statuses that one git command gives as an answer. The type holds
+ * one status at least. A command that answers with no status says nothing,
+ * and a caller has no use for it.
+ */
+export type Answers = readonly [number, ...number[]];
 
 /** The status that `git grep` gives when it finds a match. */
 export const GREP_MATCH = 0;
@@ -35,21 +52,21 @@ export const GREP_NO_MATCH = 1;
  * that holds no repository. That status says nothing about the tracked
  * files.
  */
-export const GREP_ANSWERS: readonly number[] = [GREP_MATCH, GREP_NO_MATCH];
+export const GREP_ANSWERS: Answers = [GREP_MATCH, GREP_NO_MATCH];
 
 /**
  * The one status that `git ls-files` gives as an answer. The command gives 0
  * when it lists a file, and it gives 0 when it lists nothing. Therefore an
  * empty output is an answer only when the status is 0.
  */
-export const LS_FILES_ANSWERS: readonly number[] = [0];
+export const LS_FILES_ANSWERS: Answers = [0];
 
 /** One run of git. */
 export interface GitRun {
 	/** The arguments that follow the word git. */
 	readonly args: readonly string[];
 	/** Each exit status that this command gives as an answer. */
-	readonly answers: readonly number[];
+	readonly answers: Answers;
 	/**
 	 * The directory that git runs in. The default is the working directory of
 	 * the test process.
@@ -67,6 +84,16 @@ export interface GitHost {
 	readonly run: (run: GitRun) => ProcessResult;
 }
 
+/**
+ * The text of one output stream of the child. A host that could not start
+ * git leaves both streams empty, and the platform declares a string that it
+ * does not always supply. This function therefore takes a value that can be
+ * missing.
+ */
+function streamOf(text: string | undefined): string {
+	return text ?? '';
+}
+
 const REAL_HOST: GitHost = {
 	platform: process.platform,
 	run: (run) => {
@@ -76,8 +103,8 @@ const REAL_HOST: GitHost = {
 		});
 		return {
 			status: result.status,
-			stdout: result.stdout,
-			stderr: result.stderr,
+			stdout: streamOf(result.stdout),
+			stderr: streamOf(result.stderr),
 		};
 	},
 };
@@ -95,7 +122,7 @@ function refusal(run: GitRun, result: ProcessResult, platform: string): string {
 			`${String(WINDOWS_ABORT_STATUS)} (0xC0000409). The host aborted ` +
 			`the process, and git did not answer.`
 		: `${command} exited with ${String(result.status)}. This status is ` +
-			`not an answer to the question.`;
+			`not an answer to this command.`;
 	return [
 		opening,
 		`This command gives ${answers} as an answer.`,

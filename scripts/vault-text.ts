@@ -82,11 +82,16 @@ export const PLUGIN_LIST = 'community-plugins.json';
 
 /**
  * What the script says when the probe build did not end with the status 0.
+ * The message states what happened to the build, and each cause gets its own
+ * words.
  *
  * A host can abort a process. The host then gives the process a status that
  * the process did not choose. That status is not the answer of the build.
  * The message therefore names the abort. The message also asks the reader to
  * run the command again.
+ *
+ * A signal can stop a process before the process writes a status. The build
+ * then wrote no status, and the message says that.
  *
  * Every other status is the answer of the build. The message names that
  * status, and the script prints the output of the build above the message.
@@ -103,9 +108,15 @@ export function probeBuildFailure(
 			`one more time.`
 		);
 	}
+	if (status === null) {
+		return (
+			'a signal stopped the probe build before the build wrote a ' +
+			'status, and the output of the build is above'
+		);
+	}
 	return (
-		`the probe build failed with the status ${String(status)}, and its ` +
-		`output is above`
+		`the probe build failed with the status ${String(status)}, and the ` +
+		`output of the build is above`
 	);
 }
 

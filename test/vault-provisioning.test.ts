@@ -40,6 +40,7 @@ import {
 	checkName,
 	classifyInstall,
 	generateName,
+	isWindowsAbort,
 	summarizeVault,
 } from '../scripts/vault-core';
 import {
@@ -55,6 +56,7 @@ import { LS_FILES_ANSWERS, runGit } from './harness/run-git';
 import type { ProcessResult } from './harness/run-node';
 import {
 	WINDOWS_ABORT_STATUS as HARNESS_ABORT_STATUS,
+	isWindowsAbort as harnessIsWindowsAbort,
 	runNode,
 } from './harness/run-node';
 
@@ -564,11 +566,19 @@ describe('what the script says about a build that did not pass', () => {
 	it('names the status of a build that failed', () => {
 		const said = probeBuildFailure(1, 'linux');
 		expect(said).toContain('the probe build failed with the status 1');
-		expect(said).toContain('its output is above');
+		expect(said).toContain('the output of the build is above');
 	});
 
-	it('names a status that a signal took away', () => {
-		expect(probeBuildFailure(null, 'linux')).toContain('the status null');
+	// A signal that stops the build takes the status away, and the build
+	// then wrote no status. A message that names a status here would state a
+	// mechanism that did not happen. The word null would also reach a reader
+	// who runs a command and does not read this code.
+	it('names the signal that stopped a build before it wrote a status', () => {
+		const said = probeBuildFailure(null, 'linux');
+		expect(said).toContain('a signal stopped the probe build');
+		expect(said).toContain('before the build wrote a status');
+		expect(said).not.toContain('null');
+		expect(said).not.toContain('the probe build failed');
 	});
 
 	// The build did not write the abort status. A build that ends with that
@@ -595,6 +605,39 @@ describe('what the script says about a build that did not pass', () => {
 	// holds the two numbers together.
 	it('holds the abort status that the harness holds', () => {
 		expect(WINDOWS_ABORT_STATUS).toBe(HARNESS_ABORT_STATUS);
+	});
+
+	// The number is only what the decision reads. Each module carries a
+	// decision of its own, and the two take different arguments. A decision
+	// that grew on one side would leave the two numbers equal and the two
+	// answers different, and the script would stop naming an abort that the
+	// harness names. This case drives both decisions over the same statuses.
+	it('reaches the verdict of the harness on every status', () => {
+		const statuses = [
+			WINDOWS_ABORT_STATUS,
+			// The same number as a signed 32-bit value.
+			-1073740791,
+			WINDOWS_ABORT_STATUS - 1,
+			WINDOWS_ABORT_STATUS + 1,
+			0,
+			1,
+			255,
+			null,
+		];
+		for (const platform of ['win32', 'darwin', 'linux']) {
+			for (const status of statuses) {
+				const script = isWindowsAbort(status, platform);
+				const harness = harnessIsWindowsAbort(
+					{ status, stdout: '', stderr: '' },
+					platform,
+				);
+				expect({ platform, status, said: script }).toStrictEqual({
+					platform,
+					status,
+					said: harness,
+				});
+			}
+		}
 	});
 });
 

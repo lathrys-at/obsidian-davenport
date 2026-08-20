@@ -1,3 +1,5 @@
+import { spawnSync } from 'node:child_process';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import type { GitHost, GitRun } from './run-git';
@@ -107,6 +109,30 @@ describe('the run over real git', () => {
 		expect(message).toContain('128');
 		expect(message).toContain('gives 0 or 1 as an answer');
 	});
+
+	// A host that cannot start git writes no output stream, and the typings
+	// of the platform declare a string for each stream. A directory that is
+	// not there makes the host fail in that way. This case measures what the
+	// host reports for such a run, and it then asks the module for the same
+	// status. A module that reads a stream that is not there throws an error
+	// about that stream, and the status reaches nobody.
+	it('names the status when the host could not start git', () => {
+		const absent = join(HERE, 'a-directory-that-is-not-there');
+		const measured = spawnSync('git', ['ls-files'], {
+			cwd: absent,
+			encoding: 'utf8',
+		});
+		const message = messageFrom(() =>
+			runGit({
+				args: ['ls-files'],
+				answers: LS_FILES_ANSWERS,
+				cwd: absent,
+			}),
+		);
+		expect(message).toContain(`exited with ${String(measured.status)}`);
+		expect(message).toContain('gives 0 as an answer');
+		expect(message).not.toContain('Cannot read properties');
+	});
 });
 
 describe('the run that git answered', () => {
@@ -174,7 +200,10 @@ describe('the run that git did not answer', () => {
 		expect(message).toContain('(no stderr)');
 	});
 
-	it('refuses the status 0 when the caller did not name it', () => {
+	// The caller names the statuses of the command, and not the answer that
+	// the caller expects. A caller that leaves out a status that the command
+	// gives makes the module throw for a run that git answered.
+	it('refuses a status of the command that the caller left out', () => {
 		const message = messageFrom(() =>
 			runGit(
 				{ args: ['grep', 'x'], answers: [GREP_NO_MATCH] },
