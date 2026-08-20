@@ -63,6 +63,34 @@ export function yearOf(instant: number): number {
 	return new Date(instant * 1000).getUTCFullYear();
 }
 
+/** One day and one time of that day, on a civil calendar. */
+export interface CivilDateTime {
+	readonly year: number;
+	/** The month, from 1 for January through 12 for December. */
+	readonly month: number;
+	readonly day: number;
+	readonly hour: number;
+	readonly minute: number;
+	readonly second: number;
+}
+
+/**
+ * The day and the time that a count of seconds names. The count runs from
+ * the start of 1970. This function is the other direction of
+ * `civilSeconds`, and it also gives the time of the day.
+ */
+export function civilDateTime(seconds: number): CivilDateTime {
+	const date = new Date(seconds * 1000);
+	return {
+		year: date.getUTCFullYear(),
+		month: date.getUTCMonth() + 1,
+		day: date.getUTCDate(),
+		hour: date.getUTCHours(),
+		minute: date.getUTCMinutes(),
+		second: date.getUTCSeconds(),
+	};
+}
+
 /** The weekday of one civil day, 0 for Sunday through 6 for Saturday. */
 export function weekdayOf(year: number, month: number, day: number): number {
 	return new Date(Date.UTC(year, month - 1, day)).getUTCDay();

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+	civilDateTime,
 	civilSeconds,
 	dayOfMonth,
 	daysInMonth,
@@ -64,5 +65,35 @@ describe('the civil arithmetic', () => {
 		expect(daysInMonth(2024, 2)).toBe(29);
 		expect(daysInMonth(2023, 12)).toBe(31);
 		expect(daysInMonth(2023, 4)).toBe(30);
+	});
+});
+
+describe('the day and the time that a count of seconds names', () => {
+	it('reads the start of the period of the table', () => {
+		expect(civilDateTime(0)).toEqual({
+			year: 1970,
+			month: 1,
+			day: 1,
+			hour: 0,
+			minute: 0,
+			second: 0,
+		});
+	});
+
+	it('reads a day, a time of day and the seconds of that time', () => {
+		expect(civilDateTime(Date.UTC(2026, 2, 29, 1, 44, 30) / 1000)).toEqual({
+			year: 2026,
+			month: 3,
+			day: 29,
+			hour: 1,
+			minute: 44,
+			second: 30,
+		});
+	});
+
+	it('is the other direction of the count of a civil day', () => {
+		const seconds = civilSeconds(2024, 2, 29);
+		const when = civilDateTime(seconds);
+		expect([when.year, when.month, when.day]).toEqual([2024, 2, 29]);
 	});
 });
