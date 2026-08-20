@@ -3,7 +3,7 @@
  * prints two kinds of line. The report says what the two runs of the build
  * wrote, and it gives the digest of each file that the two runs wrote in the
  * same way. The failure names each file that the two runs did not write in
- * the same way, and it shows the octets around the first difference.
+ * the same way, and it shows the bytes around the first difference.
  *
  * Each line that states a fact carries the name of the check, so that the
  * line stays legible in a log that holds the output of many steps. A line
@@ -18,18 +18,18 @@ import { LINE } from './repeat-build-core.ts';
 export function reportLines(comparison: Comparison): readonly string[] {
 	const lines = [
 		say(
-			'the check ran the build two times. Each run started with the output files of the build absent.',
+			'the check ran the build two times. Before the second run it removed every file that the first run wrote, so no file of the first run reached the second run.',
 		),
 	];
 	if (comparison.matches.length > 0) {
 		lines.push(
 			say(
-				`the two runs wrote ${count(comparison.matches.length, 'file')} with the same octets`,
+				`the two runs wrote ${count(comparison.matches.length, 'file')} with the same bytes`,
 			),
 		);
 		for (const match of comparison.matches) {
 			lines.push(
-				`  ${match.path}  ${octets(match.octets)}  sha256 ${match.digest}`,
+				`  ${match.path}  ${bytes(match.size)}  sha256 ${match.digest}`,
 			);
 		}
 	}
@@ -44,7 +44,7 @@ export function failureLines(comparison: Comparison): readonly string[] {
 	if (nothing(comparison)) {
 		return [
 			say(
-				'the two runs wrote no file. The check compared no octet, and it therefore proves nothing.',
+				'the two runs wrote no file. The check compared no byte, and it therefore proves nothing.',
 			),
 			say(
 				'the build must write a metafile, and that metafile must name at least one output file.',
@@ -86,13 +86,13 @@ function nothing(comparison: Comparison): boolean {
 /**
  * The lines that describe one file that the two runs wrote in different ways.
  * The first line names the file, the place of the first difference, and the
- * count of octets of each of the two files. The lines after it show the
- * octets of each run around that place.
+ * count of bytes of each of the two files. The lines after it show the
+ * bytes of each run around that place.
  */
 function differenceLines(difference: Difference): readonly string[] {
 	return [
 		say(
-			`${difference.path} is not the same in the two runs. The first octet that differs is at ${String(difference.offset)}. The first run wrote ${octets(difference.firstOctets)}, and the second run wrote ${octets(difference.secondOctets)}.`,
+			`${difference.path} is not the same in the two runs. The first byte that differs is at ${String(difference.offset)}. The first run wrote ${bytes(difference.firstSize)}, and the second run wrote ${bytes(difference.secondSize)}.`,
 		),
 		'  the first run',
 		...dumpLines(difference.firstWindow),
@@ -103,7 +103,7 @@ function differenceLines(difference: Difference): readonly string[] {
 
 /**
  * The lines that show a part of a file. Each line gives the place of its
- * first octet, then the octets as hexadecimal, then the same octets as text.
+ * first byte, then the bytes as hexadecimal, then the same bytes as text.
  * A character that a terminal cannot show stands as a full stop.
  */
 function dumpLines(window: Window): readonly string[] {
@@ -120,12 +120,12 @@ function dumpLines(window: Window): readonly string[] {
 	return lines;
 }
 
-/** The place of an octet in a file, as eight hexadecimal digits. */
+/** The place of an byte in a file, as eight hexadecimal digits. */
 function place(value: number): string {
 	return value.toString(16).padStart(8, '0');
 }
 
-/** One line of octets, as hexadecimal. A short line keeps the columns. */
+/** One line of bytes, as hexadecimal. A short line keeps the columns. */
 function hex(row: Uint8Array): string {
 	const pairs = [...row].map((value) => value.toString(16).padStart(2, '0'));
 	while (pairs.length < LINE) {
@@ -134,7 +134,7 @@ function hex(row: Uint8Array): string {
 	return pairs.join(' ');
 }
 
-/** One line of octets, as text. Each other octet stands as a full stop. */
+/** One line of bytes, as text. Each other byte stands as a full stop. */
 function legible(row: Uint8Array): string {
 	return [...row]
 		.map((value) =>
@@ -148,10 +148,10 @@ export function say(text: string): string {
 	return `repeat build: ${text}`;
 }
 
-/** A count of octets, as the report says it. */
-function octets(value: number): string {
+/** A count of bytes, as the report says it. */
+function bytes(value: number): string {
 	const large = value >= 1000 ? ` (${(value / 1000).toFixed(1)} kB)` : '';
-	return `${String(value)} octets${large}`;
+	return `${String(value)} bytes${large}`;
 }
 
 /** A count and the thing that it counts, with the plural of that thing. */

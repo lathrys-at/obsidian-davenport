@@ -8,13 +8,13 @@
  *
  * No function here reads a file, and no function starts a build. The caller
  * runs the build two times, reads the files that each run wrote, and gives
- * the octets to these functions. Therefore a test can exercise every decision
+ * the bytes to these functions. Therefore a test can exercise every decision
  * directly. `repeat-build.mjs` runs the builds, reads the files, prints the
  * report, and sets the exit status. `repeat-build-text.ts` holds the wording
  * that the check prints.
  *
  * The claim of this check is narrow. Two runs of one build, on one machine,
- * from the same source, must write the same octets. The check does not
+ * from the same source, must write the same bytes. The check does not
  * compare two machines, and it does not compare two versions of the tools.
  * The repository pins the version of Node and the version of esbuild, and the
  * claim holds for those versions.
@@ -30,11 +30,11 @@ export type Reading<T> =
 	| { readonly ok: true; readonly value: T }
 	| { readonly ok: false; readonly reason: string };
 
-/** The count of octets that one line of the report shows. */
+/** The count of bytes that one line of the report shows. */
 export const LINE = 16;
 
 /**
- * The count of octets that the report shows around a difference. The window
+ * The count of bytes that the report shows around a difference. The window
  * holds four lines. One line stands before the line that holds the
  * difference, and two lines stand after it.
  */
@@ -44,9 +44,9 @@ export const WINDOW = 4 * LINE;
 export interface Artifact {
 	readonly path: string;
 	/**
-	 * The SHA-256 digest of the octets, as lower-case hexadecimal. The report
+	 * The SHA-256 digest of the bytes, as lower-case hexadecimal. The report
 	 * gives this digest, so that a person can compare this file against a
-	 * file of another build. The comparison reads the octets, and the
+	 * file of another build. The comparison reads the bytes, and the
 	 * comparison never reads the digest.
 	 */
 	readonly digest: string;
@@ -59,21 +59,21 @@ export interface Window {
 	readonly bytes: Uint8Array;
 }
 
-/** One file that the two runs wrote with different octets. */
+/** One file that the two runs wrote with different bytes. */
 export interface Difference {
 	readonly path: string;
-	/** The place of the first octet that the two files do not share. */
+	/** The place of the first byte that the two files do not share. */
 	readonly offset: number;
-	readonly firstOctets: number;
-	readonly secondOctets: number;
+	readonly firstSize: number;
+	readonly secondSize: number;
 	readonly firstWindow: Window;
 	readonly secondWindow: Window;
 }
 
-/** One file that the two runs wrote with the same octets. */
+/** One file that the two runs wrote with the same bytes. */
 export interface Match {
 	readonly path: string;
-	readonly octets: number;
+	readonly size: number;
 	readonly digest: string;
 }
 
@@ -121,9 +121,9 @@ export function outputPaths(text: string): Reading<readonly string[]> {
 }
 
 /**
- * The place of the first octet that the two files do not share. The answer is
- * absent when the two files hold the same octets. When one file is the start
- * of the other file, the answer is the count of octets of the shorter file.
+ * The place of the first byte that the two files do not share. The answer is
+ * absent when the two files hold the same bytes. When one file is the start
+ * of the other file, the answer is the count of bytes of the shorter file.
  */
 export function firstDifference(
 	first: Uint8Array,
@@ -149,11 +149,11 @@ export function windowOf(bytes: Uint8Array, offset: number): Window {
 }
 
 /**
- * What the two runs of the build gave. The comparison reads the octets of
+ * What the two runs of the build gave. The comparison reads the bytes of
  * each file that both runs wrote. It also names each file that only one run
  * wrote.
  *
- * Three things make the comparison fail. The first is a file whose octets are
+ * Three things make the comparison fail. The first is a file whose bytes are
  * not the same in the two runs. The second is a file that only one run wrote.
  * The third is a pair of runs that wrote no file at all.
  */
@@ -183,7 +183,7 @@ export function compare(
 		if (offset === undefined) {
 			matches.push({
 				path,
-				octets: one.bytes.length,
+				size: one.bytes.length,
 				digest: one.digest,
 			});
 			continue;
@@ -191,8 +191,8 @@ export function compare(
 		differences.push({
 			path,
 			offset,
-			firstOctets: one.bytes.length,
-			secondOctets: two.bytes.length,
+			firstSize: one.bytes.length,
+			secondSize: two.bytes.length,
 			firstWindow: windowOf(one.bytes, offset),
 			secondWindow: windowOf(two.bytes, offset),
 		});

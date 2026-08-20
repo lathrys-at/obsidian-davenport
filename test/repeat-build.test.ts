@@ -23,7 +23,13 @@
  */
 
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+	mkdirSync,
+	mkdtempSync,
+	readFileSync,
+	rmSync,
+	writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -50,7 +56,7 @@ afterAll(() => {
 	}
 });
 
-/** One file of a build, with text in place of the octets. */
+/** One file of a build, with text in place of the bytes. */
 function artifact(path: string, text: string): Artifact {
 	return {
 		path,
@@ -139,7 +145,7 @@ describe('the reader of the metafile', () => {
 });
 
 describe('the search for the first difference', () => {
-	it('finds no place when the two files hold the same octets', () => {
+	it('finds no place when the two files hold the same bytes', () => {
 		const bytes = new Uint8Array([1, 2, 3]);
 		expect(
 			firstDifference(bytes, new Uint8Array([1, 2, 3])),
@@ -152,7 +158,7 @@ describe('the search for the first difference', () => {
 		).toBeUndefined();
 	});
 
-	it('gives the place of the first octet that the two files do not share', () => {
+	it('gives the place of the first byte that the two files do not share', () => {
 		expect(
 			firstDifference(
 				new Uint8Array([1, 2, 3, 4]),
@@ -193,7 +199,7 @@ describe('the window that the report shows', () => {
 });
 
 describe('the comparison of two runs', () => {
-	it('passes when the two runs wrote the same files with the same octets', () => {
+	it('passes when the two runs wrote the same files with the same bytes', () => {
 		const comparison = compare(
 			[artifact('main.js', 'same'), artifact('bundle-meta.json', '{}')],
 			[artifact('main.js', 'same'), artifact('bundle-meta.json', '{}')],
@@ -202,15 +208,15 @@ describe('the comparison of two runs', () => {
 		expect(comparison.matches).toStrictEqual([
 			{
 				path: 'bundle-meta.json',
-				octets: 2,
+				size: 2,
 				digest: 'digest of bundle-meta.json',
 			},
-			{ path: 'main.js', octets: 4, digest: 'digest of main.js' },
+			{ path: 'main.js', size: 4, digest: 'digest of main.js' },
 		]);
 		expect(comparison.differences).toStrictEqual([]);
 	});
 
-	it('fails on a file whose octets are not the same in the two runs', () => {
+	it('fails on a file whose bytes are not the same in the two runs', () => {
 		const comparison = compare(
 			[artifact('main.js', 'abcdefghij')],
 			[artifact('main.js', 'abcdefghiJ')],
@@ -221,8 +227,8 @@ describe('the comparison of two runs', () => {
 		expect(comparison.differences[0]).toMatchObject({
 			path: 'main.js',
 			offset: 9,
-			firstOctets: 10,
-			secondOctets: 10,
+			firstSize: 10,
+			secondSize: 10,
 		});
 	});
 
@@ -258,21 +264,21 @@ describe('what the check says', () => {
 			[artifact('main.js', 'same')],
 		);
 		expect(reportLines(comparison)).toStrictEqual([
-			'repeat build: the check ran the build two times. Each run started with the output files of the build absent.',
-			'repeat build: the two runs wrote 1 file with the same octets',
-			'  main.js  4 octets  sha256 digest of main.js',
+			'repeat build: the check ran the build two times. Before the second run it removed every file that the first run wrote, so no file of the first run reached the second run.',
+			'repeat build: the two runs wrote 1 file with the same bytes',
+			'  main.js  4 bytes  sha256 digest of main.js',
 		]);
 		expect(failureLines(comparison)).toStrictEqual([]);
 	});
 
-	it('shows the place, the sizes, and the octets around one difference', () => {
+	it('shows the place, the sizes, and the bytes around one difference', () => {
 		const comparison = compare(
 			[artifact('main.js', 'abcdefghij')],
 			[artifact('main.js', 'abcdefghiJ')],
 		);
 		const padding = ' '.repeat(18);
 		expect(failureLines(comparison)).toStrictEqual([
-			'repeat build: main.js is not the same in the two runs. The first octet that differs is at 9. The first run wrote 10 octets, and the second run wrote 10 octets.',
+			'repeat build: main.js is not the same in the two runs. The first byte that differs is at 9. The first run wrote 10 bytes, and the second run wrote 10 bytes.',
 			'  the first run',
 			`    00000000  61 62 63 64 65 66 67 68 69 6a${padding}  |abcdefghij|`,
 			'  the second run',
@@ -281,9 +287,9 @@ describe('what the check says', () => {
 		]);
 	});
 
-	it('shows a full line of octets without padding, and hides what a terminal cannot show', () => {
-		// The string holds sixteen letters, then the octets 0x00 and
-		// 0x01. A terminal cannot show those two octets.
+	it('shows a full line of bytes without padding, and hides what a terminal cannot show', () => {
+		// The string holds sixteen letters, then the bytes 0x00 and
+		// 0x01. A terminal cannot show those two bytes.
 		const first = 'ABCDEFGHIJKLMNOP\x00\x01';
 		const comparison = compare(
 			[artifact('main.js', first)],
@@ -301,7 +307,7 @@ describe('what the check says', () => {
 			[artifact('main.js', 'x')],
 		);
 		expect(failureLines(comparison)).toStrictEqual([
-			'repeat build: main.js is not the same in the two runs. The first octet that differs is at 0. The first run wrote 0 octets, and the second run wrote 1 octets.',
+			'repeat build: main.js is not the same in the two runs. The first byte that differs is at 0. The first run wrote 0 bytes, and the second run wrote 1 bytes.',
 			'  the first run',
 			'    the file ends before that place',
 			'  the second run',
@@ -323,24 +329,24 @@ describe('what the check says', () => {
 
 	it('says that a pair of runs that wrote no file proves nothing', () => {
 		expect(failureLines(compare([], []))).toStrictEqual([
-			'repeat build: the two runs wrote no file. The check compared no octet, and it therefore proves nothing.',
+			'repeat build: the two runs wrote no file. The check compared no byte, and it therefore proves nothing.',
 			'repeat build: the build must write a metafile, and that metafile must name at least one output file.',
 		]);
 	});
 });
 
 describe('the check as a process', () => {
-	it('passes on a build that writes the same octets each time', () => {
+	it('passes on a build that writes the same bytes each time', () => {
 		const directory = place(
 			'steady',
-			`writeFileSync(at('main.js'), 'the same octets each run');\nmeta(declare('main.js'));\n`,
+			`writeFileSync(at('main.js'), 'the same content each run');\nmeta(declare('main.js'));\n`,
 		);
 		const result = run(directory);
 		expect(result.status).toBe(0);
 		expect(result.output).toContain(
-			'repeat build: the two runs wrote 2 files with the same octets',
+			'repeat build: the two runs wrote 2 files with the same bytes',
 		);
-		expect(result.output).toContain('  main.js  24 octets  sha256 ');
+		expect(result.output).toContain('  main.js  25 bytes  sha256 ');
 		expect(result.output).toContain('  bundle-meta.json  ');
 	});
 
@@ -357,21 +363,21 @@ describe('the check as a process', () => {
 		expect(readFileSync(join(directory, 'main.js'), 'utf8')).toBe('steady');
 	});
 
-	it('fails on a build that writes one octet differently, and shows that octet', () => {
+	it('fails on a build that writes one byte differently, and shows that byte', () => {
 		const directory = place(
 			'drift',
-			`writeFileSync(at('main.js'), 'the octet here is ' + (runs === 1 ? 'A' : 'B') + ', and the rest repeats');\nmeta(declare('main.js'));\n`,
+			`writeFileSync(at('main.js'), 'abcdefghijklmnop' + (runs === 1 ? 'A' : 'B') + ' and the rest repeats');\nmeta(declare('main.js'));\n`,
 		);
 		const result = run(directory);
 		expect(result.status).toBe(1);
 		expect(result.output).toContain(
-			'repeat build: main.js is not the same in the two runs. The first octet that differs is at 18.',
+			'repeat build: main.js is not the same in the two runs. The first byte that differs is at 16. The first run wrote 38 bytes, and the second run wrote 38 bytes.',
 		);
 		expect(result.output).toContain(
-			'    00000010  73 20 41 2c 20 61 6e 64 20 74 68 65 20 72 65 73  |s A, and the res|',
+			'    00000010  41 20 61 6e 64 20 74 68 65 20 72 65 73 74 20 72  |A and the rest r|',
 		);
 		expect(result.output).toContain(
-			'    00000010  73 20 42 2c 20 61 6e 64 20 74 68 65 20 72 65 73  |s B, and the res|',
+			'    00000010  42 20 61 6e 64 20 74 68 65 20 72 65 73 74 20 72  |B and the rest r|',
 		);
 		expect(result.output).toContain(
 			'repeat build: the build is not a function of the source alone.',
@@ -437,5 +443,103 @@ describe('the check as a process', () => {
 		expect(result.status).toBe(1);
 		expect(result.output).toContain('the check cannot read the file at');
 		expect(result.output).toContain('ghost.js');
+	});
+
+	it('names the signal when a signal stops the build', () => {
+		const directory = place(
+			'killed',
+			`process.kill(process.pid, 'SIGKILL');\n`,
+		);
+		const result = run(directory);
+		expect(result.status).toBe(1);
+		expect(result.output).toContain(
+			'repeat build: the first run of the build stopped on the signal SIGKILL',
+		);
+	});
+
+	it('fails when every output file that the metafile names is empty', () => {
+		const directory = place(
+			'hollow',
+			`writeFileSync(at('main.js'), '');\nmeta(declare('main.js'));\n`,
+		);
+		const result = run(directory);
+		expect(result.status).toBe(1);
+		expect(result.output).toContain(
+			'repeat build: the first run of the build wrote no byte',
+		);
+	});
+});
+
+/**
+ * The state that the directory of a build holds before the check runs. A
+ * build leaves files behind, and a person can leave any file behind. The
+ * check removes the files of the build before it builds, and these cases
+ * describe what it removes and what it refuses to touch.
+ */
+describe('the state that the check finds before the first run', () => {
+	/** A build that writes one file and declares it. */
+	const STEADY = `writeFileSync(at('main.js'), 'steady');\nmeta(declare('main.js'));\n`;
+
+	it('removes an output file that no metafile names', () => {
+		const directory = place('stale', STEADY);
+		// A watch build writes main.js and writes no metafile. The build of
+		// this case ends with the status 3 when it finds main.js, so a pass
+		// proves that the check removed the file.
+		writeFileSync(join(directory, 'main.js'), 'STALE CONTENT');
+		const result = run(directory);
+		expect(result.status).toBe(0);
+		expect(readFileSync(join(directory, 'main.js'), 'utf8')).toBe('steady');
+	});
+
+	it('removes a metafile that it cannot read, and builds', () => {
+		const directory = place('leftover', STEADY);
+		writeFileSync(join(directory, 'bundle-meta.json'), '{"outputs":{"ma');
+		const result = run(directory);
+		expect(result.status).toBe(0);
+		expect(result.output).not.toContain('is not JSON');
+	});
+
+	it('refuses a metafile path that leaves the build directory', () => {
+		const directory = place('escape', STEADY);
+		const outside = join(
+			directory,
+			'..',
+			`precious-${String(process.pid)}.txt`,
+		);
+		writeFileSync(outside, 'PRECIOUS');
+		made.push(outside);
+		writeFileSync(
+			join(directory, 'bundle-meta.json'),
+			JSON.stringify({
+				outputs: {
+					[join('..', `precious-${String(process.pid)}.txt`)]: {},
+				},
+			}),
+		);
+		const result = run(directory);
+		expect(result.status).toBe(1);
+		expect(result.output).toContain('leaves the build directory at');
+		expect(result.output).toContain(
+			'the check reads and removes files inside that directory only',
+		);
+		// The file outside the build directory is untouched.
+		expect(readFileSync(outside, 'utf8')).toBe('PRECIOUS');
+	});
+
+	it('names itself when it cannot remove a file that the metafile names', () => {
+		const directory = place('locked', STEADY);
+		mkdirSync(join(directory, 'a-directory'));
+		writeFileSync(
+			join(directory, 'bundle-meta.json'),
+			JSON.stringify({ outputs: { 'a-directory': {} } }),
+		);
+		const result = run(directory);
+		expect(result.status).toBe(1);
+		// Every line of a failure carries the name of the check. A raw error
+		// of the runtime carries no name and a path of the machine.
+		for (const line of result.output.trim().split('\n')) {
+			expect(line.startsWith('repeat build: ')).toBe(true);
+		}
+		expect(result.output).toContain('the check cannot remove the file at');
 	});
 });
