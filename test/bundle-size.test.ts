@@ -22,7 +22,6 @@
  * run prints.
  */
 
-import { spawnSync } from 'node:child_process';
 import {
 	existsSync,
 	mkdtempSync,
@@ -51,6 +50,7 @@ import {
 	stepFor,
 } from '../scripts/bundle-size-core';
 import { failureLines, reportLines } from '../scripts/bundle-size-text';
+import { runNode } from './harness/run-node';
 
 const SCRIPT = fileURLToPath(
 	new URL('../scripts/bundle-size.mjs', import.meta.url),
@@ -710,9 +710,7 @@ describe('the check as a process', () => {
 		status: number | null;
 		output: string;
 	} {
-		const result = spawnSync(process.execPath, [SCRIPT, ...argv], {
-			encoding: 'utf8',
-		});
+		const result = runNode([SCRIPT, ...argv]);
 		return { status: result.status, output: result.stdout + result.stderr };
 	}
 

@@ -48,6 +48,7 @@ import {
 	vaultReadme,
 	vaultUri,
 } from '../scripts/vault-text';
+import { runNode } from './harness/run-node';
 
 const bytes = (text: string): Uint8Array => new TextEncoder().encode(text);
 
@@ -561,9 +562,7 @@ describe('the script as a process', () => {
 		out: string;
 		err: string;
 	} {
-		const result = spawnSync(process.execPath, [script, ...argv], {
-			encoding: 'utf8',
-		});
+		const result = runNode([script, ...argv]);
 		return {
 			status: result.status,
 			out: result.stdout,
@@ -647,11 +646,7 @@ describe('running against a vault that already holds work', () => {
 	}
 
 	function vault(path: string, ...argv: string[]): string {
-		const result = spawnSync(
-			process.execPath,
-			[script, basename(path), ...argv],
-			{ encoding: 'utf8' },
-		);
+		const result = runNode([script, basename(path), ...argv]);
 		if (result.status !== 0) {
 			expect.fail(`the script failed: ${result.stderr}`);
 		}
