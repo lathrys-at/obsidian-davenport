@@ -32,9 +32,12 @@
  *
  * The check removes files, so it holds every path that it removes or reads
  * inside the build directory. A path that leaves that directory ends the run.
- * The metafile is an untracked file that stands on disk before any build of
- * this check runs, and a path in it therefore gets the same distrust as any
- * other input.
+ * A read follows a symbolic link, so the check also resolves the links of a
+ * path before it reads that path, and the resolved path must stay inside the
+ * directory too. A removal needs no such step, because a removal takes away
+ * the link and keeps the file that the link names. The metafile is an
+ * untracked file that stands on disk before any build of this check runs, and
+ * a path in it therefore gets the same distrust as any other input.
  *
  * The claim is narrow. The check compares two runs on one machine, with the
  * versions of Node and esbuild that this repository pins. The check does not
@@ -60,7 +63,7 @@
  */
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { existsSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, readFileSync, realpathSync, rmSync } from 'node:fs';
 import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { compare, outputPaths } from './repeat-build-core.ts';
@@ -84,6 +87,23 @@ const argv = process.argv.slice(2);
 const directory = resolve(argv[0] ?? ROOT);
 const command = argv.length > 1 ? argv.slice(1) : BUILD;
 const metafile = join(directory, METAFILE);
+
+/**
+ * The build directory, with every symbolic link in its own path resolved. A
+ * temporary directory of this platform can stand under such a link, and then
+ * the resolved path of a file in it does not start with `directory`. The test
+ * for a link compares against this path.
+ */
+const realRoot = realOf(directory);
+
+/** The path with every symbolic link in it resolved, or the path as it came. */
+function realOf(path) {
+	try {
+		return realpathSync(path);
+	} catch {
+		return path;
+	}
+}
 
 /** The reason that an error carries. */
 function said(error) {
@@ -122,6 +142,42 @@ function inside(path) {
 }
 
 /**
+ * The file that a read reaches. A read follows a symbolic link, and the test
+ * above reads the path and not the link. A link inside the build directory
+ * can therefore name a file outside it, and this function refuses that link.
+ *
+ * A removal needs no such test, because a removal takes away the link and
+ * keeps the file that the link names.
+ *
+ * A path that names no file comes back as it came in. The read that follows
+ * then reports that the file is absent.
+ */
+function followed(file, path) {
+	let real;
+	try {
+		real = realpathSync(file);
+	} catch {
+		return file;
+	}
+	const step = relative(realRoot, real);
+	if (step === '' || step === '..' || step.startsWith(`..${sep}`)) {
+		stop([
+			say(`the path ${path} is a link to ${real}`),
+			say(`that file is outside the build directory at ${realRoot}`),
+			say('the check reads files inside that directory only'),
+		]);
+	}
+	if (isAbsolute(step)) {
+		stop([
+			say(`the path ${path} is a link to ${real}`),
+			say(`that file is on another volume than ${realRoot}`),
+			say('the check reads files inside that directory only'),
+		]);
+	}
+	return real;
+}
+
+/**
  * The files that the metafile names, or nothing when the metafile is absent.
  *
  * The clean before a build reads the metafile to learn what an earlier build
@@ -132,7 +188,7 @@ function inside(path) {
 function declared(tolerant) {
 	let text;
 	try {
-		text = readFileSync(metafile, 'utf8');
+		text = readFileSync(followed(metafile, METAFILE), 'utf8');
 	} catch {
 		return undefined;
 	}
@@ -183,7 +239,7 @@ function taken(path) {
 	const file = inside(path);
 	let bytes;
 	try {
-		bytes = readFileSync(file);
+		bytes = readFileSync(followed(file, path));
 	} catch (error) {
 		stop([
 			say(`the check cannot read the file at ${file}: ${said(error)}`),

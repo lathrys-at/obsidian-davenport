@@ -120,7 +120,7 @@ function dumpLines(window: Window): readonly string[] {
 	return lines;
 }
 
-/** The place of an byte in a file, as eight hexadecimal digits. */
+/** The place of a byte in a file, as eight hexadecimal digits. */
 function place(value: number): string {
 	return value.toString(16).padStart(8, '0');
 }

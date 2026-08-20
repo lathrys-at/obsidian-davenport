@@ -67,7 +67,7 @@ function artifact(path: string, text: string): Artifact {
 
 /** The start of every build that these cases write. */
 const START = `
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 const here = new URL('./', import.meta.url);
 const at = (name) => fileURLToPath(new URL('./' + name, here));
@@ -531,6 +531,32 @@ describe('the state that the check finds before the first run', () => {
 		// The file outside the build directory is untouched.
 		expect(readFileSync(outside, 'utf8')).toBe('PRECIOUS');
 	});
+
+	// Windows gives the right to make a symbolic link to an administrator and
+	// to a machine in developer mode, and the runner of the tests is neither.
+	// The build of this case cannot make its link there.
+	it.skipIf(process.platform === 'win32')(
+		'refuses to read a link that reaches outside the build directory',
+		() => {
+			const name = `repeat-build-outside-${String(process.pid)}.txt`;
+			const directory = place(
+				'linked',
+				`writeFileSync(at('main.js'), 'steady');\nsymlinkSync(at('../${name}'), at('link.js'));\nmeta({ ...declare('main.js'), ...declare('link.js') });\n`,
+			);
+			const outside = join(directory, '..', name);
+			writeFileSync(outside, 'THE BYTES OF A FILE OUTSIDE THE DIRECTORY');
+			made.push(outside);
+			const result = run(directory);
+			expect(result.status).toBe(1);
+			expect(result.output).toContain('link.js is a link to');
+			expect(result.output).toContain('outside the build directory at');
+			// No byte of the outside file reached the report.
+			expect(result.output).not.toContain('link.js  41 bytes');
+			expect(readFileSync(outside, 'utf8')).toBe(
+				'THE BYTES OF A FILE OUTSIDE THE DIRECTORY',
+			);
+		},
+	);
 
 	it('names itself when it cannot remove a file that the metafile names', () => {
 		const directory = place('locked', STEADY);
