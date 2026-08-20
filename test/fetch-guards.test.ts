@@ -15,7 +15,6 @@
  * test in this file fails. The tests make that change visible.
  */
 
-import { spawnSync } from 'node:child_process';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -23,7 +22,15 @@ import { fileURLToPath } from 'node:url';
 import { Linter } from 'eslint';
 import { createJiti } from 'jiti';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { runNode } from './harness/run-node';
+import type { GitHost } from './harness/run-git';
+import {
+	GREP_ANSWERS,
+	GREP_MATCH,
+	GREP_NO_MATCH,
+	runGit,
+} from './harness/run-git';
+import type { ProcessResult } from './harness/run-node';
+import { WINDOWS_ABORT_STATUS, runNode } from './harness/run-node';
 
 interface RestrictedSyntax {
 	readonly selector: string;
@@ -158,16 +165,24 @@ describe('the key spelling that the two static guards cannot see', () => {
 		`=[[:space:]]*['"\`]${value}['"\`]`;
 
 	/**
+	 * Runs one search over the tracked files. git grep gives 0 for a match
+	 * and 1 for no match. The harness refuses every other status. Therefore
+	 * a search that a host aborted fails its case, and the empty output of
+	 * that search reaches no assertion.
+	 */
+	const search = (pattern: string, host?: GitHost): ProcessResult =>
+		runGit({ args: ['grep', '-nE', pattern], answers: GREP_ANSWERS }, host);
+
+	/**
 	 * A constant with the shape that the search pattern finds. The value of
 	 * this constant is not the key.
 	 */
 	const CONTROL = 'not-a-key-at-all';
 
 	it('is written nowhere in the repository', () => {
-		const held = spawnSync('git', ['grep', '-nE', heldKey('fetch')], {
-			encoding: 'utf8',
-		});
+		const held = search(heldKey('fetch'));
 		expect(held.stdout).toBe('');
+		expect(held.status).toBe(GREP_NO_MATCH);
 	});
 
 	// The test above is worth having only when the search pattern can find
@@ -176,10 +191,25 @@ describe('the key spelling that the two static guards cannot see', () => {
 	// git grep. The line that declares the control has the shape, so this
 	// test must find that line.
 	it('finds a constant of this shape when the repository has one', () => {
-		const found = spawnSync('git', ['grep', '-nE', heldKey(CONTROL)], {
-			encoding: 'utf8',
-		});
+		const found = search(heldKey(CONTROL));
+		expect(found.status).toBe(GREP_MATCH);
 		expect(found.stdout).toContain('fetch-guards.test.ts');
+	});
+
+	// The first case above passes when the output is empty. A host that
+	// aborts git also leaves the output empty. This case runs the same
+	// search against a host that aborts git. The search fails, and the
+	// failure names the status.
+	it('fails and names the status when a host aborts git', () => {
+		const aborted: GitHost = {
+			platform: 'win32',
+			run: () => ({
+				status: WINDOWS_ABORT_STATUS,
+				stdout: '',
+				stderr: '',
+			}),
+		};
+		expect(() => search(heldKey('fetch'), aborted)).toThrow(/3221226505/u);
 	});
 });
 

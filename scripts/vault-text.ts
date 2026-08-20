@@ -10,7 +10,13 @@
  */
 
 import type { InstallVerdict, VaultReport } from './vault-core.ts';
-import { CONFIG_FOLDER, PROBE_FOLDER, listPhrase } from './vault-core.ts';
+import {
+	CONFIG_FOLDER,
+	PROBE_FOLDER,
+	WINDOWS_ABORT_STATUS,
+	isWindowsAbort,
+	listPhrase,
+} from './vault-core.ts';
 
 /**
  * The identifier of the probe. The script uses this value as the name of
@@ -73,6 +79,46 @@ function firstOpen(outcome: Outcome): boolean {
 
 /** The file in the configuration of a vault that names the plugins to load. */
 export const PLUGIN_LIST = 'community-plugins.json';
+
+/**
+ * What the script says when the probe build did not end with the status 0.
+ * The message states what happened to the build, and each cause gets its own
+ * words.
+ *
+ * A host can abort a process. The host then gives the process a status that
+ * the process did not choose. That status is not the answer of the build.
+ * The message therefore names the abort. The message also asks the reader to
+ * run the command again.
+ *
+ * A signal can stop a process before the process writes a status. The build
+ * then wrote no status, and the message says that.
+ *
+ * Every other status is the answer of the build. The message names that
+ * status, and the script prints the output of the build above the message.
+ */
+export function probeBuildFailure(
+	status: number | null,
+	platform: string,
+): string {
+	if (isWindowsAbort(status, platform)) {
+		return (
+			`the host aborted the probe build with the status ` +
+			`${String(WINDOWS_ABORT_STATUS)} (0xC0000409). The build did not ` +
+			`write this status, and the build did not fail. Run the command ` +
+			`one more time.`
+		);
+	}
+	if (status === null) {
+		return (
+			'a signal stopped the probe build before the build wrote a ' +
+			'status, and the output of the build is above'
+		);
+	}
+	return (
+		`the probe build failed with the status ${String(status)}, and the ` +
+		`output of the build is above`
+	);
+}
 
 /** All the text that a successful run prints. */
 export function formatOutcome(outcome: Outcome): string {

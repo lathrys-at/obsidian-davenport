@@ -4,6 +4,8 @@
  * - what name a vault can have;
  * - how a vault without a name gets one;
  * - whether the probe in a vault still matches the build beside it;
+ * - whether an exit status of the probe build came from the build or from
+ *   the host;
  * - what a walked vault adds up to.
  *
  * No function here reads a file, draws its own randomness, or reads a clock.
@@ -120,6 +122,27 @@ export function classifyInstall(
 		return { state: 'absent', toWrite };
 	}
 	return { state: toWrite.length > 0 ? 'stale' : 'current', toWrite };
+}
+
+/**
+ * The status that Windows gives to a process that the host aborted. The
+ * number is 0xC0000409.
+ */
+export const WINDOWS_ABORT_STATUS = 3221226505;
+
+/**
+ * Tells whether the host aborted a child that ended with this status. Only
+ * Windows writes the abort status, so the answer on every other platform is
+ * no.
+ *
+ * The build does not choose this status. A build that ends with this status
+ * did not fail. A second run of the same command can pass.
+ */
+export function isWindowsAbort(
+	status: number | null,
+	platform: string,
+): boolean {
+	return platform === 'win32' && status === WINDOWS_ABORT_STATUS;
 }
 
 /**

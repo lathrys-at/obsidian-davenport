@@ -41,6 +41,7 @@ import {
 	PLUGIN_LIST,
 	PROBE_ID,
 	formatOutcome,
+	probeBuildFailure,
 	vaultReadme,
 } from './vault-text.ts';
 
@@ -227,6 +228,10 @@ function chooseName(argv) {
  * build runs every time. Thus the script compares a vault against the build
  * of the tree as it stands now, and not against the last contents of
  * `dist/`.
+ *
+ * A host can abort the build. The host then gives the build a status that the
+ * build did not choose. The script does not run the build again. The script
+ * names the abort, and the person who runs the script decides what to do.
  */
 function buildProbe(root) {
 	const built = spawnSync(process.execPath, [probeBuild(root)], {
@@ -235,7 +240,7 @@ function buildProbe(root) {
 	});
 	if (built.status !== 0) {
 		process.stderr.write(built.stderr || built.stdout || '');
-		throw new Error('the probe build failed, and its output is above');
+		throw new Error(probeBuildFailure(built.status, process.platform));
 	}
 	const distribution = join(root, 'tools', 'frontmatter-probe', 'dist');
 	return new Map(
