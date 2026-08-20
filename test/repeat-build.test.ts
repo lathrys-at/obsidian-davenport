@@ -445,15 +445,21 @@ describe('the check as a process', () => {
 		expect(result.output).toContain('ghost.js');
 	});
 
-	it('names the signal when a signal stops the build', () => {
+	it('says how a build stopped when the build does not end on its own', () => {
 		const directory = place(
 			'killed',
 			`process.kill(process.pid, 'SIGKILL');\n`,
 		);
 		const result = run(directory);
 		expect(result.status).toBe(1);
+		// Windows has no signals. A process that another process ends there
+		// reports an exit status, and it never reports a signal. So the
+		// check can name a signal on the other platforms only, and this case
+		// asserts what each platform does.
 		expect(result.output).toContain(
-			'repeat build: the first run of the build stopped on the signal SIGKILL',
+			process.platform === 'win32'
+				? 'repeat build: the first run of the build ended with the status'
+				: 'repeat build: the first run of the build stopped on the signal SIGKILL',
 		);
 	});
 
