@@ -59,9 +59,14 @@ describe('a parameter that carries a list of values', () => {
 	// The property carries one parameter, and that parameter is the last
 	// one before the value. The last value of the list holds a colon. The
 	// library then takes the value of the property from the wrong colon,
-	// and the boundary does not see the disagreement. The value grows by
-	// two characters on each trip through the serializer, so a device
-	// rewrites the record on every loop and never reaches a steady state.
+	// and the boundary does not see the disagreement. The value grows on
+	// each trip through the serializer, and it grows without a limit, so a
+	// device rewrites the record on every loop and reaches no steady state.
+	//
+	// The text decides whether the case arrives. The same list written as
+	// two addresses, MEMBER="mailto:a@b.c","mailto:d@e.f", comes through
+	// whole. The generator therefore leaves a colon out of every value of
+	// such a list, and it does not try to state where the case starts.
 	it.skip('gives the property the value that the text states', () => {
 		const text = calendar('X-A;MEMBER="a","b:c":v');
 		expect(propertyOf(text)).toEqual([
@@ -79,8 +84,11 @@ describe('a parameter that carries a list of values', () => {
 
 	// A value of the list holds a quotation mark and a comma, and another
 	// value follows it. The library divides the list at the comma inside
-	// the value, so it reports three values where the text states two, and
-	// the text of each value moves.
+	// that value, so the values that it reports are not the values that the
+	// text states. Here the text states the two values `",` and `x`, and
+	// the library reports an empty value and the value `,"x`. The canonical
+	// bytes stay the same on every trip, so this case makes no rewrite; it
+	// loses the values that the server sent.
 	it.skip('gives the parameter the values that the text states', () => {
 		const text = calendar('SUMMARY;MEMBER="^\',","x":hello');
 		expect(propertyOf(text)).toEqual([
