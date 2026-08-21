@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import type { JCalComponent } from './jcal';
 import { parseIcs } from './parse';
+import { TIMEZONE_NORMALIZATION_VERSION } from './stamp';
 import {
+	REFERENCE_PROPERTIES,
 	definedZones,
 	definitionsOf,
 	isDefinitionOf,
@@ -29,6 +31,22 @@ function calendarOf(...lines: string[]): JCalComponent {
 
 const always = (): boolean => true;
 const never = (): boolean => false;
+
+/**
+ * The message that a change of the list of the reference properties gives.
+ * The list decides which definitions leave a base snapshot, so a change of
+ * it reaches the comparison of two records.
+ */
+const WIDER_SCAN =
+	'the scan reads the value of a different set of properties. ' +
+	'A change of this list moves the base snapshot of a record with no change on the server. ' +
+	'The comparison of two records reads the two base snapshots whole where the two records carry one value of the timezone component. ' +
+	'Two builds can read two lists under one value of that component. ' +
+	'Those two builds then rewrite one record in turn, and neither build stops. ' +
+	`Raise TIMEZONE_NORMALIZATION_VERSION in src/core/ics/stamp.ts to ${String(TIMEZONE_NORMALIZATION_VERSION + 1)}. ` +
+	'The specification names both properties where it states the reaches of the bundled table, and the owner ruled that list. ' +
+	'The change that moves the list must also change the specification. ' +
+	'Ask the owner for a new ruling in that change.';
 
 describe('the timezone names that a calendar states', () => {
 	it('reads a name out of the parameter of a value', () => {
@@ -365,6 +383,15 @@ describe('the timezone names that a reference of a calendar states', () => {
 		];
 		expect(referencedZones(calendar, holdsNewYork)).toEqual([
 			'America/New_York',
+		]);
+	});
+});
+
+describe('the properties whose value states the name of a zone', () => {
+	it('holds the two properties that the ruling names, and no other', () => {
+		expect(REFERENCE_PROPERTIES, WIDER_SCAN).toEqual([
+			'x-wr-timezone',
+			'x-lic-location',
 		]);
 	});
 });

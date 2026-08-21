@@ -37,8 +37,12 @@ const TIMEZONE_NAME = 'tzid';
  * `CATEGORIES:Japan` therefore read as zone names to a wider scan. Such a
  * scan finds a reference to a zone that the event does not use, and a
  * record then drops a definition that nothing refers to.
+ *
+ * A change of this list moves the base snapshot of a record with no change
+ * on the server. A test reads the list and holds the scan to these two
+ * properties.
  */
-const REFERENCE_PROPERTIES: readonly string[] = [
+export const REFERENCE_PROPERTIES: readonly string[] = [
 	'x-wr-timezone',
 	'x-lic-location',
 ];

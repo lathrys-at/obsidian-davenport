@@ -40,6 +40,28 @@ const HOW_TO_MOVE =
 	'That change moves the core component of the stamp, and it does not move the timezone component. ' +
 	`Write the digest of the timezone component ${String(CURRENT)} again in place with ${WRITE_COMMAND}.`;
 
+/**
+ * The message that a component with no committed digest gives. Two tests
+ * give this message: the test that reads the file, and the comparison.
+ */
+const NO_DIGEST =
+	`the timezone component of the normalization stamp is ${String(CURRENT)}, and the repository holds no digest for it. ` +
+	`Write the digest to ${timezoneTableDigestPath(CURRENT)} with ${WRITE_COMMAND}.`;
+
+/**
+ * The committed digest of the current timezone component. The comparison
+ * reads the digest through this function. A raise of the component
+ * therefore gives the message of a file that no build wrote, and it does
+ * not give the message of a difference of the bytes.
+ */
+function requireCurrentDigest(): string {
+	const committed = timezoneTableDigest(CURRENT);
+	if (committed === undefined) {
+		throw new Error(NO_DIGEST);
+	}
+	return committed;
+}
+
 function definitionText(name: string): string {
 	const result = synthesiseTimezone(name);
 	if (!result.ok) {
@@ -81,11 +103,7 @@ if (timezoneTableDigestWriteRequested()) {
 } else {
 	describe('the digest of the whole synthesised table', () => {
 		it('holds a digest for the timezone component of this build', () => {
-			expect(
-				timezoneTableDigest(CURRENT),
-				`the timezone component of the normalization stamp is ${String(CURRENT)}, and the repository holds no digest for it. ` +
-					`Write the digest to ${timezoneTableDigestPath(CURRENT)} with ${WRITE_COMMAND}.`,
-			).toBeDefined();
+			expect(timezoneTableDigest(CURRENT), NO_DIGEST).toBeDefined();
 		});
 
 		it('reads a definition for every name that the bundled table holds', () => {
@@ -94,10 +112,11 @@ if (timezoneTableDigestWriteRequested()) {
 		});
 
 		it('writes the committed digest over every zone of the table', async () => {
+			const committed = requireCurrentDigest();
 			expect(
 				await digest.sha256Hex(tableText()),
 				`the definition of one zone of the table holds different bytes, and the timezone component of the normalization stamp is still ${String(CURRENT)}. ${HOW_TO_MOVE}`,
-			).toBe(timezoneTableDigest(CURRENT));
+			).toBe(committed);
 		});
 
 		it('holds one digest of sixty-four hexadecimal characters in each committed file', () => {

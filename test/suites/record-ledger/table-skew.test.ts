@@ -328,8 +328,16 @@ describe('LG-4 the differences that the comparison keeps', () => {
 		expect(result.outcome).toBe('rewritten');
 		expect(vault.written).toHaveLength(1);
 	});
+});
 
-	it('LG-4: a definition that neither table holds is state, and a change of it writes', async () => {
+describe('LG-2 the differences that the comparison keeps under one release', () => {
+	// No case below compares a record of one release of the table with a
+	// record of another release. The comparison therefore reads the two
+	// base snapshots whole. The write then follows the bytes: a difference
+	// of the two snapshots writes one time, and a match writes nothing.
+	// The last case holds the fact that puts a record under that rule.
+
+	it('LG-2: a definition that neither table holds is state, and a change of it writes', async () => {
 		// Both devices keep this definition, so a difference in its bytes
 		// comes from the server and not from a release of the table.
 		const stood = recordOf([], OLDER, serverCalendar(STRANGE, '-0500'));
@@ -349,23 +357,7 @@ describe('LG-4 the differences that the comparison keeps', () => {
 		expect(vault.written).toHaveLength(1);
 	});
 
-	it('LG-4: a record that carries a definition carries the timezone component', () => {
-		// The comparison reads the two snapshots whole where the two
-		// components are equal, and an absent component is one of the two
-		// cases of that rule. This test holds the fact that makes the
-		// absent case safe: a record that carries a definition names that
-		// zone, and a device that drops a definition keeps the name that
-		// made it drop the definition. Both records therefore carry the
-		// component.
-		const kept = recordOf([], OLDER, serverCalendar(STRANGE));
-		expect(kept.baseIcs).toContain('BEGIN:VTIMEZONE');
-		expect(kept.normalizationVersion).toEqual({ core: 1, timezone: 1 });
-		const dropped = recordOf([ZONE], NEWER);
-		expect(dropped.baseIcs).not.toContain('BEGIN:VTIMEZONE');
-		expect(dropped.normalizationVersion).toEqual({ core: 1, timezone: 2 });
-	});
-
-	it('LG-4: a definition that both tables hold is not state, and a change of it writes nothing', async () => {
+	it('LG-2: a definition that both tables hold is not state, and a change of it writes nothing', async () => {
 		const stood = recordOf([ZONE], NEWER, serverCalendar(ZONE, '-0500'));
 		const moved = recordOf([ZONE], NEWER, serverCalendar(ZONE, '-0600'));
 		expect(sameRecordContent(stood, moved)).toBe(true);
@@ -380,6 +372,22 @@ describe('LG-4 the differences that the comparison keeps', () => {
 		);
 		expect(result.outcome).toBe('unchanged');
 		expect(vault.written).toEqual([]);
+	});
+
+	it('LG-2: a record that carries a definition carries the timezone component', () => {
+		// The comparison reads the two snapshots whole where the two
+		// components are equal, and an absent component is one of the two
+		// cases of that rule. This test holds the fact that makes the
+		// absent case safe: a record that carries a definition names that
+		// zone, and a device that drops a definition keeps the name that
+		// made it drop the definition. Both records therefore carry the
+		// component.
+		const kept = recordOf([], OLDER, serverCalendar(STRANGE));
+		expect(kept.baseIcs).toContain('BEGIN:VTIMEZONE');
+		expect(kept.normalizationVersion).toEqual({ core: 1, timezone: 1 });
+		const dropped = recordOf([ZONE], NEWER);
+		expect(dropped.baseIcs).not.toContain('BEGIN:VTIMEZONE');
+		expect(dropped.normalizationVersion).toEqual({ core: 1, timezone: 2 });
 	});
 });
 
