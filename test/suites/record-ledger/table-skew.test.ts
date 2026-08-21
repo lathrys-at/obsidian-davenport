@@ -400,53 +400,6 @@ describe('LG-4 one release of the table decided both snapshots', () => {
 		expect(before.normalizationVersion).toEqual({ core: 1, timezone: 1 });
 	});
 
-	it('LG-4: a definition that the server added is a change of the state', async () => {
-		const before = recordOf([], OLDER, referenceOnlyCalendar());
-		const after = recordOf([], OLDER, serverCalendar(STRANGE));
-		expect(sameRecordContent(before, after)).toBe(false);
-		expect(sameRecordContent(after, before)).toBe(false);
-		const vault = new RecordingVault(
-			new FakeVault({ [PATH]: await sealRecord(digest, before) }),
-		);
-		vault.forget();
-		const outcomes: string[] = [];
-		for (let loop = 0; loop < 12; loop += 1) {
-			const result = await writeRecord(
-				{ vault, digest, versions: OLDER },
-				PATH,
-				after,
-			);
-			outcomes.push(result.outcome);
-		}
-		expect(outcomes[0]).toBe('rewritten');
-		expect(outcomes.slice(1)).toEqual(Array(11).fill('unchanged'));
-		expect(vault.written).toHaveLength(1);
-		expect(await vault.read(PATH)).toContain('BEGIN:VTIMEZONE');
-	});
-
-	it('LG-4: a definition that the server took away is a change of the state', async () => {
-		const before = recordOf([], OLDER, serverCalendar(STRANGE));
-		const after = recordOf([], OLDER, referenceOnlyCalendar());
-		const vault = new RecordingVault(
-			new FakeVault({ [PATH]: await sealRecord(digest, before) }),
-		);
-		vault.forget();
-		const first = await writeRecord(
-			{ vault, digest, versions: OLDER },
-			PATH,
-			after,
-		);
-		expect(first.outcome).toBe('rewritten');
-		const second = await writeRecord(
-			{ vault, digest, versions: OLDER },
-			PATH,
-			after,
-		);
-		expect(second.outcome).toBe('unchanged');
-		expect(vault.written).toHaveLength(1);
-		expect(await vault.read(PATH)).not.toContain('BEGIN:VTIMEZONE');
-	});
-
 	it('LG-4: one difference of the bytes gets two answers from the two stamps', () => {
 		// One record stands in both pairs below, and each pair holds the
 		// same difference of the bytes: one snapshot carries the New York
@@ -492,8 +445,63 @@ describe('LG-4 one record carries no timezone component', () => {
 		expect(result.outcome).toBe('suppressed');
 		expect(vault.written).toEqual([]);
 	});
+});
 
-	it('LG-4: a change of another byte carries the definition in', async () => {
+describe('LG-2 the write over a difference that the server made', () => {
+	// One build wrote both records of each pair below, so no release of
+	// the table stands between them. Every difference of the two records
+	// therefore comes from the server, and the writer writes the new bytes
+	// one time. A record that matches the file after that write takes no
+	// write at all.
+
+	it('LG-2: a definition that the server added is a change of the state', async () => {
+		const before = recordOf([], OLDER, referenceOnlyCalendar());
+		const after = recordOf([], OLDER, serverCalendar(STRANGE));
+		expect(sameRecordContent(before, after)).toBe(false);
+		expect(sameRecordContent(after, before)).toBe(false);
+		const vault = new RecordingVault(
+			new FakeVault({ [PATH]: await sealRecord(digest, before) }),
+		);
+		vault.forget();
+		const outcomes: string[] = [];
+		for (let loop = 0; loop < 12; loop += 1) {
+			const result = await writeRecord(
+				{ vault, digest, versions: OLDER },
+				PATH,
+				after,
+			);
+			outcomes.push(result.outcome);
+		}
+		expect(outcomes[0]).toBe('rewritten');
+		expect(outcomes.slice(1)).toEqual(Array(11).fill('unchanged'));
+		expect(vault.written).toHaveLength(1);
+		expect(await vault.read(PATH)).toContain('BEGIN:VTIMEZONE');
+	});
+
+	it('LG-2: a definition that the server took away is a change of the state', async () => {
+		const before = recordOf([], OLDER, serverCalendar(STRANGE));
+		const after = recordOf([], OLDER, referenceOnlyCalendar());
+		const vault = new RecordingVault(
+			new FakeVault({ [PATH]: await sealRecord(digest, before) }),
+		);
+		vault.forget();
+		const first = await writeRecord(
+			{ vault, digest, versions: OLDER },
+			PATH,
+			after,
+		);
+		expect(first.outcome).toBe('rewritten');
+		const second = await writeRecord(
+			{ vault, digest, versions: OLDER },
+			PATH,
+			after,
+		);
+		expect(second.outcome).toBe('unchanged');
+		expect(vault.written).toHaveLength(1);
+		expect(await vault.read(PATH)).not.toContain('BEGIN:VTIMEZONE');
+	});
+
+	it('LG-2: a change of another byte carries the definition in', async () => {
 		const before = recordOf([], OLDER, homeZoneCalendar(false));
 		const changed = recordOf(
 			[],

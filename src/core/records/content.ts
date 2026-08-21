@@ -71,11 +71,17 @@
  *
  * A record carries no timezone component where the record shows no reach
  * of the bundled table. Two facts make the first rule safe for such a
- * record. The first fact: a record that carries a definition names the
- * zone of that definition, and a record that names a zone carries the
- * component. A record that carries no component therefore carries no
- * definition, the split of such a snapshot removes nothing, and the two
- * rules give one answer for a pair that carries no component at all. The
+ * record. The first fact: a record that carries a definition under a name
+ * names the zone of that definition, and a record that names a zone
+ * carries the component. A record that carries no component therefore
+ * carries no definition that a release of the table can move, the split
+ * of such a snapshot removes nothing, and the two rules give one answer
+ * for a pair that carries no component at all. One other shape stands
+ * outside that fact. A definition can state no name, and a definition can
+ * state an empty name. Such a definition states no zone. The record
+ * therefore carries no component for that definition, and the split
+ * removes that definition from no snapshot. Both rules read the bytes of
+ * such a definition, and both rules give one answer for it. The
  * second fact: a device drops a definition only under a name that a value
  * of the record still states, so a device that dropped a definition
  * carries the component too. Two devices at two releases of the table
@@ -122,6 +128,12 @@ const SEPARATOR = '\u0000';
  * of it that stands as one value. Two records that the comparison calls
  * one state share this text under both rules of that comparison. No file
  * ever holds this text.
+ *
+ * Two records that share this text are not always one state. This text
+ * always splits the snapshot. The comparison reads the two snapshots
+ * whole where the two records carry one value of the timezone component.
+ * Two records that the comparison calls two states can therefore share
+ * this text. A caller must not read this text as the identity of a state.
  */
 export function recordContentKey(data: RecordData): string {
 	return fieldsText(data) + SEPARATOR + splitBase(data.baseIcs).text;

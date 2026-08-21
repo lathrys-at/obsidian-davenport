@@ -155,7 +155,27 @@ the bytes that the plugin ships.
 
 5. Raise the timezone component of the normalization stamp. A new release
    changes the bytes that a record can carry, and the component indexes
-   those bytes.
+   those bytes. Then write the digest of the new value.
+
+    ```bash
+    DAVENPORT_WRITE_TIMEZONE_DIGEST=1 npm test -- table-digest
+    ```
+
+    A test computes one digest over the release of the table and the
+    definition of every zone that the table holds. The test compares that
+    digest against the committed file of the current component, which is
+    `test/harness/fixtures/timezone-table/timezone-{N}.digest`. A move of
+    the pin that leaves this step out fails at step 6. The failure states
+    the raise, and it names the command above. The comparison of two
+    records reads the two base snapshots whole where the two records carry
+    one value of the component. Two builds can hold two tables under one
+    value of the component. Those two builds then rewrite one record in
+    turn, and neither build stops. This step keeps that pair out of a
+    release.
+
+    The golden set of the synthesiser and the golden set of the record
+    ledger also move with the component. Step 6 reads both of them, and
+    the failure text of each one states the command that writes it.
 
 6. Run the gates: `npm test`, `npm run lint`, `npm run typecheck`,
    `npm run build` with `node scripts/scan-bundle.mjs`, and
