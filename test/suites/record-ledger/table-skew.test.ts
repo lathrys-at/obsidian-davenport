@@ -15,8 +15,11 @@
  * tests below count the writes.
  *
  * The comparison must also keep the differences that no table release can
- * produce. The last test moves a definition that neither table holds, and
- * the device writes.
+ * produce. Two devices that carry one value of the timezone component ran
+ * one release of the table, so every difference of their two snapshots
+ * comes from the server. The tests below stand a server change beside a
+ * table difference of the same shape, and the comparison must separate
+ * the two.
  *
  * The table stands behind one function, and this file replaces that
  * function with a set of names. Each device of a test states its own set.
@@ -94,6 +97,35 @@ function serverCalendar(name = ZONE, to = '-0500', summary = 'Standup') {
 		'UID:skew',
 		`SUMMARY:${summary}`,
 		`DTSTART;TZID=${name}:20260302T090000`,
+		'END:VEVENT',
+	]);
+}
+
+/** The same calendar, before the server sent the definition. */
+function referenceOnlyCalendar(name = STRANGE, summary = 'Standup') {
+	return calendarOf([
+		'BEGIN:VEVENT',
+		'UID:skew',
+		`SUMMARY:${summary}`,
+		`DTSTART;TZID=${name}:20260302T090000`,
+		'END:VEVENT',
+	]);
+}
+
+/**
+ * A calendar that names its zone in a value and in no parameter. A device
+ * whose table lacks that name reads no reference, so the record of that
+ * device carries no timezone component until the server sends the
+ * definition.
+ */
+function homeZoneCalendar(withDefinition: boolean, summary = 'Standup') {
+	return calendarOf([
+		`X-WR-TIMEZONE:${STRANGE}`,
+		...(withDefinition ? definition(STRANGE, '-0500') : []),
+		'BEGIN:VEVENT',
+		'UID:skew',
+		`SUMMARY:${summary}`,
+		'DTSTART:20260302T140000Z',
 		'END:VEVENT',
 	]);
 }
@@ -317,6 +349,22 @@ describe('LG-4 the differences that the comparison keeps', () => {
 		expect(vault.written).toHaveLength(1);
 	});
 
+	it('LG-4: a record that carries a definition carries the timezone component', () => {
+		// The comparison reads the two snapshots whole where the two
+		// components are equal, and an absent component is one of the two
+		// cases of that rule. This test holds the fact that makes the
+		// absent case safe: a record that carries a definition names that
+		// zone, and a device that drops a definition keeps the name that
+		// made it drop the definition. Both records therefore carry the
+		// component.
+		const kept = recordOf([], OLDER, serverCalendar(STRANGE));
+		expect(kept.baseIcs).toContain('BEGIN:VTIMEZONE');
+		expect(kept.normalizationVersion).toEqual({ core: 1, timezone: 1 });
+		const dropped = recordOf([ZONE], NEWER);
+		expect(dropped.baseIcs).not.toContain('BEGIN:VTIMEZONE');
+		expect(dropped.normalizationVersion).toEqual({ core: 1, timezone: 2 });
+	});
+
 	it('LG-4: a definition that both tables hold is not state, and a change of it writes nothing', async () => {
 		const stood = recordOf([ZONE], NEWER, serverCalendar(ZONE, '-0500'));
 		const moved = recordOf([ZONE], NEWER, serverCalendar(ZONE, '-0600'));
@@ -332,5 +380,136 @@ describe('LG-4 the differences that the comparison keeps', () => {
 		);
 		expect(result.outcome).toBe('unchanged');
 		expect(vault.written).toEqual([]);
+	});
+});
+
+describe('LG-4 one release of the table decided both snapshots', () => {
+	// The server sends a reference to a zone that no table holds, and then
+	// the server sends the definition of that zone. A table release makes
+	// the same shape, so the split of the snapshot passes over it. The two
+	// records here carry one value of the timezone component, so one
+	// release of the table decided both snapshots, and the comparison
+	// reads them whole.
+
+	it('LG-4: the two records carry one timezone component', () => {
+		const before = recordOf([], OLDER, referenceOnlyCalendar());
+		const after = recordOf([], OLDER, serverCalendar(STRANGE));
+		expect(before.baseIcs).not.toContain('BEGIN:VTIMEZONE');
+		expect(after.baseIcs).toContain('BEGIN:VTIMEZONE');
+		expect(before.normalizationVersion).toEqual(after.normalizationVersion);
+		expect(before.normalizationVersion).toEqual({ core: 1, timezone: 1 });
+	});
+
+	it('LG-4: a definition that the server added is a change of the state', async () => {
+		const before = recordOf([], OLDER, referenceOnlyCalendar());
+		const after = recordOf([], OLDER, serverCalendar(STRANGE));
+		expect(sameRecordContent(before, after)).toBe(false);
+		expect(sameRecordContent(after, before)).toBe(false);
+		const vault = new RecordingVault(
+			new FakeVault({ [PATH]: await sealRecord(digest, before) }),
+		);
+		vault.forget();
+		const outcomes: string[] = [];
+		for (let loop = 0; loop < 12; loop += 1) {
+			const result = await writeRecord(
+				{ vault, digest, versions: OLDER },
+				PATH,
+				after,
+			);
+			outcomes.push(result.outcome);
+		}
+		expect(outcomes[0]).toBe('rewritten');
+		expect(outcomes.slice(1)).toEqual(Array(11).fill('unchanged'));
+		expect(vault.written).toHaveLength(1);
+		expect(await vault.read(PATH)).toContain('BEGIN:VTIMEZONE');
+	});
+
+	it('LG-4: a definition that the server took away is a change of the state', async () => {
+		const before = recordOf([], OLDER, serverCalendar(STRANGE));
+		const after = recordOf([], OLDER, referenceOnlyCalendar());
+		const vault = new RecordingVault(
+			new FakeVault({ [PATH]: await sealRecord(digest, before) }),
+		);
+		vault.forget();
+		const first = await writeRecord(
+			{ vault, digest, versions: OLDER },
+			PATH,
+			after,
+		);
+		expect(first.outcome).toBe('rewritten');
+		const second = await writeRecord(
+			{ vault, digest, versions: OLDER },
+			PATH,
+			after,
+		);
+		expect(second.outcome).toBe('unchanged');
+		expect(vault.written).toHaveLength(1);
+		expect(await vault.read(PATH)).not.toContain('BEGIN:VTIMEZONE');
+	});
+
+	it('LG-4: one difference of the bytes gets two answers from the two stamps', () => {
+		// One record stands in both pairs below, and each pair holds the
+		// same difference of the bytes: one snapshot carries the New York
+		// definition under a referenced name, and the other does not. The
+		// server made the first difference, and a release of the table
+		// made the second one. The timezone components separate the two.
+		const embedded = recordOf([], OLDER, serverCalendar(ZONE));
+		const sent = recordOf([], OLDER, referenceOnlyCalendar(ZONE));
+		const released = recordOf([ZONE], NEWER, serverCalendar(ZONE));
+		expect(sent.baseIcs).toBe(released.baseIcs);
+		expect(sameRecordContent(embedded, sent)).toBe(false);
+		expect(sameRecordContent(embedded, released)).toBe(true);
+	});
+});
+
+describe('LG-4 one record carries no timezone component', () => {
+	// The calendar names its zone in a value that no table holds, so the
+	// record carries no timezone component until the server sends the
+	// definition. Nothing then states that one release of the table
+	// decided the two snapshots, and the comparison splits them.
+
+	it('LG-4: the definition decides whether the record carries the component', () => {
+		const before = recordOf([], OLDER, homeZoneCalendar(false));
+		const after = recordOf([], OLDER, homeZoneCalendar(true));
+		expect(before.normalizationVersion).toEqual({ core: 1 });
+		expect(after.normalizationVersion).toEqual({ core: 1, timezone: 1 });
+	});
+
+	it('LG-4: the comparison passes over the definition, and no device writes', async () => {
+		const before = recordOf([], OLDER, homeZoneCalendar(false));
+		const after = recordOf([], OLDER, homeZoneCalendar(true));
+		expect(sameRecordContent(before, after)).toBe(true);
+		expect(sameRecordContent(after, before)).toBe(true);
+		const vault = new RecordingVault(
+			new FakeVault({ [PATH]: await sealRecord(digest, before) }),
+		);
+		vault.forget();
+		const result = await writeRecord(
+			{ vault, digest, versions: OLDER },
+			PATH,
+			after,
+		);
+		expect(result.outcome).toBe('suppressed');
+		expect(vault.written).toEqual([]);
+	});
+
+	it('LG-4: a change of another byte carries the definition in', async () => {
+		const before = recordOf([], OLDER, homeZoneCalendar(false));
+		const changed = recordOf(
+			[],
+			OLDER,
+			homeZoneCalendar(true, 'Retrospective'),
+		);
+		const vault = new RecordingVault(
+			new FakeVault({ [PATH]: await sealRecord(digest, before) }),
+		);
+		vault.forget();
+		const result = await writeRecord(
+			{ vault, digest, versions: OLDER },
+			PATH,
+			changed,
+		);
+		expect(result.outcome).toBe('rewritten');
+		expect(await vault.read(PATH)).toContain('BEGIN:VTIMEZONE');
 	});
 });
