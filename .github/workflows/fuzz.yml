@@ -1,0 +1,82 @@
+# This workflow is the fuzzing lane of the iCalendar parse boundary. The
+# lane drives that boundary with generated calendars and with damaged text,
+# and it reports every input that makes the engine throw, refuse its own
+# output, or write a text that does not stay the same.
+#
+# The lane runs on request alone. It carries no schedule. The owner starts a
+# run at a point that suits the work, and a later decision can give the lane
+# a cadence. The lane is not part of the required ci-ok check, and no merge
+# waits for it. Two reasons keep it out of that check. A run takes minutes.
+# A run also draws inputs that no earlier run drew, so a commit that changed
+# nothing can turn the lane red.
+name: Fuzz
+
+on:
+    workflow_dispatch:
+        inputs:
+            budget:
+                description: 'How long the run may take, in seconds'
+                required: false
+                default: '600'
+            seed:
+                description: 'The seed of the first pass. Empty takes the seed of the property tests.'
+                required: false
+                default: ''
+
+permissions:
+    contents: read
+
+# One run of this lane at a time. A run takes a runner for minutes.
+concurrency:
+    group: fuzz
+    cancel-in-progress: false
+
+# Each uses field below names an action by commit SHA. The comment
+# after a SHA gives the release tag of that SHA. Do not replace a SHA
+# with a tag. The owner of an action can move a tag to different code.
+jobs:
+    fuzz:
+        runs-on: ubuntu-latest
+        # The budget above bounds the run. This limit stops a job that the
+        # budget does not stop, and it leaves room for the install and for
+        # the reduction of the last finding.
+        timeout-minutes: 30
+        steps:
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+            - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+              with:
+                  node-version-file: .nvmrc
+                  cache: npm
+            - run: npm ci
+
+            # The step writes the report and one file for each new finding
+            # into reports/fuzz. The step fails when the run found something
+            # that the ledger of the filed defects does not hold.
+            #
+            # The two inputs reach the shell as variables, and no expression
+            # of the workflow writes them into the command line. A value
+            # that the dispatch supplies therefore stays a value. The
+            # command refuses a value that states no whole number.
+            - name: Fuzz the parse boundary
+              env:
+                  BUDGET: ${{ inputs.budget }}
+                  SEED: ${{ inputs.seed }}
+              run: |
+                  if [ -n "$SEED" ]; then
+                      node scripts/fuzz-ics.mjs --budget="$BUDGET" --seed="$SEED"
+                  else
+                      node scripts/fuzz-ics.mjs --budget="$BUDGET"
+                  fi
+
+            # The report names every finding, and the seed files hold the
+            # inputs. The upload also runs after a run that failed, because
+            # a run that failed is the run whose findings a person reads. A
+            # seed file is the material of a fixture of the crash corpus,
+            # and without this upload that material is gone when the runner
+            # goes.
+            - if: always()
+              uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+              with:
+                  name: fuzz-report
+                  path: reports/fuzz
+                  if-no-files-found: warn

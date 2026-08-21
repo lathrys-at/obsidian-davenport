@@ -1,5 +1,6 @@
 /**
- * The defects that the property tests of the iCalendar boundary found.
+ * The defects that the property tests and the fuzzing lane of the
+ * iCalendar boundary found.
  *
  * Every case here starts from a text that iCalendar permits. The parse
  * boundary accepts each text, and the model that it gives back states
@@ -14,11 +15,25 @@
  * Every test here is skipped. A skipped test is a defect that waits for a
  * decision, and it is not a rule that the engine keeps today. Take the skip
  * away when the engine holds the rule.
+ *
+ * The cases at the end come from the fuzzing lane, and each one starts from
+ * a text that iCalendar does not permit. The crash corpus holds the input
+ * of each of those cases as a file.
  */
 
 import { describe, expect, it } from 'vitest';
 import { parseIcs } from '../../../src/core/ics/parse';
 import { serializeIcs } from '../../../src/core/ics/serializer';
+import { icsCrashCorpus } from '../../harness/fixtures/ics-crash-corpus';
+
+/** The text of one file of the crash corpus. */
+function icsCrashFixture(id: string): string {
+	const found = icsCrashCorpus().find((fixture) => fixture.id === id);
+	if (found === undefined) {
+		throw new Error(`the crash corpus holds no fixture named ${id}`);
+	}
+	return found.content;
+}
 
 /** A calendar that holds the one line under test. */
 function calendar(line: string): string {
@@ -126,5 +141,38 @@ describe('a text value that ends with an escaped backslash', () => {
 			'text',
 			['a\\', 'b'],
 		]);
+	});
+});
+
+describe('a carriage return inside a line', () => {
+	// The reader of the boundary ends a line at a carriage return, and the
+	// library keeps the carriage return inside the value. The check for a
+	// control character reads the lines of the reader, so it never sees
+	// this character. The boundary states that no line holds a control
+	// character, and it must therefore refuse this text.
+	it.skip('refuses a text whose value holds a carriage return', () => {
+		const text = icsCrashFixture('carriage-return-in-a-value');
+		expect(parseIcs(text).ok).toBe(false);
+	});
+});
+
+describe('a value type that carries an escape', () => {
+	// The parse turns the VALUE parameter into the name of the value type,
+	// and it decodes the escapes of that parameter on the way. The
+	// serializer writes the name of the type back with no escape. The text
+	// loses one caret on each trip.
+	it.skip('writes a canonical text that it writes again unchanged', () => {
+		const once = canonical(icsCrashFixture('value-type-carries-an-escape'));
+		expect(canonical(once)).toBe(once);
+	});
+
+	// Here the parameter holds a backslash and the letter n, which the
+	// library reads as a line break. The serializer writes that line break
+	// into the parameter, and the library cannot read the text after that.
+	it.skip('writes a canonical text that the boundary reads', () => {
+		const once = canonical(
+			icsCrashFixture('value-type-carries-a-line-break'),
+		);
+		expect(parseIcs(once).ok).toBe(true);
 	});
 });

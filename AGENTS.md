@@ -80,6 +80,7 @@ npm run build
 ## Testing
 
 - The automated tests run under Vitest. Run the tests with `npm test`. The file `test/README.md` gives the layout and naming conventions.
+- `npm run fuzz` runs the fuzzing lane over the iCalendar parse boundary. The lane drives that boundary with generated calendars and with damaged text, and it reports each input that makes the engine throw, refuse a text that the engine wrote, or write a text that does not stay the same. A ledger holds the defects that are already filed, and the lane sets a finding of one of those aside. The workflow `fuzz.yml` runs the lane on request alone. The lane carries no schedule, it stands outside the required `ci-ok` check, and no merge waits for it. A finding that a person keeps becomes a file of the crash corpus and a case beside the tests, and `test/README.md` states that procedure.
 - To install the plugin manually for testing, copy `main.js`, `manifest.json`, and `styles.css` (if `styles.css` exists) to this folder:
     ```
     <Vault>/.obsidian/plugins/<plugin-id>/
