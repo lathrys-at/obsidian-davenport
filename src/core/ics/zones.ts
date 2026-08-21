@@ -4,15 +4,16 @@
  *
  * A calendar states a name in three places. A value that stands in a zone
  * carries the name in its `TZID` parameter. A definition states the name
- * in its own `TZID` property. A property can also carry a name as its
- * value: a calendar states its home zone this way. This module reads all
- * three places, and it reads every component of the calendar.
+ * in its own `TZID` property. Two properties carry a name as their value.
+ * This module reads all three places, and it reads every component of the
+ * calendar.
  *
  * The first two places are structure, so the module finds a name there
  * with no help. The third place is text, and no rule of the format
  * separates the name of a zone from other text. A caller that wants the
  * names of that third place therefore gives a test, and the test decides
- * which values are names.
+ * which values are names. The module reads the value of two properties
+ * only, and the list below names those two properties.
  *
  * The functions hold no rule about what a record does with a definition.
  * The caller holds those rules.
@@ -23,6 +24,24 @@ import { jcalValues } from './jcal';
 
 const TIMEZONE_COMPONENT = 'vtimezone';
 const TIMEZONE_NAME = 'tzid';
+
+/**
+ * The two properties whose value states the name of a zone. A calendar
+ * states its home zone in `X-WR-TIMEZONE`. One vendor states the zone of
+ * a definition in `X-LIC-LOCATION`.
+ *
+ * The value of every other property is text, and the value of every other
+ * property is not a reference. The bundled table holds names that ordinary
+ * text spells: of its 598 names, 45 hold no slash, and 21 of those 45 are
+ * four characters long or shorter. `LOCATION:Iceland` and
+ * `CATEGORIES:Japan` therefore read as zone names to a wider scan. Such a
+ * scan finds a reference to a zone that the event does not use, and a
+ * record then drops a definition that nothing refers to.
+ */
+const REFERENCE_PROPERTIES: readonly string[] = [
+	'x-wr-timezone',
+	'x-lic-location',
+];
 
 /**
  * Every timezone name that the calendar states, in the order of the first
@@ -38,15 +57,15 @@ export function namedZones(calendar: JCalComponent): readonly string[] {
  * Every timezone name that a reference of the calendar states and the
  * test accepts, in the order of the first mention.
  *
- * A reference stands in the `TZID` parameter of a property, or in the
- * value of a property. The scan reads no property of a definition and no
- * property inside one. A definition states the rules of one zone, and it
- * refers to no zone: its own `TZID` names it, and the abbreviation of an
- * offset can spell the name of another zone. A definition that nothing
- * outside it names therefore has no reference.
+ * A reference stands in the `TZID` parameter of a property. A reference
+ * also stands in the value of one of the two properties above. The scan
+ * reads no property of a definition and no property inside one. A
+ * definition states the rules of one zone, and it refers to no zone: its
+ * own `TZID` names it, and the abbreviation of an offset can spell the
+ * name of another zone. A definition that nothing outside it names
+ * therefore has no reference.
  *
- * The test decides which values are names. Every value of every other
- * property reaches the test, because a name can stand in any of them.
+ * The test decides which of those values are names.
  */
 export function referencedZones(
 	calendar: JCalComponent,
@@ -146,6 +165,9 @@ function collectReferences(
 		const parameter = property[1][TIMEZONE_NAME];
 		if (parameter !== undefined) {
 			addParameter(names, parameter, holds);
+		}
+		if (!REFERENCE_PROPERTIES.includes(property[0].toLowerCase())) {
+			continue;
 		}
 		for (const value of jcalValues(property)) {
 			if (typeof value === 'string' && holds(value)) {

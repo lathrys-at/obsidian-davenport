@@ -184,6 +184,24 @@ const EVENT_WITH_A_STRANGE_VALUE = calendarOf(
 	'END:VEVENT',
 );
 
+const EVENT_WITH_A_VENDOR_LOCATION = calendarOf(
+	'BEGIN:VEVENT',
+	'UID:stamp',
+	'X-LIC-LOCATION:America/New_York',
+	'DTSTART:20260302T140000Z',
+	'END:VEVENT',
+);
+
+const EVENT_WITH_ORDINARY_VALUES = calendarOf(
+	'BEGIN:VEVENT',
+	'UID:stamp',
+	'LOCATION:Iceland',
+	'CATEGORIES:Japan',
+	'SUMMARY:Iceland',
+	'DTSTART:20260302T140000Z',
+	'END:VEVENT',
+);
+
 const ONE_EVENT = calendarOf(
 	'BEGIN:VEVENT',
 	'UID:stamp',
@@ -309,6 +327,27 @@ describe('the carriage of the timezone component', () => {
 			'America/New_York',
 		]);
 		expect(carriesTimezoneComponent(named)).toBe(true);
+	});
+
+	it('reads a zone that stands in the location property of a vendor', () => {
+		const named = subject(EVENT_WITH_A_VENDOR_LOCATION);
+		expect(zonesInRecord(EVENT_WITH_A_VENDOR_LOCATION)).toEqual([
+			'America/New_York',
+		]);
+		expect(carriesTimezoneComponent(named)).toBe(true);
+	});
+
+	it('reads no zone from the value of any other property', () => {
+		// The bundled table holds a zone named Iceland and a zone named
+		// Japan. A location and a category that spell those names reach no
+		// byte of the table, so the record carries no timezone component.
+		const named = subject(EVENT_WITH_ORDINARY_VALUES);
+		expect(zonesInRecord(EVENT_WITH_ORDINARY_VALUES)).toEqual([]);
+		expect(timezoneReaches(named).namedZone).toBe(false);
+		expect(carriesTimezoneComponent(named)).toBe(false);
+		expect(normalizationStamp(named)).toEqual({
+			core: CORE_NORMALIZATION_VERSION,
+		});
 	});
 
 	it('reads no zone from a value that the table does not hold', () => {

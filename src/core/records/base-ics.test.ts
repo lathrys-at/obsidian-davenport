@@ -46,6 +46,17 @@ const STRANGE = [
 	'END:VTIMEZONE',
 ];
 
+const ICELAND = [
+	'BEGIN:VTIMEZONE',
+	'TZID:Iceland',
+	'BEGIN:STANDARD',
+	'DTSTART:19700101T000000',
+	'TZOFFSETFROM:+0000',
+	'TZOFFSETTO:+0000',
+	'END:STANDARD',
+	'END:VTIMEZONE',
+];
+
 const EVENT_IN_NEW_YORK = [
 	'BEGIN:VEVENT',
 	'UID:one',
@@ -275,6 +286,64 @@ describe('a definition that no value of the calendar refers to', () => {
 		);
 		expect(base.referencedZones).toEqual(['America/New_York']);
 		expect(base.embeddedZones).toEqual([]);
+	});
+
+	it('leaves the record where the location property of a vendor names the zone', () => {
+		// One vendor states the zone of a definition in this property, and
+		// the scan reads it as a reference.
+		const base = baseCalendar(
+			calendarOf(
+				...NEW_YORK,
+				'BEGIN:VEVENT',
+				'UID:one',
+				'X-LIC-LOCATION:America/New_York',
+				'DTSTART:20260302T140000Z',
+				'END:VEVENT',
+			),
+		);
+		expect(serializeCalendar(base.calendar)).not.toContain('VTIMEZONE');
+		expect(base.referencedZones).toEqual(['America/New_York']);
+		expect(base.embeddedZones).toEqual([]);
+	});
+
+	it('stays in the record where an ordinary value spells the name of the zone', () => {
+		// The bundled table holds a zone named Iceland and a zone named
+		// Japan. A location and a category that spell those names refer to
+		// no zone. The definition therefore stays, and the record carries no
+		// reference. Without this rule an ordinary value would take a
+		// definition off the server on the next push.
+		const base = baseCalendar(
+			calendarOf(
+				...ICELAND,
+				'BEGIN:VEVENT',
+				'UID:one',
+				'LOCATION:Iceland',
+				'CATEGORIES:Japan',
+				'SUMMARY:Iceland',
+				'DTSTART:20260302T140000Z',
+				'END:VEVENT',
+			),
+		);
+		expect(serializeCalendar(base.calendar)).toContain('TZID:Iceland');
+		expect(base.embeddedZones).toEqual(['Iceland']);
+		expect(base.referencedZones).toEqual([]);
+		expect(base.unresolvableZones).toEqual([]);
+	});
+
+	it('names no zone at all where an ordinary value spells one and no definition stands there', () => {
+		const base = baseCalendar(
+			calendarOf(
+				'BEGIN:VEVENT',
+				'UID:one',
+				'LOCATION:Iceland',
+				'CATEGORIES:Japan',
+				'DTSTART:20260302T140000Z',
+				'END:VEVENT',
+			),
+		);
+		expect(base.referencedZones).toEqual([]);
+		expect(base.embeddedZones).toEqual([]);
+		expect(base.unresolvableZones).toEqual([]);
 	});
 
 	it('names every definition that it dropped as one that the record references', () => {

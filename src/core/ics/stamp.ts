@@ -37,9 +37,10 @@
  *
  * - Reach 1 reads the names of the calendar. A name stands in the `TZID`
  *   parameter of a value, in a definition that the record carries, or in
- *   the value of a property. The first two places are structure. The
- *   third place is text, so the rule asks the table which values are
- *   names. The rule needs nothing from the caller.
+ *   the value of `X-WR-TIMEZONE` or `X-LIC-LOCATION`. The first two
+ *   places are structure. The third place is text, so the rule asks the
+ *   table which of those two values are names. The rule reads the value
+ *   of no other property, and it needs nothing from the caller.
  * - Reaches 1 and 2 read the shape of the record, and they do not ask
  *   which device computed a value. A device computes the end of a series
  *   and sends that end to the server. The server sends the same end back,
@@ -125,8 +126,9 @@ export function timezoneReaches(subject: StampSubject): TimezoneReaches {
 /**
  * Every zone name that the calendar states, in the order of the first
  * mention. The list holds the names of the structure, which are the
- * `TZID` parameters and the names of the definitions. It also holds every
- * value that the bundled table takes as a name.
+ * `TZID` parameters and the names of the definitions. The list also holds
+ * the value of `X-WR-TIMEZONE` and of `X-LIC-LOCATION`, where the bundled
+ * table takes that value as a name.
  */
 export function zonesInRecord(calendar: JCalComponent): readonly string[] {
 	const names = [...namedZones(calendar)];

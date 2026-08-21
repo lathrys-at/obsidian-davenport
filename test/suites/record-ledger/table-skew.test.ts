@@ -98,6 +98,23 @@ function serverCalendar(name = ZONE, to = '-0500', summary = 'Standup') {
 	]);
 }
 
+/**
+ * A calendar with no zone at all, whose ordinary values spell two names
+ * of the bundled table. The scan reads the value of two properties, and
+ * neither `LOCATION` nor `CATEGORIES` is one of the two.
+ */
+function ordinaryValueCalendar() {
+	return calendarOf([
+		'BEGIN:VEVENT',
+		'UID:skew',
+		'SUMMARY:Standup',
+		'LOCATION:Iceland',
+		'CATEGORIES:Japan',
+		'DTSTART:20260302T140000Z',
+		'END:VEVENT',
+	]);
+}
+
 /** The record that a device of the given table and versions computes. */
 function recordOf(
 	holds: readonly string[],
@@ -213,6 +230,48 @@ describe('LG-4 two devices at two releases of the bundled table', () => {
 			'unchanged',
 			'suppressed',
 		]);
+	});
+});
+
+describe('LG-4 an ordinary value that spells a name of the table', () => {
+	it('LG-4: the two devices compute one snapshot and one stamp', () => {
+		const older = recordOf([], OLDER, ordinaryValueCalendar());
+		const newer = recordOf(
+			['Iceland', 'Japan'],
+			NEWER,
+			ordinaryValueCalendar(),
+		);
+		expect(older.baseIcs).toBe(newer.baseIcs);
+		expect(older.normalizationVersion).toEqual({ core: 1 });
+		expect(newer.normalizationVersion).toEqual({ core: 1 });
+	});
+
+	it('LG-4: the two devices in turn write nothing over twelve loops', async () => {
+		// The table of one device holds both names and the table of the
+		// other holds neither. The values stand in properties that the scan
+		// passes over, so no device reads a reference and no record carries
+		// the timezone component. The record therefore reaches neither the
+		// comparison split nor the skew rule.
+		const older = recordOf([], OLDER, ordinaryValueCalendar());
+		const newer = recordOf(
+			['Iceland', 'Japan'],
+			NEWER,
+			ordinaryValueCalendar(),
+		);
+		const vault = new RecordingVault(
+			new FakeVault({ [PATH]: await sealRecord(digest, older) }),
+		);
+		vault.forget();
+		for (let loop = 0; loop < 12; loop += 1) {
+			const turnOfTheNewer = loop % 2 === 0;
+			const result = await writeRecord(
+				{ vault, digest, versions: turnOfTheNewer ? NEWER : OLDER },
+				PATH,
+				turnOfTheNewer ? newer : older,
+			);
+			expect(result.outcome).toBe('unchanged');
+		}
+		expect(vault.written).toEqual([]);
 	});
 });
 

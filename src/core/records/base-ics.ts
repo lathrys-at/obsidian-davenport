@@ -33,9 +33,18 @@
  *   definition would therefore take it off the server on the next push,
  *   and no reference would bring it back.
  *
- * A reference stands in the `TZID` parameter of a value, and it also
- * stands in the value of a property. A calendar states its home zone in a
- * value, and a client that reads that value needs the definition.
+ * A reference stands in the `TZID` parameter of a value. A reference also
+ * stands in the value of one of two properties. A calendar states its home
+ * zone in `X-WR-TIMEZONE`, and one vendor states the zone of a definition
+ * in `X-LIC-LOCATION`. A client that reads such a value needs the
+ * definition of that zone.
+ *
+ * The value of every other property is not a reference. The bundled table
+ * holds names that ordinary text spells, such as `Iceland` and `Japan`. A
+ * `LOCATION` or a `CATEGORIES` value that spells such a name would
+ * otherwise refer to a zone that the event does not use. The record would
+ * then drop a definition that nothing refers to, which is the loss that
+ * the third case above stops.
  *
  * The result below names every zone that the record refers to and the
  * table holds. Each definition that this module removes stands under one

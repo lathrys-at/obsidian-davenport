@@ -219,6 +219,46 @@ describe('the timezone names that a reference of a calendar states', () => {
 		).toEqual(['America/New_York']);
 	});
 
+	it('reads a name out of the value of the location property of a vendor', () => {
+		// One vendor states the zone of a definition in this property. A
+		// calendar can also carry the property outside a definition, and the
+		// scan reads the name there.
+		expect(
+			referencedZones(
+				calendarOf(
+					'BEGIN:VEVENT',
+					'UID:one',
+					'X-LIC-LOCATION:America/New_York',
+					'DTSTART:20260302T140000Z',
+					'END:VEVENT',
+				),
+				holdsNewYork,
+			),
+		).toEqual(['America/New_York']);
+	});
+
+	it('reads no name out of the value of any other property', () => {
+		// The bundled table holds names that ordinary text spells. A value
+		// that spells one is not a reference to a zone, so the scan reads
+		// the value of two properties and of no other property.
+		const holdsIslands = (name: string): boolean =>
+			['Iceland', 'Japan'].includes(name);
+		expect(
+			referencedZones(
+				calendarOf(
+					'BEGIN:VEVENT',
+					'UID:one',
+					'LOCATION:Iceland',
+					'CATEGORIES:Japan',
+					'SUMMARY:Iceland',
+					'DTSTART:20260302T140000Z',
+					'END:VEVENT',
+				),
+				holdsIslands,
+			),
+		).toEqual([]);
+	});
+
 	it('reads no name that the test refuses', () => {
 		expect(
 			referencedZones(
@@ -237,12 +277,15 @@ describe('the timezone names that a reference of a calendar states', () => {
 
 	it('reads no name out of a definition', () => {
 		// The name of a definition is not a reference to that definition,
-		// and the abbreviation of an offset can spell another name.
+		// and the abbreviation of an offset can spell another name. One
+		// vendor writes X-LIC-LOCATION inside the definition, which is the
+		// place where that property is not a reference either.
 		expect(
 			referencedZones(
 				calendarOf(
 					'BEGIN:VTIMEZONE',
 					'TZID:America/New_York',
+					'X-LIC-LOCATION:America/New_York',
 					'BEGIN:STANDARD',
 					'DTSTART:20071104T020000',
 					'TZNAME:EST',
