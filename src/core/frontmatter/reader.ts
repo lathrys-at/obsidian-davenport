@@ -19,7 +19,12 @@
  * this for `2026-03-14` and for a time of day that states its seconds. The
  * reader therefore takes a date value under the keys of whole days, and it
  * reads the day of that value in universal time. That reading is
- * deterministic, and it is the same day that the note states.
+ * deterministic. A note that writes a plain day gets that day. A timestamp
+ * with an offset can also reach this path, when the parser reduces the
+ * timestamp to midnight in universal time. The reader then gives the day
+ * in universal time, and a negative offset makes that day differ from the
+ * day that the note states. The reader cannot tell the two shapes apart,
+ * because the parser gives one value for both.
  *
  * A key that states a time of day is the other case, and the reader
  * refuses a date value there. Such a value holds one instant. It does not
