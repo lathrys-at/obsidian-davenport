@@ -17,6 +17,7 @@ import { parseIcs } from '../ics/parse';
 import {
 	CORE_NORMALIZATION_VERSION,
 	NORMALIZATION_VERSIONS,
+	TIMEZONE_NORMALIZATION_VERSION,
 } from '../ics/stamp';
 import { buildRecord } from './build';
 import { sealRecord, verifyRecordText } from './checksum';
@@ -24,22 +25,30 @@ import { readRecord } from './read';
 
 const CURRENT = CORE_NORMALIZATION_VERSION;
 const NEXT = CURRENT + 1;
+const TIMEZONE_NEXT = TIMEZONE_NORMALIZATION_VERSION + 1;
 const digest = new WebCryptoDigest();
 
 const WRITE_COMMAND =
 	'DAVENPORT_WRITE_RECORD_GOLDENS=1 npm test -- records/goldens';
 
 /**
- * The instruction that a byte difference of this file ends with. Two
+ * The instruction that a byte difference of this file ends with. Three
  * causes give one difference, and each cause takes a different action.
  */
 const HOW_TO_MOVE =
-	'Two causes give this difference. ' +
+	'Three causes give this difference. ' +
 	'First, the emitter, the schema, or the canonical serializer changed. ' +
 	`Raise CORE_NORMALIZATION_VERSION in src/core/ics/stamp.ts to ${String(NEXT)}. ` +
 	`Then write the new set with ${WRITE_COMMAND}. ` +
 	`The set of the core component ${String(CURRENT)} stays in the tree, and the closure test reads it. ` +
-	'Second, a committed golden file changed and the code did not. ' +
+	'Second, a change moved the base snapshot of a record with no change on the server. ' +
+	'Four things do this: the bundled table, the synthesiser, the scan that reads a zone reference, and the rule that takes a definition out of the base snapshot. ' +
+	'The comparison of two records reads the two base snapshots whole where the two records carry one value of the timezone component. ' +
+	'Two builds can compute different snapshots under one value of that component. ' +
+	'Those two builds then rewrite one record in turn, and neither build stops. ' +
+	`Raise TIMEZONE_NORMALIZATION_VERSION in src/core/ics/stamp.ts to ${String(TIMEZONE_NEXT)}, where the change did not raise it already. ` +
+	`Then write the set of the core component ${String(CURRENT)} again in place with ${WRITE_COMMAND}. ` +
+	'Third, a committed golden file changed and the code did not. ' +
 	'Read git status on the set. ' +
 	'Then restore the file.';
 
