@@ -63,7 +63,7 @@ item.
 | A-24 | Precondition enforcement per provider | stage 3 (ordered second) | unrecorded |
 | A-25 | calendar-query UID filter per provider | stage 2 | unrecorded |
 | A-26 | WebDAV MOVE support and attendee silence | stage 5 (non-blocking) | unrecorded |
-| A-27 | Frontmatter value types in the callback | stage 2 (with A-11) | unrecorded |
+| A-27 | Frontmatter value types in the callback | stage 2 (with A-11) | recorded |
 
 ## Provider facts
 
@@ -119,3 +119,23 @@ Protocol: [docs/dev/facts/a-11.md](facts/a-11.md)
   error · branch taken: determinism holds in the tested environments —
   this entry records the fact, and the result validates the [E]/[M]
   fakes.
+
+### A-27 — Frontmatter value types in the callback
+
+Protocol: the probe of A-11 ([docs/dev/facts/a-11.md](facts/a-11.md))
+records the value types since #225.
+
+- **2026-08-21** · macOS (Obsidian API 1.13.7, Electron 43.3.0, run
+  2026-08-21; the results file is
+  `frontmatter-probe/emission-samples-20260821-180150Z.json` in the
+  vault `even-copper-harbor`) · The probe read the corpus with the §3.1
+  event keys. Every value of a day key and of a time-of-day key arrived
+  as text, and a bare `date-like` value and a bare `timestamp-like`
+  value arrived as text too. A number arrived as a number, a boolean as
+  a boolean, and a null value as null · branch taken: real notes take
+  the text path in this environment. The date-value path of the reader
+  stands as a guard, and the residue of Appendix A item 27 — the day
+  that moves under a reduced timestamp — is not reachable in this
+  environment. The typed number confirms that the no-coercion fault
+  guards a live path. iOS is not yet run for this item; add platforms
+  when they are available.
