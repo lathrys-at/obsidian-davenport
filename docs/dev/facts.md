@@ -63,6 +63,7 @@ item.
 | A-24 | Precondition enforcement per provider | stage 3 (ordered second) | unrecorded |
 | A-25 | calendar-query UID filter per provider | stage 2 | unrecorded |
 | A-26 | WebDAV MOVE support and attendee silence | stage 5 (non-blocking) | unrecorded |
+| A-27 | Frontmatter value types in the callback | stage 2 (with A-11) | unrecorded |
 
 ## Provider facts
 
@@ -86,8 +87,8 @@ item.
 
 ## Re-verification triggers
 
-- Platform items (A-1, A-7, A-11, A-12, A-17, A-18): re-verify each of
-  these items at each Obsidian minor release.
+- Platform items (A-1, A-7, A-11, A-12, A-17, A-18, A-27): re-verify each
+  of these items at each Obsidian minor release.
 - Provider items: re-verify each of these items when you observe a
   regression. Also re-verify each of these items one time each year or
   more often.
