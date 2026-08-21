@@ -10,3 +10,8 @@ test/harness/fixtures/ics-serializer/**/*.ics -text
 # The offset fixture states one answer for each line, and the reader of the
 # fixture splits the file on the line feed.
 test/harness/fixtures/timezone-offsets.txt -text
+
+# The golden records hold the octets that the record writer writes, and a
+# test compares them one octet at a time. The file uses the line feed
+# alone, and a conversion of the line endings would change every line.
+test/harness/fixtures/records/**/*.md -text

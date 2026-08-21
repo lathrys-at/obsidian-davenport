@@ -1,12 +1,19 @@
 /**
  * The synthesiser of a timezone definition.
  *
- * A record that states a time in a named zone must carry the definition of
- * that zone. The format states no zone rules of its own. Where the server
- * sent a definition, the record keeps the definition of the server.
- * Where the server sent none, this module writes one from the bundled
- * table. This module is the single origin of a definition that the plugin
+ * A time that stands in a named zone needs the rules of that zone, and
+ * the format states no rules of its own. The bundled table answers a name
+ * that it holds, and this module writes the definition from that answer.
+ * This module is the single origin of a definition that the plugin
  * writes.
+ *
+ * A record carries no definition for a name that the table holds. The
+ * record carries the name, and a device writes the definition here when
+ * the device needs one. A definition that the server sent under such a
+ * name therefore leaves the record, and the next push writes the
+ * definition of this module in its place. A record keeps the definition
+ * of the server for a name that the table does not hold, because no
+ * device can write the rules of such a name.
  *
  * The definition covers the whole period that the table covers. It states
  * one observance for the state of the clock at the start of 1970. It

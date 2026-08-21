@@ -6,11 +6,18 @@
  * A record carries the timezone component only when the record shows one
  * of the three reaches below. The list holds the reaches that are known,
  * and the list is not closed. A change that gives the bundled table a new
- * reach into the bytes of a record must add that reach to the list, in
- * the same change.
+ * reach into a record must add that reach to the list, in the same
+ * change.
  *
- * 1. The record holds a timezone definition that the plugin wrote, and
- *    not one that the server sent.
+ * 1. The record names a zone. The bundled table decides what the record
+ *    holds for that name. Where the table holds the name and a value of
+ *    the record refers to it, the record carries the name and no
+ *    definition, and a device writes the rules from the table when the
+ *    device needs them. In every other case the record carries the
+ *    definition that the server sent, and the table is what kept it
+ *    there. Both outcomes are bytes that the table decided, so the
+ *    condition asks whether the record names a zone and asks nothing
+ *    else.
  * 2. The record holds a repeating series whose end stands in universal
  *    time, under a time that names a timezone and that governs the
  *    series. The time that governs the series is the start of the
@@ -24,19 +31,17 @@
  * 3. The record holds the date of an instance that the plugin computed in
  *    the zone of the event.
  *
- * This module reads reach 2 out of the calendar of the record. The caller
- * states reach 1 and reach 3, because the calendar holds neither of them.
+ * This module reads reach 1 and reach 2 out of the calendar of the
+ * record. The caller states reach 3, because the calendar does not hold
+ * the materialization map.
  *
- * - Reach 1 comes from the caller, which names each timezone whose
- *   definition the plugin wrote into the record. A definition that the
- *   plugin wrote and a definition that the server sent look the same in
- *   the bytes. A rule that reads the bytes alone cannot tell the two
- *   apart. The synthesiser writes a definition from the bundled table,
- *   and the code that puts such a definition into a record names the zone
- *   of that definition here. The reach reads the record as well as the
- *   caller: a name that no definition of the record carries reaches no
- *   byte of that record, and the reach passes over such a name.
- * - Reaches 2 and 3 read the shape of the record, and they do not ask
+ * - Reach 1 reads the names of the calendar. A name stands in the `TZID`
+ *   parameter of a value, in a definition that the record carries, or in
+ *   the value of `X-WR-TIMEZONE` or `X-LIC-LOCATION`. The first two
+ *   places are structure. The third place is text, so the rule asks the
+ *   table which of those two values are names. The rule reads the value
+ *   of no other property, and it needs nothing from the caller.
+ * - Reaches 1 and 2 read the shape of the record, and they do not ask
  *   which device computed a value. A device computes the end of a series
  *   and sends that end to the server. The server sends the same end back,
  *   and the record then holds the copy of the server. A rule that asked
@@ -67,6 +72,8 @@ import type {
 	JCalRecurPart,
 } from './jcal';
 import { jcalValues } from './jcal';
+import { namedZones, referencedZones } from './zones';
+import { isTimezoneName } from '../timezone/table';
 
 /**
  * The value of the core component that this build writes. Raise this
@@ -93,20 +100,14 @@ export const NORMALIZATION_VERSIONS: NormalizationVersions = {
 export interface StampSubject {
 	/** The calendar that the base ICS of the record holds. */
 	readonly calendar: JCalComponent;
-	/**
-	 * The name of each timezone whose definition the plugin wrote into
-	 * this record. The code that writes a definition from the bundled
-	 * table states these names, and every other caller states none.
-	 */
-	readonly writtenZoneIds: readonly string[];
 	/** The dates that the materialization map of the record holds. */
 	readonly instanceDates: readonly string[];
 }
 
 /** Which reaches of the bundled table one record shows. */
 export interface TimezoneReaches {
-	/** The record holds a timezone definition that the plugin wrote. */
-	readonly writtenZone: boolean;
+	/** The record names a zone. */
+	readonly namedZone: boolean;
 	/** The record holds a universal-time value from the bundled table. */
 	readonly universalTime: boolean;
 	/** The record holds the date of an instance in the zone of the event. */
@@ -116,78 +117,53 @@ export interface TimezoneReaches {
 /** The reaches of the bundled table that the record shows. */
 export function timezoneReaches(subject: StampSubject): TimezoneReaches {
 	return {
-		writtenZone: writtenZonesInRecord(subject).length > 0,
+		namedZone: zonesInRecord(subject.calendar).length > 0,
 		universalTime: holdsSeriesEndInAZone(subject.calendar),
 		instanceDate: subject.instanceDates.length > 0,
 	};
 }
 
 /**
- * The names that the caller states and the record carries a definition
- * for. The first reach reads the record, so a name that no definition of
- * the record carries reaches no byte of it.
+ * Every zone name that the calendar states, in the order of the first
+ * mention. The list holds the names of the structure, which are the
+ * `TZID` parameters and the names of the definitions. The list also holds
+ * the value of `X-WR-TIMEZONE` and of `X-LIC-LOCATION`, where the bundled
+ * table takes that value as a name.
  */
-export function writtenZonesInRecord(subject: StampSubject): readonly string[] {
-	const carried = definedZoneIds(subject.calendar);
-	return subject.writtenZoneIds.filter((name) => carried.has(name));
-}
-
-/**
- * The names that the caller states and the record carries no definition
- * for. An empty list is the answer for every caller that states what it
- * wrote. A caller that reads a name here wrote no definition under that
- * name, and the caller refuses the record.
- *
- * The other direction of this check cannot read the bytes. A definition
- * that the plugin wrote and a definition that the server sent look the
- * same. A caller that writes a definition and states no name for it
- * therefore leaves no mark. The code that writes a definition states each
- * name, and that duty stays with the code.
- */
-export function writtenZonesNotInRecord(
-	subject: StampSubject,
-): readonly string[] {
-	const carried = definedZoneIds(subject.calendar);
-	return subject.writtenZoneIds.filter((name) => !carried.has(name));
-}
-
-/** Every name that a timezone definition of the calendar states. */
-function definedZoneIds(calendar: JCalComponent): ReadonlySet<string> {
-	const names = new Set<string>();
-	collectZoneIds(calendar, names);
-	return names;
-}
-
-function collectZoneIds(component: JCalComponent, names: Set<string>): void {
-	if (component[0].toLowerCase() === 'vtimezone') {
-		for (const property of component[1]) {
-			if (property[0].toLowerCase() === 'tzid') {
-				const value = property[3];
-				if (typeof value === 'string') {
-					names.add(value);
-				}
-			}
+export function zonesInRecord(calendar: JCalComponent): readonly string[] {
+	const names = [...namedZones(calendar)];
+	for (const name of referencedZones(calendar, isTimezoneName)) {
+		if (!names.includes(name)) {
+			names.push(name);
 		}
 	}
-	for (const inside of component[2]) {
-		collectZoneIds(inside, names);
-	}
+	return names;
 }
 
 /** True when the record carries the timezone component. */
 export function carriesTimezoneComponent(subject: StampSubject): boolean {
 	const reaches = timezoneReaches(subject);
-	return reaches.writtenZone || reaches.universalTime || reaches.instanceDate;
+	return reaches.namedZone || reaches.universalTime || reaches.instanceDate;
 }
 
 /** The stamp that this build writes into the given record. */
 export function normalizationStamp(subject: StampSubject): NormalizationStamp {
+	return normalizationStampAt(NORMALIZATION_VERSIONS, subject);
+}
+
+/**
+ * The stamp that a build of the given versions writes into the given
+ * record. A test uses this function to stand a device of one version
+ * beside a device of another version. Production code calls
+ * {@link normalizationStamp}, which states the versions of this build.
+ */
+export function normalizationStampAt(
+	versions: NormalizationVersions,
+	subject: StampSubject,
+): NormalizationStamp {
 	return carriesTimezoneComponent(subject)
-		? {
-				core: CORE_NORMALIZATION_VERSION,
-				timezone: TIMEZONE_NORMALIZATION_VERSION,
-			}
-		: { core: CORE_NORMALIZATION_VERSION };
+		? { core: versions.core, timezone: versions.timezone }
+		: { core: versions.core };
 }
 
 /** What a device does with a record whose stamp differs from its own. */

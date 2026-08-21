@@ -93,6 +93,20 @@ export class SyncDevice implements VaultPort {
 		});
 	}
 
+	async create(path: string, content: string): Promise<boolean> {
+		if (!(await this.vault.create(path, content))) {
+			return false;
+		}
+		this.stamp(path);
+		this.capture({
+			change: { kind: 'upsert', path, content },
+			previousContent: null,
+			version: this.advance(path),
+			modifiedAt: this.clock.now(),
+		});
+		return true;
+	}
+
 	async rename(path: string, newPath: string): Promise<void> {
 		const content = await this.vault.read(path);
 		await this.vault.rename(path, newPath);
