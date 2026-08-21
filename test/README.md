@@ -184,10 +184,46 @@ Use this fixed order to bisect an ordering failure.
 The seed does not cover the inputs of a property test. fast-check draws those
 inputs, and fast-check reports a seed of its own.
 
+## Property tests
+
+A property test states a rule and then asks a generator for many inputs. The
+tests under `test/properties/` hold the round-trip rules of the engine: the
+canonical serializer writes its own output again unchanged, a model goes to
+text and back whole, the definition of every zone of the table survives the
+parse boundary, a note goes through a read and a write and stays the same, and
+a record goes through the emitter and the reader and stays the same.
+
+The generators live under [`harness/arbitraries/`](harness/arbitraries/), with
+a unit test beside each one. Those unit tests read a sample and ask what the
+sample covers. A generator that stopped drawing hard values would make every
+rule pass over an empty search, and the unit test beside it turns red instead.
+
+```bash
+npm test -- test/properties
+```
+
+The seed is a constant of the repository, in
+[`harness/arbitraries/seed.ts`](harness/arbitraries/seed.ts). The same commit
+therefore draws the same inputs on every machine and on every run, and a
+failure in a build log repeats on a desktop. Give another seed to search
+wider:
+
+```bash
+DAVENPORT_PROPERTY_SEED=17 npm test -- test/properties
+```
+
+A failure states the command that draws the same inputs again.
+
+`test/properties/ics/known-defects.test.ts` holds the defects that these tests
+found. Every case in that file is skipped, and each one is the smallest input
+that reaches the defect.
+
 ## Where a test goes
 
 - `test/suites/` — one file or one directory for each suite of
   [`docs/davenport-test-plan.md`](../docs/davenport-test-plan.md).
+- `test/properties/` — one directory for each surface that a property test
+  covers. A test here implements no plan ID, so its title takes no ID.
 - `test/harness/` — the shared test infrastructure, with a unit test beside
   each piece of it. Name each of these unit tests after the behavior that it
   covers, and not after a plan ID.
