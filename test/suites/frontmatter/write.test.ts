@@ -15,6 +15,7 @@ import { ALL_DAY_KEYS, TIMED_KEYS } from '../../../src/core/frontmatter/keys';
 import { readNote } from '../../../src/core/frontmatter/parse';
 import { applyPatch, schedulePatch } from '../../../src/core/frontmatter/write';
 import { FakeFileManager } from '../../harness/obsidian-fake/file-manager';
+import { readFrontmatter } from '../../harness/obsidian-fake';
 
 const TIMED: Schedule = {
 	kind: 'timed',
@@ -199,6 +200,35 @@ describe('FM-6 one write of the platform', () => {
 		expect(reading.schedule).toMatchObject({ kind: 'timed' });
 		expect(manager.note('note.md')).not.toContain('date:');
 		expect(manager.note('note.md')).not.toContain('endDate:');
+	});
+
+	// The parser of the note editor types a day as a date value. The write
+	// must still leave one shape, and the note must still read with no
+	// fault afterwards.
+	it('FM-6: the switch holds under the dialect that types a day as a date value', async () => {
+		const manager = new FakeFileManager(
+			{ 'note.md': TIMED_NOTE },
+			'timestamp',
+		);
+		await writeNoteFrontmatter(
+			manager,
+			manager.file('note.md'),
+			schedulePatch(ALL_DAY),
+		);
+		expect(manager.calls).toHaveLength(1);
+		const read = readFrontmatter(manager.note('note.md'), 'timestamp');
+		if (read.kind !== 'mapping') {
+			throw new Error('the note holds no block that the parser reads');
+		}
+		expect(Object.keys(read.data)).not.toContain('start');
+		expect(Object.keys(read.data)).not.toContain('end');
+		const reading = readNote(read.data);
+		expect(reading.problems).toEqual([]);
+		expect(reading.schedule).toEqual({
+			kind: 'all-day',
+			date: { year: 2026, month: 3, day: 14 },
+			endDate: { year: 2026, month: 3, day: 16 },
+		});
 	});
 
 	it('FM-6: a write that the platform refuses gives the reason and writes nothing', async () => {

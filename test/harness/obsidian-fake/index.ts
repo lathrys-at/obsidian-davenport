@@ -24,4 +24,9 @@ export {
 	splitNote,
 	writeFrontmatter,
 } from './frontmatter';
-export type { BlockRead, FrontmatterRead, SplitNote } from './frontmatter';
+export type {
+	BlockRead,
+	FrontmatterDialect,
+	FrontmatterRead,
+	SplitNote,
+} from './frontmatter';

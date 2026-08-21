@@ -29,7 +29,14 @@ describe('the times of a timed schedule', () => {
 			kind: 'timed',
 			start: START,
 			end: null,
-			duration: { seconds: 5400, negative: false },
+			duration: {
+				negative: false,
+				weeks: 0,
+				days: 0,
+				hours: 1,
+				minutes: 30,
+				seconds: 0,
+			},
 		});
 		expect(emission.duration).toBe('PT1H30M');
 		expect(emission.dtend).toBeNull();
@@ -55,6 +62,87 @@ describe('the times of a timed schedule', () => {
 			duration: null,
 		});
 		expect(emission.timezoneNames).toEqual(['Europe/London']);
+	});
+});
+
+// The reader of a note finds this fault too. The emitter is exported, so
+// a caller that builds a schedule from another source reaches it without
+// the reader.
+describe('the end that does not stand after the start', () => {
+	it('refuses an all-day pair whose last day stands before its first day', () => {
+		const result = emitSchedule(
+			{
+				kind: 'all-day',
+				date: { year: 2026, month: 3, day: 16 },
+				endDate: { year: 2026, month: 3, day: 14 },
+			},
+			ZONES,
+		);
+		expect(result).toEqual({
+			ok: false,
+			problems: [
+				{
+					kind: 'end-before-start',
+					keys: ['date', 'endDate'],
+					start: 'date',
+					end: 'endDate',
+				},
+			],
+		});
+	});
+
+	it('takes an all-day pair of one day', () => {
+		const result = emitSchedule(
+			{
+				kind: 'all-day',
+				date: { year: 2026, month: 3, day: 14 },
+				endDate: { year: 2026, month: 3, day: 14 },
+			},
+			ZONES,
+		);
+		expect(result.ok && result.value.dtend?.text).toBe('2026-03-15');
+	});
+
+	it.each([
+		['an end before the start', { hour: 8, minute: 0, second: 0 }],
+		['an end that equals the start', { hour: 9, minute: 0, second: 0 }],
+	])('refuses a timed pair with %s', (_name, time) => {
+		const result = emitSchedule(
+			{
+				kind: 'timed',
+				start: START,
+				end: { ...START, time },
+				duration: null,
+			},
+			ZONES,
+		);
+		expect(result).toEqual({
+			ok: false,
+			problems: [
+				{
+					kind: 'end-before-start',
+					keys: ['start', 'end'],
+					start: 'start',
+					end: 'end',
+				},
+			],
+		});
+	});
+
+	// The start states an offset and the end states none, so the two reach
+	// the format under two different zones. The order of the two then
+	// follows from the timezone table, which this module does not read.
+	it('compares no pair that carries two different zones', () => {
+		const result = emitSchedule(
+			{
+				kind: 'timed',
+				start: { ...START, offsetSeconds: 0 },
+				end: { ...START, time: { hour: 8, minute: 0, second: 0 } },
+				duration: null,
+			},
+			ZONES,
+		);
+		expect(result.ok).toBe(true);
 	});
 });
 

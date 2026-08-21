@@ -29,6 +29,22 @@
  * Each value stands in the form that the calendar library takes, which
  * keeps the separators of the day and of the time of day. The library
  * writes the short form of the format from that text.
+ *
+ * A time that states a large offset can reach a day below the first year
+ * that the reader admits. The value `0100-01-01T00:00:00+23:00` is such a
+ * time, and it writes the year 99. The text that this module writes is
+ * correct, and the reader refuses to read it back. No calendar of a user
+ * holds such a day.
+ *
+ * The end that this module writes always stands after the start, and the
+ * module states a fault where it does not. The reader of a note finds the
+ * same fault, and this module is exported for the callers that build a
+ * schedule from another source. The format refuses an event whose end
+ * does not stand after its start, so neither entry point may write one.
+ * The module compares the two values where the two carry one zone: both
+ * stand in universal time, or both name one zone. Where the two carry
+ * different zones, the order follows from the timezone table, and the
+ * comparison of that pair belongs to the caller that resolves it.
  */
 
 import { civilDateTime, civilSeconds, daysInMonth } from '../timezone/calendar';
@@ -82,15 +98,20 @@ export function emitSchedule(
 	context: ZoneContext,
 ): EmissionResult {
 	if (schedule.kind === 'all-day') {
-		return {
-			ok: true,
-			value: {
-				dtstart: dayValue(schedule.date),
-				dtend: dayValue(nextDay(schedule.endDate ?? schedule.date)),
-				duration: null,
-				timezoneNames: [],
-			},
-		};
+		const dtstart = dayValue(schedule.date);
+		const dtend = dayValue(nextDay(schedule.endDate ?? schedule.date));
+		const order = orderProblem(dtstart, dtend, 'date', 'endDate');
+		return order === null
+			? {
+					ok: true,
+					value: {
+						dtstart,
+						dtend,
+						duration: null,
+						timezoneNames: [],
+					},
+				}
+			: { ok: false, problems: [order] };
 	}
 	const problems: FrontmatterProblem[] = [];
 	// The zone of the note and the zone of the calendar do not change from
@@ -118,6 +139,10 @@ export function emitSchedule(
 	const dtend = schedule.end === null ? null : read(schedule.end, 'end');
 	if (dtstart === null || problems.length > 0) {
 		return { ok: false, problems };
+	}
+	const order = orderProblem(dtstart, dtend, 'start', 'end');
+	if (order !== null) {
+		return { ok: false, problems: [order] };
 	}
 	return {
 		ok: true,
@@ -177,6 +202,30 @@ function timeValue(value: DateTimeValue, zone: ResolvedZone): IcsTime {
 		text: `${dateText(universal)}T${timeText(universal)}Z`,
 		tzid: null,
 	};
+}
+
+/**
+ * The fault of an end that does not stand after its start, or null where
+ * the two stand in the right order and where the two carry different
+ * zones. The text of two values of one zone stands in one form, and that
+ * form puts the times of that zone in order.
+ */
+function orderProblem(
+	dtstart: IcsTime,
+	dtend: IcsTime | null,
+	start: SchemaKey,
+	end: SchemaKey,
+): FrontmatterProblem | null {
+	if (dtend === null) {
+		return null;
+	}
+	if (dtstart.tzid !== dtend.tzid) {
+		return null;
+	}
+	if (dtend.text > dtstart.text) {
+		return null;
+	}
+	return { kind: 'end-before-start', keys: [start, end], start, end };
 }
 
 function nameProblem(

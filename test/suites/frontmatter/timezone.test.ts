@@ -389,6 +389,59 @@ describe('FM-4 the check of a note against its calendar', () => {
 	});
 });
 
+// The check of a note and the emission of its times state one rule about
+// the zones. The check reads that rule out of the emission, and this
+// table holds the two together over every shape of the matrix.
+describe('FM-4 the check and the emission agree', () => {
+	const ROWS: readonly (readonly [
+		Readonly<Record<string, unknown>>,
+		string | undefined,
+	])[] = [
+		[{ start: '2026-03-14T09:00' }, undefined],
+		[{ start: '2026-03-14T09:00' }, CALENDAR_ZONE],
+		[{ start: '2026-03-14T09:00', timezone: NOTE_ZONE }, undefined],
+		[{ start: '2026-03-14T09:00', timezone: 'Mars/Olympus' }, undefined],
+		[
+			{ start: '2026-03-14T09:00', timezone: 'Mars/Olympus' },
+			CALENDAR_ZONE,
+		],
+		[
+			{ start: '2026-03-14T09:00:00Z', timezone: 'Mars/Olympus' },
+			undefined,
+		],
+		[{ start: '2026-03-14T09:00:00Z' }, undefined],
+		[{ start: '2026-03-14T09:00:00Z', end: '2026-03-14T10:00' }, undefined],
+		[{ date: '2026-03-14', endDate: '2026-03-16' }, undefined],
+		[{ summary: 'No schedule' }, undefined],
+	];
+
+	it.each(ROWS)(
+		'FM-4: the note %o under the calendar zone %s answers one way',
+		(note, calendarTimezone) => {
+			const checked = validateNote(note, { calendarTimezone });
+			const schedule = checked.schedule;
+			const emission =
+				schedule === null
+					? null
+					: emitSchedule(
+							schedule,
+							context(noteZone(note), calendarTimezone),
+						);
+			if (checked.problems.length === 0) {
+				expect(emission === null || emission.ok).toBe(true);
+				return;
+			}
+			// The check states a fault. Where the emission also states one,
+			// every fault of the emission stands in the list of the check.
+			if (emission !== null && !emission.ok) {
+				for (const problem of emission.problems) {
+					expect(checked.problems).toContainEqual(problem);
+				}
+			}
+		},
+	);
+});
+
 describe('FM-4 the zone of the device', () => {
 	it.each(DEVICE_ZONES)(
 		'FM-4: the emitted zone is the resolved zone under the device zone %s',
@@ -413,6 +466,12 @@ describe('FM-4 the zone of the device', () => {
 		expect(first).toEqual(second);
 	});
 });
+
+/** The timezone key of a note, where the note holds one. */
+function noteZone(note: Readonly<Record<string, unknown>>): string | undefined {
+	const value = note.timezone;
+	return typeof value === 'string' ? value : undefined;
+}
 
 /** A calendar that holds the event and the definition of each zone it names. */
 function calendarOf(emission: ScheduleEmission): JCalComponent {

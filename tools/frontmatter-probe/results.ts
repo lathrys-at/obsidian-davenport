@@ -93,6 +93,14 @@ export interface FixtureEmission {
 	readonly outputBase64: string;
 	/** The SHA-256 hash of those same bytes. */
 	readonly outputHash: string;
+	/**
+	 * The type of each value that the writer gave the callback, under the
+	 * name of its key. A value states `Date`, `array`, `null`, or the name
+	 * that the language gives its type. The parser of the app decides
+	 * these types, and the engine reads what that parser gives. A results
+	 * file that an earlier build wrote carries no such record.
+	 */
+	readonly valueTypes?: Readonly<Record<string, string>>;
 }
 
 /**

@@ -609,13 +609,30 @@ function readFixture(
 	if (typeof record.error === 'string') {
 		return { id, inputHash, error: record.error };
 	}
+	const valueTypes = record.valueTypes;
 	return {
 		id,
 		inputHash,
 		settledBy: settlingAt(record, source, where),
 		outputBase64: stringAt(record, 'outputBase64', source, where),
 		outputHash: stringAt(record, 'outputHash', source, where),
+		// A results file that an earlier build wrote carries no record of
+		// the value types. The comparison reads the bytes, and it takes
+		// such a file as it stands.
+		...(isValueTypes(valueTypes) ? { valueTypes } : {}),
 	};
+}
+
+/** True when the value is a record of a type name for each key. */
+function isValueTypes(
+	value: unknown,
+): value is Readonly<Record<string, string>> {
+	return (
+		typeof value === 'object' &&
+		value !== null &&
+		!Array.isArray(value) &&
+		Object.values(value).every((name) => typeof name === 'string')
+	);
 }
 
 /** How the record says the wait ended. The wait came before the writer. */

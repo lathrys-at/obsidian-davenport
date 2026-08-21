@@ -104,19 +104,49 @@ describe('FM-2 a key that stands without the key it needs', () => {
 		expect(message).toContain(`"${needs}"`);
 	});
 
-	it('FM-2: an end of one shape beside the anchor of the other shape names the anchor it needs', () => {
+	// A message that asked for the missing anchor would ask the user for a
+	// note that states two shapes, and the next read of that note would
+	// state the conflict of the two shapes.
+	it.each([
+		[
+			{ date: '2026-03-14', end: '2026-03-14T10:00' },
+			{ key: 'end', held: 'date', use: 'endDate' },
+		],
+		[
+			{ date: '2026-03-14', duration: '1h' },
+			{ key: 'duration', held: 'date', use: null },
+		],
+		[
+			{ start: '2026-03-14T09:00', endDate: '2026-03-16' },
+			{ key: 'endDate', held: 'start', use: 'end' },
+		],
+	])(
+		'FM-2: a key beside the first key of the other shape names both shapes',
+		(note, expected) => {
+			const reading = readNote(note);
+			expect(reading.problems).toEqual([
+				{
+					kind: 'shape-mismatch',
+					keys: [expected.key, expected.held],
+					...expected,
+				},
+			]);
+			const message = firstMessage(reading.problems);
+			expect(message).toContain(`"${expected.key}"`);
+			expect(message).toContain(`"${expected.held}"`);
+			expect(message).not.toContain('Add the key');
+		},
+	);
+
+	it('FM-2: the note that names both shapes states no shape conflict', () => {
 		const reading = readNote({
 			date: '2026-03-14',
 			end: '2026-03-14T10:00',
 		});
-		expect(reading.problems).toEqual([
-			{
-				kind: 'anchor-missing',
-				keys: ['end', 'start'],
-				key: 'end',
-				needs: 'start',
-			},
+		expect(reading.problems.map((problem) => problem.kind)).toEqual([
+			'shape-mismatch',
 		]);
+		expect(reading.schedule).toMatchObject({ kind: 'all-day' });
 	});
 });
 
@@ -151,18 +181,71 @@ describe('FM-2 the end stands after the start', () => {
 		]);
 	});
 
-	it('FM-2: an end that equals the start is not a fault', () => {
+	// The end of the timed shape is the first instant after the event, and
+	// the format states that such an end stands after the start. The last
+	// day of the all-day shape is part of the event, so that day can equal
+	// the first day. The two rules are different for that reason.
+	it('FM-2: an end that equals the start fails', () => {
 		const reading = readNote({
 			start: '2026-03-14T09:00',
 			end: '2026-03-14T09:00',
 		});
+		expect(reading.problems).toEqual([
+			{
+				kind: 'end-before-start',
+				keys: ['start', 'end'],
+				start: 'start',
+				end: 'end',
+			},
+		]);
+		expect(firstMessage(reading.problems)).toContain(
+			'does not state a time after',
+		);
+	});
+
+	it('FM-2: a last day that equals the first day is one whole day', () => {
+		const reading = readNote({ date: '2026-03-14', endDate: '2026-03-14' });
 		expect(reading.problems).toEqual([]);
+		expect(reading.schedule).toEqual({
+			kind: 'all-day',
+			date: { year: 2026, month: 3, day: 14 },
+			endDate: { year: 2026, month: 3, day: 14 },
+		});
 	});
 
 	it('FM-2: the offsets decide the order where both times state one', () => {
 		const reading = readNote({
 			start: '2026-03-14T09:00:00+01:00',
 			end: '2026-03-14T08:30:00Z',
+		});
+		expect(reading.problems).toEqual([]);
+	});
+
+	// The two times state opposite offsets, so the end stands 21 hours before
+	// the start. The three notes below put that pair inside one month, across
+	// the end of a month, and across the end of a year. A comparison that
+	// counted the days with an ordering key would pass the second note and
+	// the third note.
+	it.each([
+		['2026-03-14T22:00:00-11:00', '2026-03-15T00:00:00+12:00'],
+		['2026-03-31T22:00:00-11:00', '2026-04-01T00:00:00+12:00'],
+		['2026-12-31T22:00:00-11:00', '2027-01-01T00:00:00+12:00'],
+	])('FM-2: an end 21 hours before the start of %s fails', (start, end) => {
+		const reading = readNote({ start, end });
+		expect(reading.problems).toEqual([
+			{
+				kind: 'end-before-start',
+				keys: ['start', 'end'],
+				start: 'start',
+				end: 'end',
+			},
+		]);
+	});
+
+	it('FM-2: an end one minute after the start across the end of a month passes', () => {
+		const reading = readNote({
+			start: '2026-03-31T23:59:00+00:00',
+			end: '2026-04-01T00:00:00+00:00',
 		});
 		expect(reading.problems).toEqual([]);
 	});

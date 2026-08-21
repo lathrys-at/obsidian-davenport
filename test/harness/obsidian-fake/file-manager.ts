@@ -9,8 +9,20 @@
  *
  * The double is not a claim about the bytes that real Obsidian writes. The
  * verification protocol measures those bytes.
+ *
+ * The double takes one of the two dialects of the reader, so a test can
+ * meet the value types that each parser family gives. The dialect decides
+ * what the update function receives for a value of a date form.
+ *
+ * Two differences from the real method stand on purpose. The real method
+ * takes a file object of the vault, so it cannot reach a path that the
+ * vault does not hold: this double therefore refuses such a path in place
+ * of making the note. The real method also takes the write options of the
+ * platform as a third argument. This double takes no such argument,
+ * because the adapter passes none.
  */
 
+import type { FrontmatterDialect } from './frontmatter';
 import { writeFrontmatter } from './frontmatter';
 
 /** One call that the double took. */
@@ -27,7 +39,10 @@ export class FakeFileManager {
 	private readonly taken: FrontmatterCall[] = [];
 	private failure: Error | null = null;
 
-	constructor(notes: Readonly<Record<string, string>> = {}) {
+	constructor(
+		notes: Readonly<Record<string, string>> = {},
+		private readonly dialect: FrontmatterDialect = 'core',
+	) {
 		for (const [path, content] of Object.entries(notes)) {
 			this.notes.set(path, content);
 		}
@@ -71,8 +86,15 @@ export class FakeFileManager {
 		if (this.failure !== null) {
 			return Promise.reject(this.failure);
 		}
-		const before = this.notes.get(file.path) ?? '';
-		const after = writeFrontmatter(before, update);
+		const before = this.notes.get(file.path);
+		if (before === undefined) {
+			return Promise.reject(
+				new Error(
+					`the fake file manager holds no note at ${file.path}`,
+				),
+			);
+		}
+		const after = writeFrontmatter(before, update, this.dialect);
 		this.notes.set(file.path, after);
 		this.taken.push({ path: file.path, before, after });
 		return Promise.resolve();

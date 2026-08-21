@@ -17,9 +17,9 @@
  * - a fraction of a second, because the calendar format holds whole
  *   seconds only, and a plugin that removes the fraction loses what the
  *   user wrote;
- * - a year below 1000, because the date functions of the host read a year
- *   below 100 as a year of the twentieth century, and the plugin would
- *   then compute the wrong day.
+ * - a year below 100, because the date functions of the host read such a
+ *   year as a year of the twentieth century: the year 50 would give 1950,
+ *   and every day that the plugin computed from it would be wrong.
  */
 
 import { daysInMonth } from '../timezone/calendar';
@@ -60,7 +60,7 @@ export type IsoFailure =
 	| { readonly kind: 'shape' }
 	/** The text states a fraction of a second. */
 	| { readonly kind: 'fraction' }
-	/** The year is below 1000. */
+	/** The year is below the first year that the plugin reads. */
 	| { readonly kind: 'year-range'; readonly year: number }
 	/** The calendar has no such day, for example the 30th of February. */
 	| { readonly kind: 'no-such-day'; readonly date: CivilDate }
@@ -73,8 +73,11 @@ export type IsoResult =
 	| { readonly ok: true; readonly value: IsoValue }
 	| { readonly ok: false; readonly failure: IsoFailure };
 
-/** The smallest year that the plugin reads. */
-export const MIN_YEAR = 1000;
+/**
+ * The smallest year that the plugin reads. The date functions of the host
+ * remap a year below this one, and the remap ends here.
+ */
+export const MIN_YEAR = 100;
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const DATE_TIME =

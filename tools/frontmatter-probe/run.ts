@@ -143,9 +143,16 @@ async function sample(
 	const file = await writePristine(host.app, path, fixture.content);
 	const settledBy = await settling;
 
+	let valueTypes: Record<string, string> = {};
 	await host.app.fileManager.processFrontMatter(
 		file,
 		(frontmatter: Record<string, unknown>) => {
+			valueTypes = Object.fromEntries(
+				Object.entries(frontmatter).map(([key, value]) => [
+					key,
+					typeName(value),
+				]),
+			);
 			frontmatter[MARKER.key] = MARKER.value;
 		},
 	);
@@ -157,7 +164,27 @@ async function sample(
 		settledBy,
 		outputBase64: arrayBufferToBase64(emitted),
 		outputHash: sha256Hex(new Uint8Array(emitted)),
+		valueTypes,
 	};
+}
+
+/**
+ * The name of the type of one value that the writer gave the callback.
+ * The engine reads text under most keys, and it reads a day under the
+ * keys of whole days. A value of another type therefore changes what the
+ * engine can do with the note.
+ */
+function typeName(value: unknown): string {
+	if (value === null) {
+		return 'null';
+	}
+	if (value instanceof Date) {
+		return 'Date';
+	}
+	if (Array.isArray(value)) {
+		return 'array';
+	}
+	return typeof value;
 }
 
 /** Makes the probe folder, or accepts the folder that is already there. */

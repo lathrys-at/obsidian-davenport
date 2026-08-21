@@ -35,6 +35,20 @@ export type FrontmatterProblem =
 			readonly key: SchemaKey;
 			readonly needs: SchemaKey;
 	  }
+	/**
+	 * A key of one shape stands beside the first key of the other shape.
+	 * The key that the note holds names the shape of the note, and the
+	 * other key belongs to the shape that the note does not take.
+	 */
+	| {
+			readonly kind: 'shape-mismatch';
+			readonly keys: Keys;
+			readonly key: SchemaKey;
+			/** The first key of the shape that the note takes. */
+			readonly held: SchemaKey;
+			/** The key of that shape for the same purpose, where one exists. */
+			readonly use: SchemaKey | null;
+	  }
 	/** The key holds a value that is not text. */
 	| {
 			readonly kind: 'not-text';
@@ -93,6 +107,15 @@ export type FrontmatterProblem =
 			readonly key: SchemaKey;
 			readonly text: string;
 	  }
+	/**
+	 * A key that states a time of day holds a date value, and not text.
+	 * The parser of the note editor made that value.
+	 */
+	| {
+			readonly kind: 'time-not-text';
+			readonly keys: Keys;
+			readonly key: SchemaKey;
+	  }
 	/** A key of the all-day shape holds a time of day. */
 	| {
 			readonly kind: 'time-of-day-refused';
@@ -150,8 +173,10 @@ export function describeProblem(problem: FrontmatterProblem): string {
 			return `The note holds the key "end" and the key "duration". An event takes one of the two keys. Use "end" to state when the event stops. Use "duration" to state how long the event continues. Then remove the other key.`;
 		case 'anchor-missing':
 			return `The note holds the key ${quote(problem.key)} and no key ${quote(problem.needs)}. Add the key ${quote(problem.needs)}, or remove the key ${quote(problem.key)}.`;
+		case 'shape-mismatch':
+			return shapeMismatch(problem.key, problem.held, problem.use);
 		case 'not-text':
-			return `The key ${quote(problem.key)} holds ${problem.found}. The plugin reads text here. Write the value as text.`;
+			return `The key ${quote(problem.key)} holds ${problem.found}. The plugin reads text here. Put the value in quotation marks, or write text in place of it.`;
 		case 'empty-value':
 			return `The key ${quote(problem.key)} holds no value. Give the key a value, or remove the key.`;
 		case 'not-a-list':
@@ -166,6 +191,8 @@ export function describeProblem(problem: FrontmatterProblem): string {
 			return `The key ${quote(problem.key)} holds ${quote(problem.text)}. ${timeFault(problem.failure)}`;
 		case 'time-of-day-missing':
 			return `The key ${quote(problem.key)} holds ${quote(problem.text)}, which states a day and no time of day. Add the time of day, for example 2026-03-14T09:00. For an event of whole days, use the key "date" in place of the key "start".`;
+		case 'time-not-text':
+			return `The key ${quote(problem.key)} holds a date value, and not text. The plugin reads the text of the note here, because that text can state an offset from universal time. Put the value in quotation marks.`;
 		case 'time-of-day-refused':
 			return `The key ${quote(problem.key)} holds ${quote(problem.text)}, which states a time of day. An event of whole days states days only. For an event with a time of day, use the key "start" in place of the key "date".`;
 		case 'bad-duration':
@@ -173,14 +200,36 @@ export function describeProblem(problem: FrontmatterProblem): string {
 		case 'duration-not-positive':
 			return `The key ${quote(problem.key)} states a length of zero or less. State a length of more than zero.`;
 		case 'end-before-start':
-			return `The key ${quote(problem.end)} states a time before the time of the key ${quote(problem.start)}. An event stops after it starts.`;
+			return `The key ${quote(problem.end)} does not state a time after the time of the key ${quote(problem.start)}. An event stops after it starts.`;
 		case 'unknown-timezone':
 			return `The key ${quote(problem.key)} holds ${quote(problem.name)}. The plugin does not know this timezone. Use a name of the IANA timezone database, for example Europe/London.`;
 		case 'unknown-calendar-timezone':
 			return `The key "calendar" names a calendar whose default timezone is ${quote(problem.name)}. The plugin does not know this timezone. Change the default timezone of that calendar in the settings, or add the key "timezone" to the note.`;
 		case 'timezone-missing':
-			return `The key ${quote(problem.key)} states a time with no offset from universal time, and no timezone resolves for that time. Add the key "timezone" with the name of a timezone, or give the calendar a default timezone. The plugin never puts the timezone of this device in their place.`;
+			return `The key ${quote(problem.key)} states a time with no offset from universal time, and no timezone resolves for that time. Add the key "timezone" with the name of a timezone, or give the calendar a default timezone. The plugin never uses the timezone of this device instead.`;
 	}
+}
+
+/**
+ * The words for a key of one shape that stands beside the first key of
+ * the other shape. The user takes one of two ways out: the key of the
+ * shape that the note takes, or the first key of the other shape.
+ */
+function shapeMismatch(
+	key: SchemaKey,
+	held: SchemaKey,
+	use: SchemaKey | null,
+): string {
+	const shape =
+		held === 'date'
+			? 'An event of whole days'
+			: 'An event with a time of day';
+	const other = held === 'date' ? 'start' : 'date';
+	const remedy =
+		use === null
+			? `${shape} states no length. Remove the key ${quote(key)}`
+			: `${shape} states its end with the key ${quote(use)}. Use the key ${quote(use)} in place of the key ${quote(key)}`;
+	return `The note holds the key ${quote(key)} and the key ${quote(held)}. ${remedy}, or use the key ${quote(other)} in place of the key ${quote(held)}.`;
 }
 
 function timeFault(failure: IsoFailure): string {
@@ -192,7 +241,7 @@ function timeFault(failure: IsoFailure): string {
 		case 'fraction':
 			return 'The plugin reads whole seconds. Remove the fraction of a second.';
 		case 'year-range':
-			return 'The plugin reads a year from 1000.';
+			return 'The plugin reads a year from 100. Write the year with four digits.';
 		case 'no-such-day':
 			return 'The calendar has no such day.';
 		case 'no-such-time':

@@ -19,6 +19,7 @@ import { serializeCalendar } from '../../../src/core/ics/serializer';
 import type { ScheduleEmission } from '../../../src/core/frontmatter/emission';
 import { emitSchedule } from '../../../src/core/frontmatter/emission';
 import { readNote } from '../../../src/core/frontmatter/parse';
+import { readFrontmatter } from '../../harness/obsidian-fake';
 
 const NO_ZONE = {
 	noteTimezone: undefined,
@@ -108,6 +109,50 @@ describe('FM-3 the inclusive last day becomes the exclusive end', () => {
 		const text = icsText(emit('2026-03-14', '2026-03-16'));
 		expect(text).toContain('DTSTART;VALUE=DATE:20260314\r\n');
 		expect(text).toContain('DTEND;VALUE=DATE:20260317\r\n');
+	});
+});
+
+// The parser of the note editor gives a date value for a day, and the
+// keys of this shape are exactly the keys where that happens. The note
+// below is the note that the schema prescribes, and it passes through the
+// same conversion as a note of text.
+describe('FM-3 the note that the parser of the note editor typed', () => {
+	function typed(...lines: readonly string[]): Record<string, unknown> {
+		const read = readFrontmatter(
+			['---', ...lines, '---', ''].join('\n'),
+			'timestamp',
+		);
+		if (read.kind !== 'mapping') {
+			throw new Error('the note holds no block that the parser reads');
+		}
+		return read.data;
+	}
+
+	it('FM-3: the date values of a note reach the format as the exclusive end', () => {
+		const raw = typed('date: 2026-03-14', 'endDate: 2026-03-17');
+		expect(raw.date).toBeInstanceOf(Date);
+		const reading = readNote(raw);
+		expect(reading.problems).toEqual([]);
+		const schedule = reading.schedule;
+		if (schedule === null) {
+			throw new Error('the note states no schedule');
+		}
+		const result = emitSchedule(schedule, NO_ZONE);
+		if (!result.ok) {
+			throw new Error('the note emits no times');
+		}
+		expect(result.value.dtstart.text).toBe('2026-03-14');
+		expect(result.value.dtend?.text).toBe('2026-03-18');
+	});
+
+	it('FM-3: a date value at the end of a month steps into the next month', () => {
+		const reading = readNote(typed('date: 2026-01-31'));
+		const schedule = reading.schedule;
+		if (schedule === null) {
+			throw new Error('the note states no schedule');
+		}
+		const result = emitSchedule(schedule, NO_ZONE);
+		expect(result.ok && result.value.dtend?.text).toBe('2026-02-01');
 	});
 });
 

@@ -1,40 +1,55 @@
 import { describe, expect, it } from 'vitest';
-import { icsDuration, parseDuration } from './duration';
+import type { Duration } from './duration';
+import { durationSeconds, icsDuration, parseDuration } from './duration';
 
-/** The length in seconds, for a text that the parser reads. */
-function seconds(text: string): number {
+const NOTHING: Duration = {
+	negative: false,
+	weeks: 0,
+	days: 0,
+	hours: 0,
+	minutes: 0,
+	seconds: 0,
+};
+
+/** The length that the parser reads out of a text. */
+function read(text: string): Duration {
 	const result = parseDuration(text);
 	if (!result.ok) {
 		throw new Error(`the parser refused ${text}`);
 	}
-	return result.value.seconds;
+	return result.value;
+}
+
+/** The form of the calendar format for a text that the parser reads. */
+function emit(text: string): string {
+	return icsDuration(read(text));
 }
 
 describe('the short form of a length of time', () => {
 	it.each([
-		['1s', 1],
-		['1m', 60],
-		['1h', 3600],
-		['1d', 86400],
-		['1w', 604800],
-		['0s', 0],
-		['999999999s', 999999999],
-	])('reads %s as %i seconds', (text, expected) => {
-		expect(seconds(text)).toBe(expected);
+		['1s', { seconds: 1 }],
+		['1m', { minutes: 1 }],
+		['1h', { hours: 1 }],
+		['1d', { days: 1 }],
+		['1w', { weeks: 1 }],
+		['0s', {}],
+		['999999999s', { seconds: 999999999 }],
+		['1w2d3h4m5s', { weeks: 1, days: 2, hours: 3, minutes: 4, seconds: 5 }],
+		['1h30m', { hours: 1, minutes: 30 }],
+	])('reads %s as the units that the note wrote', (text, counts) => {
+		expect(read(text)).toEqual({ ...NOTHING, ...counts });
 	});
 
 	it('reads the sign of a value that stands before its time', () => {
-		expect(parseDuration('-15m')).toEqual({
-			ok: true,
-			value: { seconds: 900, negative: true },
+		expect(read('-15m')).toEqual({
+			...NOTHING,
+			negative: true,
+			minutes: 15,
 		});
 	});
 
 	it('reads a value with no sign as a value after its time', () => {
-		expect(parseDuration('15m')).toEqual({
-			ok: true,
-			value: { seconds: 900, negative: false },
-		});
+		expect(read('15m')).toEqual({ ...NOTHING, minutes: 15 });
 	});
 
 	it.each([
@@ -63,37 +78,67 @@ describe('the short form of a length of time', () => {
 	});
 });
 
+describe('the length in seconds', () => {
+	it.each([
+		['1s', 1],
+		['1m', 60],
+		['1h', 3600],
+		['1d', 86400],
+		['24h', 86400],
+		['1440m', 86400],
+		['1w', 604800],
+		['0s', 0],
+		['1w2d3h4m5s', 788645],
+	])('gives %s as %i seconds', (text, expected) => {
+		expect(durationSeconds(read(text))).toBe(expected);
+	});
+
+	it('leaves the sign out of the count of seconds', () => {
+		expect(durationSeconds(read('-15m'))).toBe(900);
+	});
+});
+
+// The two formats hold two kinds of length. A day and a week are nominal,
+// and an hour, a minute and a second are exact. The pairs below state the
+// same count of seconds and different lengths, so the writer must keep the
+// two apart.
 describe('the form of a length of time in the calendar format', () => {
 	it.each([
-		[0, 'PT0S'],
-		[1, 'PT1S'],
-		[60, 'PT1M'],
-		[3600, 'PT1H'],
-		[5400, 'PT1H30M'],
-		[86400, 'P1D'],
-		[90000, 'P1DT1H'],
-		[604800, 'P7D'],
-		[788645, 'P9DT3H4M5S'],
-		[59, 'PT59S'],
-		[86401, 'P1DT1S'],
-	])('writes %i seconds as %s', (value, expected) => {
-		expect(icsDuration({ seconds: value, negative: false })).toBe(expected);
+		['1d', 'P1D'],
+		['24h', 'PT24H'],
+		['1440m', 'PT1440M'],
+		['86400s', 'PT86400S'],
+		['1w', 'P1W'],
+		['168h', 'PT168H'],
+		['7d', 'P7D'],
+	])('writes %s as %s, and never as another unit', (text, expected) => {
+		expect(emit(text)).toBe(expected);
 	});
 
 	it.each([
-		[900, '-PT15M'],
-		[86400, '-P1D'],
-		[0, '-PT0S'],
-	])('writes %i seconds before the time as %s', (value, expected) => {
-		expect(icsDuration({ seconds: value, negative: true })).toBe(expected);
+		['30m', 'PT30M'],
+		['1h30m', 'PT1H30M'],
+		['45s', 'PT45S'],
+		['2d3h', 'P2DT3H'],
+		['1w2d3h4m5s', 'P9DT3H4M5S'],
+		['1w1h', 'P7DT1H'],
+		['0s', 'PT0S'],
+		['0m', 'PT0S'],
+	])('writes %s as %s', (text, expected) => {
+		expect(emit(text)).toBe(expected);
 	});
 
-	it('writes a week as seven days, because the format takes no other part beside a week', () => {
-		expect(icsDuration({ seconds: seconds('1w'), negative: false })).toBe(
-			'P7D',
-		);
-		expect(icsDuration({ seconds: seconds('1w1h'), negative: false })).toBe(
-			'P7DT1H',
-		);
+	it.each([
+		['-15m', '-PT15M'],
+		['-1d', '-P1D'],
+		['-1w', '-P1W'],
+		['-0s', '-PT0S'],
+	])('writes %s before the time as %s', (text, expected) => {
+		expect(emit(text)).toBe(expected);
+	});
+
+	it('writes seven days for a week that stands with another part', () => {
+		expect(emit('1w2d')).toBe('P9D');
+		expect(emit('1w')).toBe('P1W');
 	});
 });

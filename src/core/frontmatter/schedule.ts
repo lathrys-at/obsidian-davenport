@@ -14,10 +14,12 @@
  * forms come from one read.
  */
 
+import { civilSeconds } from '../timezone/calendar';
 import type { Schedule, TimedSchedule } from '../model/event';
 import type { CivilDate } from './datetime';
 import type { Duration } from './duration';
-import type { DateTimeValue, Read, Reader } from './reader';
+import { durationSeconds } from './duration';
+import type { AnchorRule, DateTimeValue, Read, Reader } from './reader';
 
 /**
  * The schedule of a note, in the form that the engine computes with. A
@@ -66,6 +68,17 @@ export interface ScheduleForms {
 const NO_SCHEDULE: ScheduleForms = { value: null, text: null };
 
 /**
+ * The key of each shape that needs the first key of that shape, and the
+ * keys that state what the note holds in place of it. The all-day shape
+ * states no length, so the length has no key of that shape.
+ */
+const ANCHOR_RULES: readonly AnchorRule[] = [
+	{ key: 'end', anchor: 'start', other: 'date', use: 'endDate' },
+	{ key: 'duration', anchor: 'start', other: 'date', use: null },
+	{ key: 'endDate', anchor: 'date', other: 'start', use: 'end' },
+];
+
+/**
  * The shape of the schedule. A note that states a key of each shape gets
  * no schedule, because the plugin never chooses a shape for the user. A
  * note that states an end two times keeps its start and loses both ends,
@@ -78,9 +91,9 @@ function shape(reader: Reader, parts: ScheduleParts): ScheduleForms {
 		reader.report({ kind: 'shape-conflict', keys: ['date', 'start'] });
 		return NO_SCHEDULE;
 	}
-	reader.needs('end', 'start');
-	reader.needs('duration', 'start');
-	reader.needs('endDate', 'date');
+	for (const rule of ANCHOR_RULES) {
+		reader.needs(rule);
+	}
 	if (allDay) {
 		return parts.date === null
 			? NO_SCHEDULE
@@ -146,8 +159,10 @@ function timedForms(
 }
 
 /**
- * The last day of an all-day event. The reader reports a last day that
- * stands before the first day, and it drops that day.
+ * The last day of an all-day event. That day is part of the event, so a
+ * last day that equals the first day states an event of one day. The
+ * reader reports a last day that stands before the first day, and it
+ * drops that day.
  */
 function lastDay(
 	reader: Reader,
@@ -170,11 +185,16 @@ function lastDay(
 }
 
 /**
- * The end of a timed event. The reader compares the end with the start
- * where the two carry the same kind of zone: both state an offset, or
- * neither states one. Where one states an offset and the other states no
- * offset, the order of the two follows from a zone, and this reader
- * resolves no zone.
+ * The end of a timed event. The end of the timed shape is the first
+ * instant after the event, so the end stands after the start, and a note
+ * that states one instant for both states no event at all. The last day
+ * of the all-day shape follows another rule: that day is part of the
+ * event, so it can equal the first day.
+ *
+ * The reader compares the end with the start where the two carry the same
+ * kind of zone: both state an offset, or neither states one. Where one
+ * states an offset and the other states no offset, the order of the two
+ * follows from a zone, and this reader resolves no zone.
  */
 function stops(
 	reader: Reader,
@@ -187,7 +207,7 @@ function stops(
 	const comparable =
 		(start.value.offsetSeconds === null) ===
 		(end.value.offsetSeconds === null);
-	if (comparable && instant(end.value) < instant(start.value)) {
+	if (comparable && instant(end.value) <= instant(start.value)) {
 		reader.report({
 			kind: 'end-before-start',
 			keys: ['start', 'end'],
@@ -207,7 +227,7 @@ function length(
 	if (duration === null) {
 		return null;
 	}
-	if (duration.value.negative || duration.value.seconds === 0) {
+	if (duration.value.negative || durationSeconds(duration.value) === 0) {
 		reader.report({
 			kind: 'duration-not-positive',
 			keys: ['duration'],
@@ -218,17 +238,26 @@ function length(
 	return duration;
 }
 
-/** The seconds of one time, read against the offset that it states. */
+/**
+ * The seconds of one time, read against the offset that it states. The day
+ * comes from the calendar arithmetic of the timezone table, which counts
+ * the days from the start of 1970. A count of days is necessary here: the
+ * function adds a time of day to it, and it takes an offset away from it.
+ */
 function instant(value: DateTimeValue): number {
 	const seconds =
 		value.time.hour * 3600 + value.time.minute * 60 + value.time.second;
-	return dayNumber(value.date) * 86400 + seconds - (value.offsetSeconds ?? 0);
+	return (
+		civilSeconds(value.date.year, value.date.month, value.date.day) +
+		seconds -
+		(value.offsetSeconds ?? 0)
+	);
 }
 
 /**
  * A number that puts the days of the calendar in order. The number is not
- * a count of days. A comparison of two such numbers gives the order of the
- * two days, which is all that this module needs.
+ * a count of days, and no caller may compute with it. `lastDay` compares
+ * two of these numbers, and that comparison is the only use of it.
  */
 function dayNumber(date: CivilDate): number {
 	return date.year * 10000 + date.month * 100 + date.day;

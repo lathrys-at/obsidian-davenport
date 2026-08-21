@@ -16,20 +16,31 @@ describe('the forms of a day and of a day with a time of day', () => {
 		});
 	});
 
+	// The date functions of the host read a year below 100 as a year of the
+	// twentieth century. The floor of the reader stands where that remap
+	// ends, and these three tests measure both sides of it.
 	it('reads the first year that the plugin takes', () => {
-		expect(parseIsoValue(`${String(MIN_YEAR)}-01-01`)).toMatchObject({
+		expect(parseIsoValue(`0${String(MIN_YEAR)}-01-01`)).toMatchObject({
 			ok: true,
+			value: { date: { year: MIN_YEAR } },
 		});
 	});
 
 	it('refuses the year before the first year that the plugin takes', () => {
-		expect(parseIsoValue(`0${String(MIN_YEAR - 1)}-01-01`)).toEqual({
+		expect(parseIsoValue(`00${String(MIN_YEAR - 1)}-01-01`)).toEqual({
 			ok: false,
 			failure: { kind: 'year-range', year: MIN_YEAR - 1 },
 		});
 	});
 
-	it('refuses a year of two digits, which a reader could take for another year', () => {
+	it('reads a year of three digits, which the host does not remap', () => {
+		expect(parseIsoValue('0999-12-31')).toMatchObject({
+			ok: true,
+			value: { date: { year: 999, month: 12, day: 31 } },
+		});
+	});
+
+	it('refuses a year of two digits, which the host reads as another year', () => {
 		expect(parseIsoValue('0050-01-01')).toEqual({
 			ok: false,
 			failure: { kind: 'year-range', year: 50 },

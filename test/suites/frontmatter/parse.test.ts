@@ -13,6 +13,7 @@ import { SCHEMA_KEYS } from '../../../src/core/frontmatter/keys';
 import { readNote } from '../../../src/core/frontmatter/parse';
 import type { FrontmatterProblem } from '../../../src/core/frontmatter/problems';
 import { describeProblem } from '../../../src/core/frontmatter/problems';
+import { readFrontmatter } from '../../harness/obsidian-fake';
 
 /** The first fault of a note. The helper refuses a note with no fault. */
 function first(problems: readonly FrontmatterProblem[]): FrontmatterProblem {
@@ -135,16 +136,16 @@ describe('FM-1 the key vocabulary', () => {
 
 describe('FM-1 the duration forms', () => {
 	it.each([
-		['30m', 1800],
-		['1h30m', 5400],
-		['1h', 3600],
-		['45s', 45],
-		['2d3h', 183600],
-		['1w', 604800],
-		['1w2d3h4m5s', 788645],
-		['1H30M', 5400],
-		['+30m', 1800],
-	])('FM-1: reads the length %s', (text, seconds) => {
+		['30m', { minutes: 30 }],
+		['1h30m', { hours: 1, minutes: 30 }],
+		['1h', { hours: 1 }],
+		['45s', { seconds: 45 }],
+		['2d3h', { days: 2, hours: 3 }],
+		['1w', { weeks: 1 }],
+		['1w2d3h4m5s', { weeks: 1, days: 2, hours: 3, minutes: 4, seconds: 5 }],
+		['1H30M', { hours: 1, minutes: 30 }],
+		['+30m', { minutes: 30 }],
+	])('FM-1: reads the length %s', (text, counts) => {
 		const reading = readNote({
 			start: '2026-03-14T09:00:00',
 			duration: text,
@@ -159,7 +160,15 @@ describe('FM-1 the duration forms', () => {
 				offsetSeconds: null,
 			},
 			end: null,
-			duration: { seconds, negative: false },
+			duration: {
+				negative: false,
+				weeks: 0,
+				days: 0,
+				hours: 0,
+				minutes: 0,
+				seconds: 0,
+				...counts,
+			},
 		});
 	});
 
@@ -259,7 +268,7 @@ describe('FM-1 the ISO 8601 variants', () => {
 		['2026-3-14T09:00', 'shape'],
 		['2026-03-14T09', 'shape'],
 		['2026-03-14T09:00:00.500', 'fraction'],
-		['0999-03-14T09:00', 'year-range'],
+		['0099-03-14T09:00', 'year-range'],
 		['2026-02-30T09:00', 'no-such-day'],
 		['2026-13-01T09:00', 'no-such-day'],
 		['2026-00-10T09:00', 'no-such-day'],
@@ -450,4 +459,191 @@ describe('FM-1 the values that a key refuses', () => {
 			'number-range',
 		]);
 	});
+});
+
+// The parser of the note editor decides the type of each value. The
+// dialect below is YAML 1.1, which is what the parser family that the note
+// editor bundles reads under its default configuration. Under that dialect
+// a day is a date value, and so is a time of day that states its seconds.
+// The first test of this group states those types, so a change of the
+// dialect cannot pass here unnoticed.
+describe('FM-1 the values that the parser of the note editor types', () => {
+	/** The keys of a note, as the parser of the note editor types them. */
+	function typed(...lines: readonly string[]): Record<string, unknown> {
+		const content = ['---', ...lines, '---', ''].join('\n');
+		const read = readFrontmatter(content, 'timestamp');
+		if (read.kind !== 'mapping') {
+			throw new Error('the note holds no block that the parser reads');
+		}
+		return read.data;
+	}
+
+	function typeOf(value: unknown): string {
+		return value instanceof Date ? 'Date' : typeof value;
+	}
+
+	it.each([
+		['date: 2026-03-14', 'date', 'Date'],
+		['endDate: 2026-03-17', 'endDate', 'Date'],
+		['due: 2026-03-14', 'due', 'Date'],
+		['start: 2026-03-14T09:00:00', 'start', 'Date'],
+		['start: 2026-03-14T09:00:00+01:00', 'start', 'Date'],
+		['start: 2026-03-14T09:00', 'start', 'string'],
+		['summary: 2026', 'summary', 'number'],
+		['duration: 30m', 'duration', 'string'],
+		['timezone: Europe/London', 'timezone', 'string'],
+	])('FM-1: the line %s gives %s the type %s', (line, key, expected) => {
+		expect(typeOf(typed(line)[key])).toBe(expected);
+	});
+
+	it('FM-1: the all-day note of the schema reads with no fault', () => {
+		const reading = readNote(
+			typed('date: 2026-03-14', 'endDate: 2026-03-17'),
+		);
+		expect(reading.problems).toEqual([]);
+		expect(reading.schedule).toEqual({
+			kind: 'all-day',
+			date: { year: 2026, month: 3, day: 14 },
+			endDate: { year: 2026, month: 3, day: 17 },
+		});
+		expect(reading.fields.schedule).toEqual({
+			kind: 'all-day',
+			date: '2026-03-14',
+			endDate: '2026-03-17',
+		});
+	});
+
+	it('FM-1: a day under a task key reads as that day', () => {
+		const reading = readNote(typed('due: 2026-03-14'));
+		expect(reading.problems).toEqual([]);
+		expect(reading.fields.due).toBe('2026-03-14');
+	});
+
+	// A date value holds one instant. It does not hold the offset that the
+	// note stated, and the resolution order gives that offset a meaning. The
+	// two lines below state two different times and give one date value.
+	it.each([
+		'start: 2026-03-14T09:00:00',
+		'start: 2026-03-14T09:00:00+01:00',
+		'start: 2026-03-14T09:00:00Z',
+		'end: 2026-03-14T10:30:00',
+		'completed: 2026-03-19T18:00:00Z',
+	])(
+		'FM-1: the date value of %s is a fault that names the remedy',
+		(line) => {
+			const key = line.slice(0, line.indexOf(':'));
+			const reading = readNote(typed(line));
+			const problem = first(reading.problems);
+			expect(problem).toEqual({
+				kind: 'time-not-text',
+				keys: [key],
+				key,
+			});
+			const message = describeProblem(problem);
+			expect(message).toContain(`"${key}"`);
+			expect(message).toContain('quotation marks');
+			expect(message).not.toContain('Write the value as text');
+		},
+	);
+
+	it('FM-1: the remedy that the message names makes the note read', () => {
+		const reading = readNote(typed('start: "2026-03-14T09:00:00+01:00"'));
+		expect(reading.problems).toEqual([]);
+		expect(reading.schedule).toMatchObject({
+			start: {
+				offsetSeconds: 3600,
+				time: { hour: 9, minute: 0, second: 0 },
+			},
+		});
+	});
+
+	it('FM-1: a time of day with no seconds needs no quotation marks', () => {
+		const reading = readNote(typed('start: 2026-03-14T09:00'));
+		expect(reading.problems).toEqual([]);
+		expect(reading.schedule).toMatchObject({
+			start: {
+				offsetSeconds: null,
+				time: { hour: 9, minute: 0, second: 0 },
+			},
+		});
+	});
+
+	it('FM-1: a date value with a time of day under the all-day shape is a fault', () => {
+		const reading = readNote(typed('date: 2026-03-14T09:00:00'));
+		const problem = first(reading.problems);
+		expect(problem).toMatchObject({
+			kind: 'time-of-day-refused',
+			key: 'date',
+			text: '2026-03-14T09:00:00Z',
+		});
+	});
+
+	// The reader states every fault of the note. The date value under
+	// `start` is one fault, and the two shapes together are another.
+	it('FM-1: two date values of the two shapes state the shape conflict', () => {
+		const reading = readNote(
+			typed('date: 2026-03-14', 'start: 2026-03-14T09:00:00'),
+		);
+		expect(reading.problems).toEqual([
+			{ kind: 'time-not-text', keys: ['start'], key: 'start' },
+			{ kind: 'shape-conflict', keys: ['date', 'start'] },
+		]);
+		expect(reading.schedule).toBeNull();
+	});
+
+	it('FM-1: a number under a text key names what it found', () => {
+		const reading = readNote(typed('summary: 2026'));
+		expect(reading.problems).toEqual([
+			{
+				kind: 'not-text',
+				keys: ['summary'],
+				key: 'summary',
+				found: 'a number',
+			},
+		]);
+	});
+
+	it('FM-1: a date value under a text key names what it found', () => {
+		const reading = readNote(typed('summary: 2026-03-14'));
+		expect(reading.problems).toEqual([
+			{
+				kind: 'not-text',
+				keys: ['summary'],
+				key: 'summary',
+				found: 'a date',
+			},
+		]);
+	});
+
+	// A date value obeys the same rules as the text of a day. The reader
+	// writes the day of that value in universal time and reads that text.
+	it('FM-1: a date value of a year that the plugin refuses is a fault', () => {
+		const value = new Date(0);
+		value.setUTCFullYear(50, 0, 1);
+		const reading = readNote({ date: value });
+		expect(reading.problems).toEqual([
+			{
+				kind: 'bad-time',
+				keys: ['date'],
+				key: 'date',
+				text: '0050-01-01',
+				failure: { kind: 'year-range', year: 50 },
+			},
+		]);
+	});
+
+	it.each(['date', 'start', 'due'])(
+		'FM-1: a date value that the plugin cannot read is a fault under %s',
+		(key) => {
+			const reading = readNote({ [key]: new Date(Number.NaN) });
+			expect(reading.problems).toEqual([
+				{
+					kind: 'not-text',
+					keys: [key],
+					key,
+					found: 'a date that the plugin cannot read',
+				},
+			]);
+		},
+	);
 });

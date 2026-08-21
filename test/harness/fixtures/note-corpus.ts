@@ -4,6 +4,7 @@
  * Frontmatter is the block of YAML at the start of a note.
  *
  * The corpus holds these shapes:
+ * - a block with the keys of an event, in the forms that the schema states;
  * - a block with comments;
  * - a block with the keys in alphabetical order;
  * - a block with the keys in reverse order;
@@ -40,6 +41,7 @@ const IDS: readonly string[] = [
 	'body-with-dashes',
 	'comments',
 	'empty-frontmatter',
+	'event-keys',
 	'key-order-alpha',
 	'key-order-reverse',
 	'lists',

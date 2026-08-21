@@ -22,6 +22,13 @@ const SAMPLES: {
 		key: 'endDate',
 		needs: 'date',
 	},
+	'shape-mismatch': {
+		kind: 'shape-mismatch',
+		keys: ['end', 'date'],
+		key: 'end',
+		held: 'date',
+		use: 'endDate',
+	},
 	'not-text': {
 		kind: 'not-text',
 		keys: ['summary'],
@@ -68,6 +75,7 @@ const SAMPLES: {
 		key: 'start',
 		text: '2026-03-14',
 	},
+	'time-not-text': { kind: 'time-not-text', keys: ['start'], key: 'start' },
 	'time-of-day-refused': {
 		kind: 'time-of-day-refused',
 		keys: ['date'],
@@ -181,6 +189,50 @@ describe('the words of a fault', () => {
 		},
 	);
 
+	it.each([
+		[
+			'end',
+			'date',
+			'endDate',
+			'An event of whole days states its end with the key "endDate".',
+		],
+		[
+			'endDate',
+			'start',
+			'end',
+			'An event with a time of day states its end with the key "end".',
+		],
+	] as const)(
+		'names the shape that the note takes for %s beside %s',
+		(key, held, use, sentence) => {
+			const message = describeProblem({
+				kind: 'shape-mismatch',
+				keys: [key, held],
+				key,
+				held,
+				use,
+			});
+			expect(message).toContain(sentence);
+			expect(message).toContain(`"${key}"`);
+			expect(message).toContain(`"${held}"`);
+		},
+	);
+
+	it('states the remedy for a length that stands beside a day', () => {
+		const message = describeProblem({
+			kind: 'shape-mismatch',
+			keys: ['duration', 'date'],
+			key: 'duration',
+			held: 'date',
+			use: null,
+		});
+		expect(message).toContain('An event of whole days states no length.');
+		expect(message).toContain('Remove the key "duration"');
+		expect(message).toContain(
+			'use the key "start" in place of the key "date"',
+		);
+	});
+
 	it('states the two keys of a shape that contradicts itself', () => {
 		expect(describeProblem(SAMPLES['shape-conflict'])).toContain(
 			'The note holds the key "date" and the key "start".',
@@ -192,7 +244,7 @@ describe('the words of a fault', () => {
 
 	it('states that the plugin never puts the zone of the device in place of a zone', () => {
 		expect(describeProblem(SAMPLES['timezone-missing'])).toContain(
-			'never puts the timezone of this device',
+			'The plugin never uses the timezone of this device instead.',
 		);
 	});
 });

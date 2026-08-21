@@ -15,7 +15,8 @@
  * throws where the file cannot be written. This module gives the caller a
  * result in place of that error, because a note that a user broke by hand
  * is a condition that the plugin states to the user, and not a fault of
- * the plugin.
+ * the plugin. The module gives a result for every refusal, which includes
+ * a refusal that carries a value that no code can read as text.
  */
 
 import type { FrontmatterPatch } from '../core/frontmatter/write';
@@ -39,9 +40,16 @@ export interface FrontmatterWriter<File> {
 	): Promise<void>;
 }
 
-/** What one write of frontmatter gives back. */
+/**
+ * What one write of frontmatter gives back. The reason comes from the
+ * platform, and this module does not change it. A caller that shows the
+ * reason to a user decides how to present that text.
+ */
 export type NoteWriteResult =
 	{ readonly ok: true } | { readonly ok: false; readonly reason: string };
+
+/** The words that stand for a refusal where the platform states none. */
+const NO_REASON = 'the platform refused the write and stated no reason';
 
 /**
  * Writes the change into the frontmatter of one note. The write sets the
@@ -58,10 +66,25 @@ export async function writeNoteFrontmatter<File>(
 			applyPatch(frontmatter, patch);
 		});
 	} catch (error) {
-		return {
-			ok: false,
-			reason: error instanceof Error ? error.message : String(error),
-		};
+		return { ok: false, reason: describeError(error) };
 	}
 	return { ok: true };
+}
+
+/**
+ * The words of a refusal. A value that the platform throws can refuse to
+ * become text: an object with no prototype throws where a caller reads it
+ * as text, and so does an error whose message throws. The description of
+ * such a value is therefore itself inside the guard.
+ */
+function describeError(error: unknown): string {
+	try {
+		if (error instanceof Error && typeof error.message === 'string') {
+			return error.message;
+		}
+		const text = String(error);
+		return text === '' ? NO_REASON : text;
+	} catch {
+		return NO_REASON;
+	}
 }

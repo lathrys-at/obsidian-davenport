@@ -64,15 +64,25 @@ import { parse, stringify } from 'yaml';
 
 const DELIMITER = '---';
 
-const PARSE_OPTIONS = {
+/**
+ * How the parser types the values of a block. The `core` dialect gives
+ * text for every scalar of a date form. The `timestamp` dialect gives a
+ * date value for a day and for a time of day that states its seconds.
+ */
+export type FrontmatterDialect = 'core' | 'timestamp';
+
+const CORE_PARSE = {
 	version: '1.2',
 	schema: 'core',
 	uniqueKeys: true,
 } as const;
 
-const STRINGIFY_OPTIONS = {
-	version: '1.2',
-	schema: 'core',
+const TIMESTAMP_PARSE = {
+	version: '1.1',
+	uniqueKeys: true,
+} as const;
+
+const WRITE_STYLE = {
 	directives: false,
 	indent: 2,
 	indentSeq: true,
@@ -81,6 +91,25 @@ const STRINGIFY_OPTIONS = {
 	blockQuote: true,
 	aliasDuplicateObjects: false,
 } as const;
+
+const CORE_STRINGIFY = {
+	version: '1.2',
+	schema: 'core',
+	...WRITE_STYLE,
+} as const;
+
+const TIMESTAMP_STRINGIFY = {
+	version: '1.1',
+	...WRITE_STYLE,
+} as const;
+
+function parseOptions(dialect: FrontmatterDialect) {
+	return dialect === 'core' ? CORE_PARSE : TIMESTAMP_PARSE;
+}
+
+function stringifyOptions(dialect: FrontmatterDialect) {
+	return dialect === 'core' ? CORE_STRINGIFY : TIMESTAMP_STRINGIFY;
+}
 
 /**
  * The writer throws this error when it cannot rewrite the frontmatter
@@ -155,9 +184,12 @@ export function splitNote(content: string): SplitNote {
  * not parse is invalid, and a block that parses to a value that is not a
  * mapping is also invalid.
  */
-export function readFrontmatter(content: string): FrontmatterRead {
+export function readFrontmatter(
+	content: string,
+	dialect: FrontmatterDialect = 'core',
+): FrontmatterRead {
 	const { yaml } = splitNote(content);
-	return yaml === null ? { kind: 'absent' } : parseBlock(yaml);
+	return yaml === null ? { kind: 'absent' } : parseBlock(yaml, dialect);
 }
 
 /**
@@ -170,9 +202,10 @@ export function readFrontmatter(content: string): FrontmatterRead {
 export function writeFrontmatter(
 	content: string,
 	update: (frontmatter: Record<string, unknown>) => void,
+	dialect: FrontmatterDialect = 'core',
 ): string {
 	const { yaml, body } = splitNote(content);
-	const read = yaml === null ? null : parseBlock(yaml);
+	const read = yaml === null ? null : parseBlock(yaml, dialect);
 	if (read !== null && read.kind === 'invalid') {
 		throw new FrontmatterError(
 			`the writer cannot rewrite the frontmatter. Correct the frontmatter block in the note, then write again. The reason: ${read.reason}`,
@@ -180,13 +213,13 @@ export function writeFrontmatter(
 	}
 	const data = read === null ? {} : read.data;
 	update(data);
-	return composeNote(data, body, yaml !== null);
+	return composeNote(data, body, yaml !== null, dialect);
 }
 
-function parseBlock(yaml: string): BlockRead {
+function parseBlock(yaml: string, dialect: FrontmatterDialect): BlockRead {
 	let document: unknown;
 	try {
-		document = parse(yaml, PARSE_OPTIONS);
+		document = parse(yaml, parseOptions(dialect));
 	} catch (error) {
 		return {
 			kind: 'invalid',
@@ -206,6 +239,7 @@ function composeNote(
 	data: Record<string, unknown>,
 	body: string,
 	hadBlock: boolean,
+	dialect: FrontmatterDialect,
 ): string {
 	const entries = Object.entries(data).filter(
 		([, value]) => value !== undefined,
@@ -217,7 +251,10 @@ function composeNote(
 	if (entries.length > 0) {
 		try {
 			yaml = endWithBreak(
-				stringify(Object.fromEntries(entries), STRINGIFY_OPTIONS),
+				stringify(
+					Object.fromEntries(entries),
+					stringifyOptions(dialect),
+				),
 			);
 		} catch (error) {
 			throw new FrontmatterError(

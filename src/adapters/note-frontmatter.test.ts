@@ -61,6 +61,61 @@ describe('the write of frontmatter through the platform', () => {
 		).toEqual({ ok: false, reason: 'the file is gone' });
 	});
 
+	it('gives a result for a value that no code can read as text', async () => {
+		const { writer } = writerThat(() => {
+			// A refusal can carry a value of any type. An object with no
+			// prototype throws where a caller reads it as text, so the
+			// description of the value stands inside the guard of the module.
+			// eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors -- The platform stands outside this codebase, and this test states what this module does with such a value.
+			return Promise.reject(Object.create(null) as unknown);
+		});
+		expect(
+			await writeNoteFrontmatter(writer, FILE, { set: [], remove: [] }),
+		).toEqual({
+			ok: false,
+			reason: 'the platform refused the write and stated no reason',
+		});
+	});
+
+	it('gives a result for an error whose words cannot be read', async () => {
+		class HostileError extends Error {
+			override get message(): string {
+				throw new Error('the message cannot be read');
+			}
+		}
+		const { writer } = writerThat(() => Promise.reject(new HostileError()));
+		expect(
+			await writeNoteFrontmatter(writer, FILE, { set: [], remove: [] }),
+		).toEqual({
+			ok: false,
+			reason: 'the platform refused the write and stated no reason',
+		});
+	});
+
+	it('gives a result for a refusal that carries no words at all', async () => {
+		const { writer } = writerThat(() =>
+			// eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors -- The platform stands outside this codebase, and this test states what this module does with such a value.
+			Promise.reject(''),
+		);
+		expect(
+			await writeNoteFrontmatter(writer, FILE, { set: [], remove: [] }),
+		).toEqual({
+			ok: false,
+			reason: 'the platform refused the write and stated no reason',
+		});
+	});
+
+	it('gives the reason of a refusal that the update function itself throws', async () => {
+		const writer = {
+			processFrontMatter(_file: Note): Promise<void> {
+				throw new Error('the block does not parse');
+			},
+		};
+		expect(
+			await writeNoteFrontmatter(writer, FILE, { set: [], remove: [] }),
+		).toEqual({ ok: false, reason: 'the block does not parse' });
+	});
+
 	it('takes the file manager of the platform, which takes a file of the vault', () => {
 		const manager = undefined as unknown as FileManager;
 		const writer: FrontmatterWriter<TFile> = manager;
