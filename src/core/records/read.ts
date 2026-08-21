@@ -9,8 +9,9 @@
  *
  * The read is strict, and it refuses a file that the emitter of this
  * build could not have written. It refuses a key that the schema does not
- * hold, a value outside the set that its key permits, and a body that
- * does not stand in one fenced block. A record belongs to the machine, so
+ * hold, a value outside the set that its key permits, an empty list or an
+ * empty map where the schema writes no key at all, and a body that does
+ * not stand in one fenced block. A record belongs to the machine, so
  * a shape that the emitter cannot write is damage. This module reports
  * the damage, and it repairs nothing.
  *

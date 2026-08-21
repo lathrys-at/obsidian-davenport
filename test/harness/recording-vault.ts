@@ -60,6 +60,14 @@ export class RecordingVault implements VaultPort {
 		this.writes.push({ path, content });
 	}
 
+	async create(path: string, content: string): Promise<boolean> {
+		const wrote = await this.below.create(path, content);
+		if (wrote) {
+			this.writes.push({ path, content });
+		}
+		return wrote;
+	}
+
 	exists(path: string): Promise<boolean> {
 		return this.below.exists(path);
 	}

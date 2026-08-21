@@ -9,11 +9,15 @@
  * reach into a record must add that reach to the list, in the same
  * change.
  *
- * 1. The record names a zone that the bundled table holds. The record
- *    carries no definition for such a name: it carries the name, and a
- *    device writes the rules from the table when the device needs them.
- *    The table and the synthesiser therefore decide what the name means,
- *    and the component states which release and which code answer it.
+ * 1. The record names a zone. The bundled table decides what the record
+ *    holds for that name. Where the table holds the name and a value of
+ *    the record refers to it, the record carries the name and no
+ *    definition, and a device writes the rules from the table when the
+ *    device needs them. In every other case the record carries the
+ *    definition that the server sent, and the table is what kept it
+ *    there. Both outcomes are bytes that the table decided, so the
+ *    condition asks whether the record names a zone and asks nothing
+ *    else.
  * 2. The record holds a repeating series whose end stands in universal
  *    time, under a time that names a timezone and that governs the
  *    series. The time that governs the series is the start of the
@@ -31,11 +35,11 @@
  * record. The caller states reach 3, because the calendar does not hold
  * the materialization map.
  *
- * - Reach 1 reads the names of the calendar and asks the table for each
- *   one. A name that the table holds is a reference, and a name that the
- *   table does not hold comes with the definition that the server sent.
- *   The two cases therefore stand apart in the bytes, and the rule needs
- *   nothing from the caller.
+ * - Reach 1 reads the names of the calendar. A name stands in the `TZID`
+ *   parameter of a value, in a definition that the record carries, or in
+ *   the value of a property. The first two places are structure. The
+ *   third place is text, so the rule asks the table which values are
+ *   names. The rule needs nothing from the caller.
  * - Reaches 1 and 2 read the shape of the record, and they do not ask
  *   which device computed a value. A device computes the end of a series
  *   and sends that end to the server. The server sends the same end back,
@@ -67,7 +71,7 @@ import type {
 	JCalRecurPart,
 } from './jcal';
 import { jcalValues } from './jcal';
-import { namedZones } from './zones';
+import { namedZones, referencedZones } from './zones';
 import { isTimezoneName } from '../timezone/table';
 
 /**
@@ -101,8 +105,8 @@ export interface StampSubject {
 
 /** Which reaches of the bundled table one record shows. */
 export interface TimezoneReaches {
-	/** The record names a zone that the bundled table holds. */
-	readonly knownZone: boolean;
+	/** The record names a zone. */
+	readonly namedZone: boolean;
 	/** The record holds a universal-time value from the bundled table. */
 	readonly universalTime: boolean;
 	/** The record holds the date of an instance in the zone of the event. */
@@ -112,25 +116,32 @@ export interface TimezoneReaches {
 /** The reaches of the bundled table that the record shows. */
 export function timezoneReaches(subject: StampSubject): TimezoneReaches {
 	return {
-		knownZone: knownZonesInRecord(subject.calendar).length > 0,
+		namedZone: zonesInRecord(subject.calendar).length > 0,
 		universalTime: holdsSeriesEndInAZone(subject.calendar),
 		instanceDate: subject.instanceDates.length > 0,
 	};
 }
 
 /**
- * The names that the calendar states and the bundled table holds. The
- * record carries a reference to each of these names, and a device writes
- * the definition of each one from the table.
+ * Every zone name that the calendar states, in the order of the first
+ * mention. The list holds the names of the structure, which are the
+ * `TZID` parameters and the names of the definitions. It also holds every
+ * value that the bundled table takes as a name.
  */
-export function knownZonesInRecord(calendar: JCalComponent): readonly string[] {
-	return namedZones(calendar).filter((name) => isTimezoneName(name));
+export function zonesInRecord(calendar: JCalComponent): readonly string[] {
+	const names = [...namedZones(calendar)];
+	for (const name of referencedZones(calendar, isTimezoneName)) {
+		if (!names.includes(name)) {
+			names.push(name);
+		}
+	}
+	return names;
 }
 
 /** True when the record carries the timezone component. */
 export function carriesTimezoneComponent(subject: StampSubject): boolean {
 	const reaches = timezoneReaches(subject);
-	return reaches.knownZone || reaches.universalTime || reaches.instanceDate;
+	return reaches.namedZone || reaches.universalTime || reaches.instanceDate;
 }
 
 /** The stamp that this build writes into the given record. */

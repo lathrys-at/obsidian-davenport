@@ -36,6 +36,16 @@ describe('fake vault files', () => {
 		expect(await vault.exists('notes/b.md')).toBe(false);
 	});
 
+	it('creates the file where no file stands at the path, and answers whether it wrote', async () => {
+		const vault = new FakeVault({ 'a.md': 'one' });
+		const events = recordEvents(vault);
+		expect(await vault.create('b.md', 'two')).toBe(true);
+		expect(await vault.read('b.md')).toBe('two');
+		expect(await vault.create('a.md', 'other')).toBe(false);
+		expect(await vault.read('a.md')).toBe('one');
+		expect(events).toEqual([{ kind: 'created', path: 'b.md' }]);
+	});
+
 	it('moves the file to the new path when the vault renames the file, and removes the file when the vault trashes the file', async () => {
 		const vault = new FakeVault({ 'a.md': 'one' });
 		await vault.rename('a.md', 'b.md');

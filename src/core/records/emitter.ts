@@ -199,13 +199,23 @@ export function quote(value: string): string {
 	return out + '"';
 }
 
-function escapeUnit(unit: number): string {
+/**
+ * The escape that the emitter writes for one code unit, or nothing where
+ * the emitter writes the character itself. The reader asks this question
+ * of every escape that it meets, so the reader takes the escapes of this
+ * emitter and no other form of them.
+ */
+export function escapeOf(unit: number): string | undefined {
 	const character = String.fromCharCode(unit);
 	const short = SHORT_ESCAPES.get(character);
 	if (short !== undefined) {
 		return short;
 	}
-	return needsEscape(unit) ? hexEscape(unit) : character;
+	return needsEscape(unit) ? hexEscape(unit) : undefined;
+}
+
+function escapeUnit(unit: number): string {
+	return escapeOf(unit) ?? String.fromCharCode(unit);
 }
 
 /**

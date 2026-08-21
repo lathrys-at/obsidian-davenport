@@ -414,3 +414,44 @@ describe('what the reader of a record refuses in the base snapshot', () => {
 		);
 	});
 });
+
+describe('the shapes that the emitter of a record cannot write', () => {
+	it('refuses an empty list where the schema writes no key at all', async () => {
+		const text = await sealRecord(digest, built(0));
+		expect(
+			refusal(
+				edited(
+					text,
+					'  type: "event"',
+					'  type: "event"\n  attachments: []',
+				),
+			),
+		).toBe('schema');
+	});
+
+	it('refuses an empty map where the schema writes no key at all', async () => {
+		const text = await sealRecord(digest, built(0));
+		expect(
+			refusal(
+				edited(
+					text,
+					'normalization:',
+					'materialization: {}\nnormalization:',
+				),
+			),
+		).toBe('schema');
+	});
+
+	it('refuses an escape for a character that the emitter writes as itself', async () => {
+		const text = await sealRecord(digest, built(0));
+		expect(
+			refusal(
+				edited(
+					text,
+					'  type: "event"',
+					'  type: "event"\n  summary: "\\u0041"',
+				),
+			),
+		).toBe('frontmatter');
+	});
+});

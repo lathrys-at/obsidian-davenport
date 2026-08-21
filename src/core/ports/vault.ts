@@ -33,6 +33,18 @@ export interface VaultPort {
 	 * change must compare the content first.
 	 */
 	write(path: string, content: string): Promise<void>;
+	/**
+	 * Writes the file where no file stands at the path. The method answers
+	 * true where it wrote the file, and false where a file already stands
+	 * there. A false answer leaves that file as it is.
+	 *
+	 * The look and the write are one operation. A caller that asks
+	 * {@link exists} and then writes leaves a window open between the two
+	 * questions, and a file that arrives in that window loses its content.
+	 * A caller that must not write over a file therefore calls this method
+	 * and reads the answer.
+	 */
+	create(path: string, content: string): Promise<boolean>;
 	exists(path: string): Promise<boolean>;
 	rename(path: string, newPath: string): Promise<void>;
 	/**

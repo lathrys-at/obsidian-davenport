@@ -107,6 +107,24 @@ export class FakeVault implements VaultPort {
 		});
 	}
 
+	/**
+	 * Writes the file where the vault holds no file at the path, and
+	 * emits `created`. Where the vault already holds such a file, the
+	 * method writes nothing and answers false. The filesystem profile
+	 * decides which paths the vault already holds.
+	 */
+	create(path: string, content: string): Promise<boolean> {
+		return settle(() => {
+			const identity = this.checkPath(path);
+			if (this.files.has(identity)) {
+				return false;
+			}
+			this.files.set(identity, { path, content });
+			this.emit({ kind: 'created', path });
+			return true;
+		});
+	}
+
 	exists(path: string): Promise<boolean> {
 		return settle(() => this.files.has(this.checkPath(path)));
 	}

@@ -66,6 +66,13 @@ describe('the vault that counts writes', () => {
 		});
 	});
 
+	it('counts a create that wrote, and counts no create that a file refused', async () => {
+		const counted = vault({ 'a.md': 'one' });
+		expect(await counted.create('b.md', 'two')).toBe(true);
+		expect(await counted.create('a.md', 'other')).toBe(false);
+		expect(counted.written).toEqual([{ path: 'b.md', content: 'two' }]);
+	});
+
 	it('passes the file events of the vault below on', async () => {
 		const counted = vault();
 		const seen: string[] = [];

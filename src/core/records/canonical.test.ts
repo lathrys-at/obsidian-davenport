@@ -61,9 +61,15 @@ describe('the layout of a record file', () => {
 		expect(lines[lines.indexOf('---', 1) - 1]).toBe(`checksum: "${HASH}"`);
 	});
 
-	it('writes an empty block for an empty snapshot', () => {
-		expect(renderRecord(record({ baseIcs: '' }))).toContain(
-			'```ics\n```\n',
+	it('refuses a record whose snapshot holds no line', () => {
+		// An empty block reads as damage, so a file of this shape would
+		// quarantine on the next read of any device. The writer refuses to
+		// make one.
+		expect(() => renderRecord(record({ baseIcs: '' }))).toThrow(
+			/no base snapshot/,
+		);
+		expect(() => renderRecord(record({ baseIcs: '\r\n' }))).toThrow(
+			/no base snapshot/,
 		);
 	});
 });
@@ -206,5 +212,23 @@ describe('the write of a checksum into one record text', () => {
 		expect(() => withChecksum('---\nuid: "a"\n---\n', HASH)).toThrow(
 			'no checksum line',
 		);
+	});
+});
+
+describe('a record whose line endings a tool converted', () => {
+	it('names the line endings, and does not report a missing frontmatter', () => {
+		const text = renderRecord(record({ checksum: HASH })).replace(
+			/\n/g,
+			'\r\n',
+		);
+		const site = checksumSite(text);
+		expect(site.ok).toBe(false);
+		expect(!site.ok && site.problem).toBe('line-endings');
+	});
+
+	it('reports a missing frontmatter for a text that opens with something else', () => {
+		const site = checksumSite('# a note\n');
+		expect(site.ok).toBe(false);
+		expect(!site.ok && site.problem).toBe('no-frontmatter');
 	});
 });

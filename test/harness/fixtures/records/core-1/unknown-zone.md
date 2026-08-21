@@ -7,7 +7,8 @@ fields:
   type: "event"
 normalization:
   core: 1
-checksum: "0928b7d4bc1dbae2789dae155bddd5efbc2ea169a8deffc30b314de3f50d50cb"
+  timezone: 1
+checksum: "9f68ed4cc83af0a8e34c277408afd5b0cf75225b82f6f6de04bea6649d2da666"
 ---
 
 ```ics

@@ -8,9 +8,12 @@
  *
  * The adapter encodes the text as UTF-8 and hashes those octets. The
  * encoder replaces a lone surrogate with the replacement character, as
- * every UTF-8 encoder does. The emitter of a record writes no lone
- * surrogate into the text that reaches this adapter, so the replacement
- * changes nothing that the plugin hashes.
+ * every UTF-8 encoder does. Two texts that differ in one lone surrogate
+ * would therefore reach one hash. The engine hashes two texts, and each
+ * one is free of a lone surrogate before it arrives: the emitter of a
+ * record writes an escape for such a unit, and so does the join that
+ * names a record file. The replacement therefore changes nothing that
+ * the plugin hashes.
  */
 
 import type { DigestPort } from '../core/ports/digest';

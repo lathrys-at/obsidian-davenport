@@ -426,7 +426,7 @@ describe('the definition inside a record', () => {
 		}
 		const subject = { calendar: parsed.calendar, instanceDates: [] };
 		expect(timezoneReaches(subject)).toEqual({
-			knownZone: true,
+			namedZone: true,
 			universalTime: false,
 			instanceDate: false,
 		});
@@ -436,7 +436,7 @@ describe('the definition inside a record', () => {
 		expect(synthesiseTimezone('America/New_York').ok).toBe(true);
 	});
 
-	it('refuses a name that the table does not hold, and such a record carries no timezone component', () => {
+	it('refuses a name that the table does not hold, and such a record carries the timezone component for the definition that it keeps', () => {
 		const parsed = parseIcs(
 			[
 				'BEGIN:VCALENDAR',
@@ -461,8 +461,13 @@ describe('the definition inside a record', () => {
 		if (!parsed.ok) {
 			throw new Error('the boundary refused the calendar');
 		}
+		// The table lacks this name, so the record keeps the definition that
+		// the server sent. The table is what kept those bytes there, so the
+		// record states which release answered the name.
 		const subject = { calendar: parsed.calendar, instanceDates: [] };
-		expect(normalizationStamp(subject).timezone).toBeUndefined();
+		expect(normalizationStamp(subject).timezone).toBe(
+			TIMEZONE_NORMALIZATION_VERSION,
+		);
 		expect(synthesiseTimezone('Mars/Olympus').ok).toBe(false);
 	});
 });

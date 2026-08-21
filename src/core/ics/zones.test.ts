@@ -3,8 +3,10 @@ import type { JCalComponent } from './jcal';
 import { parseIcs } from './parse';
 import {
 	definedZones,
+	definitionsOf,
 	isDefinitionOf,
 	namedZones,
+	referencedZones,
 	withoutDefinitions,
 } from './zones';
 
@@ -182,5 +184,171 @@ describe('the definitions that a calendar carries', () => {
 
 	it('keeps the properties of the component that holds the definitions', () => {
 		expect(withoutDefinitions(CALENDAR, always)[1]).toEqual(CALENDAR[1]);
+	});
+});
+
+describe('the timezone names that a reference of a calendar states', () => {
+	const holdsNewYork = (name: string): boolean => name === 'America/New_York';
+
+	it('reads a name out of the parameter of a value', () => {
+		expect(
+			referencedZones(
+				calendarOf(
+					'BEGIN:VEVENT',
+					'UID:one',
+					'DTSTART;TZID=America/New_York:20260302T090000',
+					'END:VEVENT',
+				),
+				holdsNewYork,
+			),
+		).toEqual(['America/New_York']);
+	});
+
+	it('reads a name out of the value of a property', () => {
+		expect(
+			referencedZones(
+				calendarOf(
+					'X-WR-TIMEZONE:America/New_York',
+					'BEGIN:VEVENT',
+					'UID:one',
+					'DTSTART:20260302T140000Z',
+					'END:VEVENT',
+				),
+				holdsNewYork,
+			),
+		).toEqual(['America/New_York']);
+	});
+
+	it('reads no name that the test refuses', () => {
+		expect(
+			referencedZones(
+				calendarOf(
+					'X-WR-TIMEZONE:Mars/Olympus',
+					'BEGIN:VEVENT',
+					'UID:one',
+					'SUMMARY:America/New_York',
+					'DTSTART:20260302T140000Z',
+					'END:VEVENT',
+				),
+				never,
+			),
+		).toEqual([]);
+	});
+
+	it('reads no name out of a definition', () => {
+		// The name of a definition is not a reference to that definition,
+		// and the abbreviation of an offset can spell another name.
+		expect(
+			referencedZones(
+				calendarOf(
+					'BEGIN:VTIMEZONE',
+					'TZID:America/New_York',
+					'BEGIN:STANDARD',
+					'DTSTART:20071104T020000',
+					'TZNAME:EST',
+					'TZOFFSETFROM:-0400',
+					'TZOFFSETTO:-0500',
+					'END:STANDARD',
+					'END:VTIMEZONE',
+					'BEGIN:VEVENT',
+					'UID:one',
+					'DTSTART:20260302T140000Z',
+					'END:VEVENT',
+				),
+				holdsNewYork,
+			),
+		).toEqual([]);
+	});
+
+	it('names a zone one time however many places state it', () => {
+		expect(
+			referencedZones(
+				calendarOf(
+					'X-WR-TIMEZONE:America/New_York',
+					'BEGIN:VEVENT',
+					'UID:one',
+					'DTSTART;TZID=America/New_York:20260302T090000',
+					'END:VEVENT',
+				),
+				holdsNewYork,
+			),
+		).toEqual(['America/New_York']);
+	});
+
+	it('reads every name of a parameter that carries more than one value', () => {
+		const calendar: JCalComponent = [
+			'vcalendar',
+			[],
+			[
+				[
+					'vevent',
+					[
+						[
+							'dtstart',
+							{ tzid: ['America/New_York', 'Europe/London'] },
+							'date-time',
+							'2026-03-02T09:00:00',
+						],
+					],
+					[],
+				],
+			],
+		];
+		expect(
+			referencedZones(calendar, (name) =>
+				['America/New_York', 'Europe/London'].includes(name),
+			),
+		).toEqual(['America/New_York', 'Europe/London']);
+	});
+
+	it('reads no name of such a parameter that the test refuses', () => {
+		const calendar: JCalComponent = [
+			'vcalendar',
+			[],
+			[
+				[
+					'vevent',
+					[
+						[
+							'dtstart',
+							{ tzid: ['America/New_York', 'Mars/Olympus'] },
+							'date-time',
+							'2026-03-02T09:00:00',
+						],
+					],
+					[],
+				],
+			],
+		];
+		expect(referencedZones(calendar, holdsNewYork)).toEqual([
+			'America/New_York',
+		]);
+	});
+});
+
+describe('the definitions that one name states', () => {
+	const DEFINED = calendarOf(
+		'BEGIN:VTIMEZONE',
+		'TZID:America/New_York',
+		'BEGIN:STANDARD',
+		'DTSTART:20071104T020000',
+		'TZOFFSETFROM:-0400',
+		'TZOFFSETTO:-0500',
+		'END:STANDARD',
+		'END:VTIMEZONE',
+		'BEGIN:VEVENT',
+		'UID:one',
+		'DTSTART;TZID=America/New_York:20260302T090000',
+		'END:VEVENT',
+	);
+
+	it('gives back the definition of that name', () => {
+		const found = definitionsOf(DEFINED, 'America/New_York');
+		expect(found).toHaveLength(1);
+		expect(found[0]?.[0]).toBe('vtimezone');
+	});
+
+	it('gives back nothing for a name that no definition states', () => {
+		expect(definitionsOf(DEFINED, 'Mars/Olympus')).toEqual([]);
 	});
 });

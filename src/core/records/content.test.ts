@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { RecordData } from '../model/record';
+import { parseIcs } from '../ics/parse';
+import { serializeCalendar } from '../ics/serializer';
 import { recordContentKey, sameRecordContent } from './content';
 
 function record(overrides: Partial<RecordData> = {}): RecordData {
@@ -98,5 +100,113 @@ describe('the comparison of the content of two records', () => {
 	it('holds no line that a record file also holds', () => {
 		expect(recordContentKey(record())).not.toContain('checksum');
 		expect(recordContentKey(record())).not.toContain('normalization');
+	});
+});
+
+describe('the definitions that a table release can move', () => {
+	const HEAD = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//p//EN'];
+
+	function definition(name: string, to: string): readonly string[] {
+		return [
+			'BEGIN:VTIMEZONE',
+			`TZID:${name}`,
+			'BEGIN:STANDARD',
+			'DTSTART:19701101T020000',
+			'TZOFFSETFROM:-0400',
+			`TZOFFSETTO:${to}`,
+			'END:STANDARD',
+			'END:VTIMEZONE',
+		];
+	}
+
+	function ics(...lines: string[]): string {
+		const parsed = parseIcs(
+			[...HEAD, ...lines, 'END:VCALENDAR', ''].join('\r\n'),
+		);
+		if (!parsed.ok) {
+			throw new Error(parsed.failure.message);
+		}
+		return serializeCalendar(parsed.calendar);
+	}
+
+	const EVENT = [
+		'BEGIN:VEVENT',
+		'UID:one',
+		'DTSTART;TZID=America/New_York:20260302T090000',
+		'END:VEVENT',
+	];
+
+	it('passes over a definition that one record carries and the other does not', () => {
+		const kept = record({
+			baseIcs: ics(...definition('America/New_York', '-0500'), ...EVENT),
+		});
+		const dropped = record({ baseIcs: ics(...EVENT) });
+		expect(sameRecordContent(kept, dropped)).toBe(true);
+		expect(sameRecordContent(dropped, kept)).toBe(true);
+	});
+
+	it('reads a definition that both records carry', () => {
+		const stood = record({
+			baseIcs: ics(...definition('America/New_York', '-0500'), ...EVENT),
+		});
+		const moved = record({
+			baseIcs: ics(...definition('America/New_York', '-0600'), ...EVENT),
+		});
+		expect(sameRecordContent(stood, moved)).toBe(false);
+	});
+
+	it('reads a definition that no value of the calendar names', () => {
+		const UNUSED = ['BEGIN:VEVENT', 'UID:one', 'END:VEVENT'];
+		const stood = record({
+			baseIcs: ics(...definition('America/New_York', '-0500'), ...UNUSED),
+		});
+		const gone = record({ baseIcs: ics(...UNUSED) });
+		expect(sameRecordContent(stood, gone)).toBe(false);
+	});
+
+	it('reads every other byte of the calendar', () => {
+		const one = record({
+			baseIcs: ics(
+				...definition('America/New_York', '-0500'),
+				'BEGIN:VEVENT',
+				'UID:one',
+				'SUMMARY:Standup',
+				'DTSTART;TZID=America/New_York:20260302T090000',
+				'END:VEVENT',
+			),
+		});
+		const other = record({
+			baseIcs: ics(
+				'BEGIN:VEVENT',
+				'UID:one',
+				'SUMMARY:Retrospective',
+				'DTSTART;TZID=America/New_York:20260302T090000',
+				'END:VEVENT',
+			),
+		});
+		expect(sameRecordContent(one, other)).toBe(false);
+	});
+
+	it('compares a snapshot that the parse boundary refuses as it stands', () => {
+		expect(
+			sameRecordContent(
+				record({ baseIcs: 'not a calendar' }),
+				record({ baseIcs: 'not a calendar' }),
+			),
+		).toBe(true);
+		expect(
+			sameRecordContent(
+				record({ baseIcs: 'not a calendar' }),
+				record({ baseIcs: 'another text' }),
+			),
+		).toBe(false);
+	});
+
+	it('gives one key for a record whose definition a table release can move', () => {
+		const kept = record({
+			baseIcs: ics(...definition('America/New_York', '-0500'), ...EVENT),
+		});
+		const dropped = record({ baseIcs: ics(...EVENT) });
+		expect(recordContentKey(kept)).toBe(recordContentKey(dropped));
 	});
 });

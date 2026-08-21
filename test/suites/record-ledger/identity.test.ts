@@ -48,6 +48,13 @@ const HOSTILE_IDENTITIES: readonly EventIdentity[] = [
 	{ collectionHref: 'https://dav/c/a b/', uid: 'a b' },
 	{ collectionHref: 'ab', uid: 'c' },
 	{ collectionHref: 'a', uid: 'bc' },
+	// A surrogate with no partner stands for no character, and an encoder
+	// of UTF-8 replaces one. These four pairs differ in that one unit
+	// alone, so they separate only where the join escapes it.
+	{ collectionHref: 'https://dav/c/', uid: String.fromCharCode(0xd800) },
+	{ collectionHref: 'https://dav/c/', uid: String.fromCharCode(0xd801) },
+	{ collectionHref: 'https://dav/c/', uid: String.fromCharCode(0xfffd) },
+	{ collectionHref: 'https://dav/c/', uid: '\\ud800' },
 ];
 
 async function nameOf(identity: EventIdentity): Promise<string> {

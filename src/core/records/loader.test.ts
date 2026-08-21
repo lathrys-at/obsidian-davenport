@@ -202,3 +202,25 @@ describe('the read of one text out of quotation marks', () => {
 		expect(unquote('\\u00').ok).toBe(false);
 	});
 });
+
+describe('the escapes that the reader takes', () => {
+	it('takes an escape for a character that the emitter escapes', () => {
+		expect(unquote('\\x00')).toEqual({ ok: true, value: NUL });
+		expect(unquote('\\ud800')).toEqual({ ok: true, value: LONE_HIGH });
+	});
+
+	it('refuses an escape for a character that the emitter writes as itself', () => {
+		const read = unquote('\\u0041');
+		expect(read.ok).toBe(false);
+		expect(!read.ok && read.message).toContain(
+			'not one that the emitter writes',
+		);
+	});
+
+	it('refuses an escape of a form that the emitter does not use', () => {
+		// The emitter writes a code unit below U+0100 with two digits, and
+		// it writes a tab as the two characters of its own escape.
+		expect(unquote('\\u0000').ok).toBe(false);
+		expect(unquote('\\x09').ok).toBe(false);
+	});
+});

@@ -18,6 +18,14 @@
  * then names two events. With the length, one text comes from one pair
  * only.
  *
+ * The join also writes an escape for a backslash and for every surrogate.
+ * The digest port hashes the UTF-8 octets of the text, and an encoder of
+ * UTF-8 replaces a surrogate with no partner. Two UIDs that differ in
+ * that one code unit would otherwise reach one digest, and two events
+ * would take one path. A backslash stands in front of every escape, so
+ * the escape of a backslash keeps the join injective. This rule is
+ * frozen: a change to it moves the name of every record file.
+ *
  * The name holds digits and the letters `a` to `f`, and nothing else.
  * Every filesystem that the plugin meets accepts every character of that
  * set, and no platform reserves a name that this set can spell. A
@@ -50,13 +58,26 @@ export const RECORD_NAME_PATTERN = new RegExp(
 
 /**
  * The text that the digest of an identity hashes. Each part stands after
- * its own length, so one text comes from one pair only.
+ * its own length, so one text comes from one pair only. The result holds
+ * no surrogate, so an encoder of UTF-8 changes no character of it.
  */
 export function identityText(identity: EventIdentity): string {
-	return (
-		`${String(identity.collectionHref.length)}:${identity.collectionHref}` +
-		`${String(identity.uid.length)}:${identity.uid}`
-	);
+	return joined(identity.collectionHref) + joined(identity.uid);
+}
+
+/** The characters that the join writes as an escape. */
+const ESCAPED = /[\\\ud800-\udfff]/g;
+
+/** One part of the pair, after its own length. */
+function joined(part: string): string {
+	const safe = part.replace(ESCAPED, escapeUnit);
+	return `${String(safe.length)}:${safe}`;
+}
+
+function escapeUnit(character: string): string {
+	return character === '\\'
+		? '\\\\'
+		: `\\u${character.charCodeAt(0).toString(16).padStart(4, '0')}`;
 }
 
 /** The digest that names the record of one identity. */

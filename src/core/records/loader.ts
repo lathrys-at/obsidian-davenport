@@ -12,13 +12,18 @@
  * The reader refuses everything else, and it names what it refused. It
  * refuses a tab, a line that ends with a space, an indent that is not a
  * multiple of two, a key that stands two times in one map, and a value
- * that it cannot read. A record is machine-owned, so a shape that the
- * emitter cannot write is damage, and damage must not pass as data.
+ * that it cannot read. It also refuses an escape that stands for a
+ * character that the emitter writes as itself, and an escape of a form
+ * that the emitter does not use for that character. A record is
+ * machine-owned, so a shape that the emitter cannot write is damage, and
+ * damage must not pass as data.
  *
  * The reader is strict on purpose. A permissive reader would repair a
  * file that a merge damaged, and the repair would then travel to every
  * other device as the truth.
  */
+
+import { escapeOf } from './emitter';
 
 /** One value that the reader took out of the frontmatter. */
 export type Loaded =
@@ -279,7 +284,14 @@ export function unquote(inside: string): UnquoteResult {
 				message: `the escape \\${mark}${digits} is not one that the emitter writes`,
 			};
 		}
-		out += String.fromCharCode(Number.parseInt(digits, 16));
+		const unit = Number.parseInt(digits, 16);
+		if (escapeOf(unit) !== `\\${mark}${digits}`) {
+			return {
+				ok: false,
+				message: `the escape \\${mark}${digits} is not one that the emitter writes`,
+			};
+		}
+		out += String.fromCharCode(unit);
 		index += 2 + width;
 	}
 	return { ok: true, value: out };

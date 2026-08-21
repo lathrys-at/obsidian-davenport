@@ -24,6 +24,21 @@
  * nothing and reports the refusal. A quarantine reads that report and
  * decides what to surface. This module makes no such decision, and it
  * never writes over a file that it could not read.
+ *
+ * The first write of a record asks the vault to create the file, and the
+ * vault answers whether it wrote. A record can arrive from a sync tool at
+ * any moment, so a device that asked whether the file exists and then
+ * wrote would write over a record that arrived between the two steps.
+ * That record can carry a newer stamp, and the skew rule would never see
+ * it. The create answers instead, and a file that already stands at the
+ * path takes the same path as every other file: the device reads it and
+ * compares.
+ *
+ * One window stays open, and no member of the vault port closes it. A
+ * file can change after the read and before the write. The device then
+ * writes over that change. Every branch writes a whole record, so no
+ * mixed file can result. The device that wrote the lost change computes
+ * it again on its next loop.
  */
 
 import type { NormalizationVersions } from '../model/normalization';
@@ -49,7 +64,9 @@ export type RecordWriteOutcome =
 	/** The bytes differed and the state did not, and the skew rule held. */
 	| 'suppressed'
 	/** The reader refused the file, and the device wrote nothing. */
-	| 'unreadable';
+	| 'unreadable'
+	/** A file stood at the path, and the read did not find it. */
+	| 'vanished';
 
 /** The result of one write of a record. */
 export interface RecordWriteResult {
@@ -81,11 +98,15 @@ export async function writeRecord(
 	data: RecordData,
 ): Promise<RecordWriteResult> {
 	const text = await sealRecord(ports.digest, data);
-	if (!(await ports.vault.exists(path))) {
-		await ports.vault.write(path, text);
+	if (await ports.vault.create(path, text)) {
 		return { outcome: 'created', text };
 	}
-	const current = await ports.vault.read(path);
+	let current: string;
+	try {
+		current = await ports.vault.read(path);
+	} catch {
+		return { outcome: 'vanished', text };
+	}
 	if (current === text) {
 		return { outcome: 'unchanged', text };
 	}

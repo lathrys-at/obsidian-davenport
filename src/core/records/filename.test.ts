@@ -152,3 +152,60 @@ describe('the digest that a path states', () => {
 		expect(digestOfPath('', `${NAME}.md`)).toBe(NAME);
 	});
 });
+
+describe('the escape that the join writes', () => {
+	it('separates two pairs that differ in one surrogate with no partner', async () => {
+		const high = String.fromCharCode(0xd800);
+		const other = String.fromCharCode(0xd801);
+		expect(identityText({ collectionHref: 'c', uid: high })).not.toBe(
+			identityText({ collectionHref: 'c', uid: other }),
+		);
+		expect(
+			await recordDigest(digest, { collectionHref: 'c', uid: high }),
+		).not.toBe(
+			await recordDigest(digest, { collectionHref: 'c', uid: other }),
+		);
+	});
+
+	it('separates a surrogate with no partner from the replacement character', async () => {
+		expect(
+			await recordDigest(digest, {
+				collectionHref: 'c',
+				uid: String.fromCharCode(0xd800),
+			}),
+		).not.toBe(
+			await recordDigest(digest, {
+				collectionHref: 'c',
+				uid: String.fromCharCode(0xfffd),
+			}),
+		);
+	});
+
+	it('separates a surrogate with no partner from the text of its escape', () => {
+		expect(
+			identityText({
+				collectionHref: 'c',
+				uid: String.fromCharCode(0xd800),
+			}),
+		).not.toBe(identityText({ collectionHref: 'c', uid: '\\ud800' }));
+	});
+
+	it('writes no surrogate into the text that the digest hashes', () => {
+		const text = identityText({
+			collectionHref: `a${String.fromCharCode(0xdc00)}`,
+			uid: `b${String.fromCharCode(0xd800)}c`,
+		});
+		expect(/[\ud800-\udfff]/.test(text)).toBe(false);
+	});
+
+	it('keeps a pair of surrogates whole', () => {
+		const text = identityText({ collectionHref: 'c', uid: '😀' });
+		expect(text).toContain('\\ud83d\\ude00');
+	});
+
+	it('states the length of each part after the escape', () => {
+		expect(identityText({ collectionHref: '\\', uid: 'ab' })).toBe(
+			'2:\\\\2:ab',
+		);
+	});
+});

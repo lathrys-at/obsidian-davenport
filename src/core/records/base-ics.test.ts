@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { JCalComponent } from '../ics/jcal';
 import { parseIcs } from '../ics/parse';
+import { definedZones } from '../ics/zones';
 import { serializeCalendar } from '../ics/serializer';
 import { synthesiseTimezone } from '../timezone/synthesiser';
 import { baseCalendar } from './base-ics';
@@ -191,7 +192,15 @@ describe('a calendar that names more than one zone', () => {
 			[
 				[
 					'vevent',
-					[['uid', {}, 'text', 'one']],
+					[
+						['uid', {}, 'text', 'one'],
+						[
+							'dtstart',
+							{ tzid: 'America/New_York' },
+							'date-time',
+							'2026-03-02T09:00:00',
+						],
+					],
 					[
 						[
 							'vtimezone',
@@ -204,6 +213,96 @@ describe('a calendar that names more than one zone', () => {
 		];
 		const base = baseCalendar(calendar);
 		expect(base.calendar[2][0]?.[2]).toEqual([]);
+		expect(base.referencedZones).toEqual(['America/New_York']);
+	});
+
+	it('keeps a definition that stands inside another component and that no value names', () => {
+		const calendar: JCalComponent = [
+			'vcalendar',
+			[],
+			[
+				[
+					'vevent',
+					[['uid', {}, 'text', 'one']],
+					[
+						[
+							'vtimezone',
+							[['tzid', {}, 'text', 'America/New_York']],
+							[],
+						],
+					],
+				],
+			],
+		];
+		const base = baseCalendar(calendar);
+		expect(base.calendar[2][0]?.[2]).toHaveLength(1);
 		expect(base.referencedZones).toEqual([]);
+		expect(base.embeddedZones).toEqual(['America/New_York']);
+	});
+});
+
+describe('a definition that no value of the calendar refers to', () => {
+	const UNUSED = [
+		'BEGIN:VEVENT',
+		'UID:one',
+		'DTSTART:20260302T140000Z',
+		'END:VEVENT',
+	];
+
+	it('stays in the record, whatever the table holds', () => {
+		const base = baseCalendar(calendarOf(...NEW_YORK, ...UNUSED));
+		expect(serializeCalendar(base.calendar)).toContain(
+			'TZID:America/New_York',
+		);
+		expect(base.embeddedZones).toEqual(['America/New_York']);
+		expect(base.referencedZones).toEqual([]);
+	});
+
+	it('leaves the record where a value of the calendar names the zone', () => {
+		// A calendar states its home zone in a value, and a client that
+		// reads that value needs the definition. The record therefore
+		// carries the reference, and a device writes the definition.
+		const base = baseCalendar(
+			calendarOf(
+				'X-WR-TIMEZONE:America/New_York',
+				...NEW_YORK,
+				...UNUSED,
+			),
+		);
+		expect(serializeCalendar(base.calendar)).not.toContain('VTIMEZONE');
+		expect(serializeCalendar(base.calendar)).toContain(
+			'X-WR-TIMEZONE:America/New_York',
+		);
+		expect(base.referencedZones).toEqual(['America/New_York']);
+		expect(base.embeddedZones).toEqual([]);
+	});
+
+	it('names every definition that it dropped as one that the record references', () => {
+		// A device writes back only what the record names, so a definition
+		// that leaves the record must leave a name behind.
+		const source = calendarOf(
+			'X-WR-TIMEZONE:America/New_York',
+			...NEW_YORK,
+			...STRANGE,
+			'BEGIN:VEVENT',
+			'UID:one',
+			'DTSTART;TZID=Factory/Line 3:20260302T090000',
+			'END:VEVENT',
+		);
+		const base = baseCalendar(source);
+		const dropped = definedZones(source).filter(
+			(name) => !base.embeddedZones.includes(name),
+		);
+		expect(dropped).toEqual(['America/New_York']);
+		for (const name of dropped) {
+			expect(base.referencedZones).toContain(name);
+		}
+	});
+
+	it('keeps a definition of a name that stands in no value and in no parameter', () => {
+		const base = baseCalendar(calendarOf(...STRANGE, ...UNUSED));
+		expect(base.embeddedZones).toEqual(['Factory/Line 3']);
+		expect(base.referencedZones).toEqual([]);
+		expect(base.unresolvableZones).toEqual([]);
 	});
 });

@@ -8,8 +8,9 @@
  *
  * Two rules of the schema live here. The first rule: a key that the
  * schema does not hold is a refusal, and never a value that a reader
- * passes over. The second rule: an empty list reads back as an absent
- * list, because the emitter writes those two states the same way.
+ * passes over. The second rule: an empty list and an empty map are
+ * refusals. The schema of a record writes no key for an empty collection,
+ * so a file that holds one is a file that this build cannot write.
  */
 
 import type { Loaded } from './loader';
@@ -95,8 +96,8 @@ export function optionalInteger(
 }
 
 /**
- * The list of texts under the key. An empty list gives nothing back, and
- * so does an absent key.
+ * The list of texts under the key. An absent key gives nothing back. An
+ * empty list is a refusal, because the schema writes no key for one.
  */
 export function optionalTexts(
 	entries: ReadonlyMap<string, Loaded>,
@@ -110,7 +111,10 @@ export function optionalTexts(
 		return { ok: false, message: `the value of ${key} is not a list` };
 	}
 	return found.values.length === 0
-		? { ok: true, value: undefined }
+		? {
+				ok: false,
+				message: `the list under ${key} is empty, and a record states an empty list as no key at all`,
+			}
 		: { ok: true, value: found.values };
 }
 
@@ -136,7 +140,10 @@ export function optionalOneOf<T extends string>(
 			};
 }
 
-/** The map under the key, where the key can be absent. */
+/**
+ * The map under the key, where the key can be absent. An empty map is a
+ * refusal, because the schema writes no key for one.
+ */
 export function optionalMap(
 	node: Loaded | undefined,
 	key: string,
@@ -144,7 +151,13 @@ export function optionalMap(
 	if (node === undefined) {
 		return { ok: true, value: undefined };
 	}
-	return node.kind === 'map'
-		? { ok: true, value: node.entries }
-		: { ok: false, message: `the value of ${key} is not a map` };
+	if (node.kind !== 'map') {
+		return { ok: false, message: `the value of ${key} is not a map` };
+	}
+	return node.entries.size === 0
+		? {
+				ok: false,
+				message: `the map under ${key} is empty, and a record states an empty map as no key at all`,
+			}
+		: { ok: true, value: node.entries };
 }

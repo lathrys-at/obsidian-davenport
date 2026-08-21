@@ -208,3 +208,62 @@ describe('the write of a record that another build wrote', () => {
 		expect(home.vault.written).toEqual([]);
 	});
 });
+
+describe('the file that arrives while the device computes its own', () => {
+	it('keeps a record that stands at the path already, and never asks whether the path is free', async () => {
+		// A vault that answers the question "does this path hold a file"
+		// leaves a window between the answer and the write. A record that
+		// arrives in that window would lose its content, and the skew rule
+		// would never read its stamp. The writer asks for a create instead.
+		const arriving = await sealRecord(
+			digest,
+			record('minimal', { core: 9, timezone: 9 }),
+		);
+		const home = ports({ [PATH]: arriving });
+		let asked = 0;
+		const watched: RecordWriterPorts = {
+			...home,
+			vault: {
+				read: (path) => home.vault.read(path),
+				write: (path, content) => home.vault.write(path, content),
+				create: (path, content) => home.vault.create(path, content),
+				exists: (path) => {
+					asked += 1;
+					return home.vault.exists(path);
+				},
+				rename: (path, newPath) => home.vault.rename(path, newPath),
+				trash: (path) => home.vault.trash(path),
+				frontmatter: (path) => home.vault.frontmatter(path),
+				updateFrontmatter: (path, update) =>
+					home.vault.updateFrontmatter(path, update),
+				onFileEvent: (handler) => home.vault.onFileEvent(handler),
+			},
+		};
+		const result = await writeRecord(watched, PATH, record('minimal'));
+		expect(asked).toBe(0);
+		expect(result.outcome).toBe('suppressed');
+		expect(await home.vault.read(PATH)).toBe(arriving);
+	});
+
+	it('reports a file that stood at the path and that the read did not find', async () => {
+		const home = ports({ [PATH]: 'anything' });
+		const vanishing: RecordWriterPorts = {
+			...home,
+			vault: {
+				read: () => Promise.reject(new Error('no file at that path')),
+				write: (path, content) => home.vault.write(path, content),
+				create: () => Promise.resolve(false),
+				exists: (path) => home.vault.exists(path),
+				rename: (path, newPath) => home.vault.rename(path, newPath),
+				trash: (path) => home.vault.trash(path),
+				frontmatter: (path) => home.vault.frontmatter(path),
+				updateFrontmatter: (path, update) =>
+					home.vault.updateFrontmatter(path, update),
+				onFileEvent: (handler) => home.vault.onFileEvent(handler),
+			},
+		};
+		const result = await writeRecord(vanishing, PATH, record('minimal'));
+		expect(result.outcome).toBe('vanished');
+		expect(home.vault.written).toEqual([]);
+	});
+});

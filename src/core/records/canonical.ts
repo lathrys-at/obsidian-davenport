@@ -42,7 +42,17 @@ const BODY_LANGUAGE = 'ics';
 
 const SMALLEST_FENCE = 3;
 
-/** The canonical text of one record, with the checksum that the data holds. */
+/**
+ * The canonical text of one record, with the checksum that the data
+ * holds.
+ *
+ * The function refuses a record whose base snapshot holds no line. Such a
+ * record renders as an empty fenced block, and the reader refuses that
+ * block, so the file would quarantine on the next read of any device. The
+ * builder of a record always serializes a calendar that the parse
+ * boundary read, so no state of the plugin reaches this refusal. A caller
+ * that builds the content by hand does.
+ */
 export function renderRecord(data: RecordData): string {
 	const frontmatter = emitFrontmatter(recordEntries(data));
 	return (
@@ -54,9 +64,11 @@ export function renderRecord(data: RecordData): string {
 /** The fenced block that holds the base snapshot. */
 function fencedBody(ics: string): string {
 	const body = withLineFeeds(ics).replace(/\n+$/, '');
+	if (body.length === 0) {
+		throw new Error('the record states no base snapshot');
+	}
 	const fence = '`'.repeat(fenceLength(body));
-	const inside = body.length === 0 ? '' : `${body}\n`;
-	return `${fence}${BODY_LANGUAGE}\n${inside}${fence}\n`;
+	return `${fence}${BODY_LANGUAGE}\n${body}\n${fence}\n`;
 }
 
 /** The text with one line feed in the place of every line ending. */
@@ -121,6 +133,13 @@ export interface ChecksumSite {
 export type ChecksumSiteProblem =
 	/** The text does not start with a frontmatter block. */
 	| 'no-frontmatter'
+	/**
+	 * The first line of the text ends with a carriage return. A record
+	 * uses the line feed alone, so a tool converted the line endings of
+	 * the whole file. A checkout of a vault under git does this where the
+	 * vault states no rule for a markdown file.
+	 */
+	| 'line-endings'
 	/** The frontmatter holds no line that carries the checksum. */
 	| 'no-checksum'
 	/** The frontmatter holds more than one such line. */
@@ -133,13 +152,26 @@ export type ChecksumSiteResult =
 
 /**
  * The checksum line of one record text, and the same text with that value
- * blanked. The search reads the frontmatter alone, so a line of the body
- * that looks like the checksum line changes nothing.
+ * blanked.
+ *
+ * The search reads the lines between the opening mark and the first mark
+ * that follows it. In a well-formed record those lines are the
+ * frontmatter, so a line of the body that looks like the checksum line
+ * changes nothing. In a file whose frontmatter block does not close, the
+ * first mark that follows stands in the body, and the search then reads
+ * body lines. Such a file is damage that the reader refuses, and the
+ * checksum is one of three checks that a quarantine makes.
  */
 export function checksumSite(text: string): ChecksumSiteResult {
 	const lines = text.split('\n');
 	if (lines[0] !== FRONTMATTER_MARK) {
-		return { ok: false, problem: 'no-frontmatter' };
+		return {
+			ok: false,
+			problem:
+				lines[0] === `${FRONTMATTER_MARK}\r`
+					? 'line-endings'
+					: 'no-frontmatter',
+		};
 	}
 	const end = lines.indexOf(FRONTMATTER_MARK, 1);
 	if (end === -1) {
