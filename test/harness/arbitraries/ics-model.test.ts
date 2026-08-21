@@ -62,6 +62,16 @@ describe('the text values of a calendar', () => {
 	it('reaches an empty value', () => {
 		expect(drawn).toContain('');
 	});
+
+	it('reaches a value that holds two hard characters together', () => {
+		// Only the free text draws hard characters beside one another. The
+		// fold walker carries one hard character at a time, so it satisfies
+		// every reach above on its own. A free text that stops drawing hard
+		// characters therefore passes every reach and fails only here.
+		expect(
+			drawn.some((value) => value.includes('"') && value.includes(',')),
+		).toBe(true);
+	});
 });
 
 describe('the value that walks the place of a fold', () => {

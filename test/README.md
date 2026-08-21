@@ -181,8 +181,10 @@ npm test -- --sequence.shuffle=false
 
 Use this fixed order to bisect an ordering failure.
 
-The seed does not cover the inputs of a property test. fast-check draws those
-inputs, and fast-check reports a seed of its own.
+The seed does not cover the inputs of a property test. The constant in
+`test/harness/arbitraries/seed.ts` fixes those inputs, the variable
+`DAVENPORT_PROPERTY_SEED` overrides the constant, and a failure prints the
+replay command.
 
 ## Property tests
 

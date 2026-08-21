@@ -12,8 +12,9 @@ export default defineConfig({
 		// than the day an unrelated change reorders the suite. Vitest picks a
 		// seed per run and prints it in the banner; passing that seed back
 		// replays the order exactly, which is what the sequencer is for.
-		// Property-test inputs are not covered by this seed: fast-check seeds
-		// and reports those itself.
+		// Property-test inputs are not covered by this seed: the constant in
+		// test/harness/arbitraries/seed.ts fixes those, and the variable
+		// DAVENPORT_PROPERTY_SEED overrides the constant.
 		sequence: {
 			sequencer: SeededSequencer,
 			shuffle: true,
