@@ -5,11 +5,13 @@
  * fake is built on. The writer is deterministic, which means that it makes
  * the same bytes from the same data every time. The module also holds a
  * double of the frontmatter writer of the platform, which the adapter of
- * the notes writes through.
+ * the notes writes through. The module also holds the data file of a
+ * plugin, which keeps the text of every write.
  */
 
 export { FakeVault } from './vault';
 export { FakeFileManager } from './file-manager';
+export { FakePluginData } from './plugin-data';
 export type { FrontmatterCall } from './file-manager';
 export {
 	CASE_INSENSITIVE_FILESYSTEM,

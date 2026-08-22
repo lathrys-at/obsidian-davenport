@@ -1,27 +1,50 @@
 {
 	"total": {
 		"statements": {
-			"total": 2032,
-			"covered": 2010,
-			"pct": 98.91
+			"total": 2532,
+			"covered": 2398,
+			"pct": 94.7
 		},
 		"branches": {
-			"total": 1447,
-			"covered": 1379,
-			"pct": 95.3
+			"total": 1687,
+			"covered": 1596,
+			"pct": 94.6
 		},
 		"functions": {
-			"total": 394,
-			"covered": 394,
-			"pct": 100
+			"total": 542,
+			"covered": 495,
+			"pct": 91.32
 		},
 		"lines": {
-			"total": 2017,
-			"covered": 1995,
-			"pct": 98.9
+			"total": 2513,
+			"covered": 2379,
+			"pct": 94.66
 		}
 	},
 	"files": [
+		{
+			"path": "src/adapters/clock.ts",
+			"statements": {
+				"total": 14,
+				"covered": 14,
+				"pct": 100
+			},
+			"branches": {
+				"total": 0,
+				"covered": 0,
+				"pct": 100
+			},
+			"functions": {
+				"total": 12,
+				"covered": 12,
+				"pct": 100
+			},
+			"lines": {
+				"total": 14,
+				"covered": 14,
+				"pct": 100
+			}
+		},
 		{
 			"path": "src/adapters/digest.ts",
 			"statements": {
@@ -46,6 +69,29 @@
 			}
 		},
 		{
+			"path": "src/adapters/log.ts",
+			"statements": {
+				"total": 7,
+				"covered": 7,
+				"pct": 100
+			},
+			"branches": {
+				"total": 3,
+				"covered": 3,
+				"pct": 100
+			},
+			"functions": {
+				"total": 3,
+				"covered": 3,
+				"pct": 100
+			},
+			"lines": {
+				"total": 7,
+				"covered": 7,
+				"pct": 100
+			}
+		},
+		{
 			"path": "src/adapters/note-frontmatter.ts",
 			"statements": {
 				"total": 12,
@@ -65,6 +111,52 @@
 			"lines": {
 				"total": 12,
 				"covered": 12,
+				"pct": 100
+			}
+		},
+		{
+			"path": "src/adapters/plugin-data.ts",
+			"statements": {
+				"total": 33,
+				"covered": 33,
+				"pct": 100
+			},
+			"branches": {
+				"total": 12,
+				"covered": 12,
+				"pct": 100
+			},
+			"functions": {
+				"total": 10,
+				"covered": 10,
+				"pct": 100
+			},
+			"lines": {
+				"total": 33,
+				"covered": 33,
+				"pct": 100
+			}
+		},
+		{
+			"path": "src/adapters/secret-store.ts",
+			"statements": {
+				"total": 24,
+				"covered": 24,
+				"pct": 100
+			},
+			"branches": {
+				"total": 14,
+				"covered": 14,
+				"pct": 100
+			},
+			"functions": {
+				"total": 12,
+				"covered": 12,
+				"pct": 100
+			},
+			"lines": {
+				"total": 24,
+				"covered": 24,
 				"pct": 100
 			}
 		},
@@ -552,6 +644,29 @@
 			}
 		},
 		{
+			"path": "src/core/model/credential.ts",
+			"statements": {
+				"total": 1,
+				"covered": 1,
+				"pct": 100
+			},
+			"branches": {
+				"total": 0,
+				"covered": 0,
+				"pct": 100
+			},
+			"functions": {
+				"total": 0,
+				"covered": 0,
+				"pct": 100
+			},
+			"lines": {
+				"total": 1,
+				"covered": 1,
+				"pct": 100
+			}
+		},
+		{
 			"path": "src/core/model/event.ts",
 			"statements": {
 				"total": 0,
@@ -783,6 +898,52 @@
 		},
 		{
 			"path": "src/core/ports/logger.ts",
+			"statements": {
+				"total": 0,
+				"covered": 0,
+				"pct": 100
+			},
+			"branches": {
+				"total": 0,
+				"covered": 0,
+				"pct": 100
+			},
+			"functions": {
+				"total": 0,
+				"covered": 0,
+				"pct": 100
+			},
+			"lines": {
+				"total": 0,
+				"covered": 0,
+				"pct": 100
+			}
+		},
+		{
+			"path": "src/core/ports/secret-store.ts",
+			"statements": {
+				"total": 0,
+				"covered": 0,
+				"pct": 100
+			},
+			"branches": {
+				"total": 0,
+				"covered": 0,
+				"pct": 100
+			},
+			"functions": {
+				"total": 0,
+				"covered": 0,
+				"pct": 100
+			},
+			"lines": {
+				"total": 0,
+				"covered": 0,
+				"pct": 100
+			}
+		},
+		{
+			"path": "src/core/ports/settings-store.ts",
 			"statements": {
 				"total": 0,
 				"covered": 0,
@@ -1196,6 +1357,167 @@
 			}
 		},
 		{
+			"path": "src/core/settings/accounts.ts",
+			"statements": {
+				"total": 58,
+				"covered": 58,
+				"pct": 100
+			},
+			"branches": {
+				"total": 39,
+				"covered": 38,
+				"pct": 97.43
+			},
+			"functions": {
+				"total": 15,
+				"covered": 15,
+				"pct": 100
+			},
+			"lines": {
+				"total": 57,
+				"covered": 57,
+				"pct": 100
+			}
+		},
+		{
+			"path": "src/core/settings/calendars.ts",
+			"statements": {
+				"total": 15,
+				"covered": 15,
+				"pct": 100
+			},
+			"branches": {
+				"total": 17,
+				"covered": 17,
+				"pct": 100
+			},
+			"functions": {
+				"total": 1,
+				"covered": 1,
+				"pct": 100
+			},
+			"lines": {
+				"total": 15,
+				"covered": 15,
+				"pct": 100
+			}
+		},
+		{
+			"path": "src/core/settings/credential.ts",
+			"statements": {
+				"total": 31,
+				"covered": 31,
+				"pct": 100
+			},
+			"branches": {
+				"total": 24,
+				"covered": 24,
+				"pct": 100
+			},
+			"functions": {
+				"total": 5,
+				"covered": 5,
+				"pct": 100
+			},
+			"lines": {
+				"total": 31,
+				"covered": 31,
+				"pct": 100
+			}
+		},
+		{
+			"path": "src/core/settings/fields.ts",
+			"statements": {
+				"total": 44,
+				"covered": 44,
+				"pct": 100
+			},
+			"branches": {
+				"total": 29,
+				"covered": 29,
+				"pct": 100
+			},
+			"functions": {
+				"total": 7,
+				"covered": 7,
+				"pct": 100
+			},
+			"lines": {
+				"total": 42,
+				"covered": 42,
+				"pct": 100
+			}
+		},
+		{
+			"path": "src/core/settings/problems.ts",
+			"statements": {
+				"total": 21,
+				"covered": 21,
+				"pct": 100
+			},
+			"branches": {
+				"total": 16,
+				"covered": 16,
+				"pct": 100
+			},
+			"functions": {
+				"total": 5,
+				"covered": 5,
+				"pct": 100
+			},
+			"lines": {
+				"total": 21,
+				"covered": 21,
+				"pct": 100
+			}
+		},
+		{
+			"path": "src/core/settings/read.ts",
+			"statements": {
+				"total": 39,
+				"covered": 39,
+				"pct": 100
+			},
+			"branches": {
+				"total": 30,
+				"covered": 30,
+				"pct": 100
+			},
+			"functions": {
+				"total": 8,
+				"covered": 8,
+				"pct": 100
+			},
+			"lines": {
+				"total": 39,
+				"covered": 39,
+				"pct": 100
+			}
+		},
+		{
+			"path": "src/core/settings/service.ts",
+			"statements": {
+				"total": 75,
+				"covered": 73,
+				"pct": 97.33
+			},
+			"branches": {
+				"total": 22,
+				"covered": 22,
+				"pct": 100
+			},
+			"functions": {
+				"total": 20,
+				"covered": 18,
+				"pct": 90
+			},
+			"lines": {
+				"total": 74,
+				"covered": 72,
+				"pct": 97.29
+			}
+		},
+		{
 			"path": "src/core/timezone/calendar.ts",
 			"statements": {
 				"total": 15,
@@ -1359,9 +1681,9 @@
 		{
 			"path": "src/main.ts",
 			"statements": {
-				"total": 0,
+				"total": 4,
 				"covered": 0,
-				"pct": 100
+				"pct": 0
 			},
 			"branches": {
 				"total": 0,
@@ -1369,13 +1691,151 @@
 				"pct": 100
 			},
 			"functions": {
+				"total": 1,
+				"covered": 0,
+				"pct": 0
+			},
+			"lines": {
+				"total": 4,
+				"covered": 0,
+				"pct": 0
+			}
+		},
+		{
+			"path": "src/ui/account-modal.ts",
+			"statements": {
+				"total": 44,
+				"covered": 0,
+				"pct": 0
+			},
+			"branches": {
+				"total": 8,
+				"covered": 0,
+				"pct": 0
+			},
+			"functions": {
+				"total": 17,
+				"covered": 0,
+				"pct": 0
+			},
+			"lines": {
+				"total": 44,
+				"covered": 0,
+				"pct": 0
+			}
+		},
+		{
+			"path": "src/ui/accounts.ts",
+			"statements": {
+				"total": 45,
+				"covered": 0,
+				"pct": 0
+			},
+			"branches": {
+				"total": 14,
+				"covered": 0,
+				"pct": 0
+			},
+			"functions": {
+				"total": 17,
+				"covered": 0,
+				"pct": 0
+			},
+			"lines": {
+				"total": 45,
+				"covered": 0,
+				"pct": 0
+			}
+		},
+		{
+			"path": "src/ui/confirm-modal.ts",
+			"statements": {
+				"total": 12,
+				"covered": 0,
+				"pct": 0
+			},
+			"branches": {
 				"total": 0,
 				"covered": 0,
 				"pct": 100
 			},
+			"functions": {
+				"total": 7,
+				"covered": 0,
+				"pct": 0
+			},
 			"lines": {
+				"total": 12,
+				"covered": 0,
+				"pct": 0
+			}
+		},
+		{
+			"path": "src/ui/copy.ts",
+			"statements": {
+				"total": 25,
+				"covered": 25,
+				"pct": 100
+			},
+			"branches": {
+				"total": 4,
+				"covered": 4,
+				"pct": 100
+			},
+			"functions": {
+				"total": 3,
+				"covered": 3,
+				"pct": 100
+			},
+			"lines": {
+				"total": 25,
+				"covered": 25,
+				"pct": 100
+			}
+		},
+		{
+			"path": "src/ui/settings-tab.ts",
+			"statements": {
+				"total": 5,
+				"covered": 0,
+				"pct": 0
+			},
+			"branches": {
 				"total": 0,
 				"covered": 0,
+				"pct": 100
+			},
+			"functions": {
+				"total": 3,
+				"covered": 0,
+				"pct": 0
+			},
+			"lines": {
+				"total": 5,
+				"covered": 0,
+				"pct": 0
+			}
+		},
+		{
+			"path": "src/ui/view.ts",
+			"statements": {
+				"total": 3,
+				"covered": 3,
+				"pct": 100
+			},
+			"branches": {
+				"total": 8,
+				"covered": 8,
+				"pct": 100
+			},
+			"functions": {
+				"total": 2,
+				"covered": 2,
+				"pct": 100
+			},
+			"lines": {
+				"total": 3,
+				"covered": 3,
 				"pct": 100
 			}
 		}

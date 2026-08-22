@@ -20,6 +20,7 @@ import type {
 } from '../../../src/core/ports/vault';
 import type { MockCalDavServer } from '../caldav-mock/server';
 import type { FeedFixture } from '../feed-fixture/server';
+import type { FakePluginData } from '../obsidian-fake/plugin-data';
 import type { FakeVault } from '../obsidian-fake/vault';
 import type { VaultSyncChannel } from '../vault-sync/channel';
 import {
@@ -53,6 +54,8 @@ export interface SimulationOptions {
 	 * this channel.
 	 */
 	readonly vaultSync?: VaultSyncChannel;
+	/** The data file of the plugin. The run answers for what it holds. */
+	readonly pluginData?: FakePluginData;
 	/** The values that the run treats as secret from the start. */
 	readonly secrets?: readonly SensitiveValue[];
 	/**
@@ -163,7 +166,7 @@ class Simulation implements SimulationRun {
 	}
 
 	async evidence(): Promise<RunEvidence> {
-		const { caldav, feed, vault, vaultSync } = this.options;
+		const { caldav, feed, vault, vaultSync, pluginData } = this.options;
 		return evidence({
 			name: this.name,
 			caldav: {
@@ -183,6 +186,10 @@ class Simulation implements SimulationRun {
 				files: await filesOf(vault),
 			},
 			vaultSync: { deliveries: [...(vaultSync?.log ?? [])] },
+			pluginData: {
+				writes: [...(pluginData?.writes ?? [])],
+				document: pluginData?.document ?? null,
+			},
 			syncLog: [...this.syncLog],
 			network: {
 				poisoned: this.poisonedAtStart && fetchPoisonHolds(),
