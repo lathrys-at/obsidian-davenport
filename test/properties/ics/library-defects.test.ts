@@ -114,7 +114,7 @@ describe('a parameter that carries a list of values', () => {
 	// that it cannot read back. The check therefore reads every parameter of
 	// the line, and the boundary refuses this line as well.
 	it('refuses a line whose middle parameter moves the start of the value', () => {
-		const failure = refusalOf(calendar('X-A;MEMBER="a","b:c";ZZZ=1:v'));
+		const failure = refusalOf(calendar('X-A;MEMBER="a","b:c";AAA=1:v'));
 		expect(failure.problem).toBe('value');
 		expect(failure.message).toContain('the parameter MEMBER');
 	});

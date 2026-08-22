@@ -80,11 +80,11 @@ describe('the place where the value of the property starts', () => {
 		// their names, so MEMBER stands last in the canonical text of this
 		// line. The line reaches no colon of its own, and its canonical text
 		// does.
-		const line = 'X-A;MEMBER="a","b:c";ZZZ=1:v';
+		const line = 'X-A;MEMBER="a","b:c";AAA=1:v';
 		expect(
 			valueStartProblem(line, lineOf(line), {
 				member: ['a', 'b:c'],
-				zzz: '1',
+				aaa: '1',
 			}),
 		).toContain('the parameter MEMBER');
 	});
