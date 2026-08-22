@@ -218,3 +218,34 @@ describe('the list of accounts', () => {
 		expect(findAccount(settingsOf(ACCOUNT), 'other')).toBeNull();
 	});
 });
+
+describe('the username against the alphabet of the sign-in header', () => {
+	it('refuses a username that the header cannot carry', () => {
+		expect(
+			checkAccount({ ...ACCOUNT, username: 'пользователь' }, []),
+		).toEqual([{ kind: 'sign-in-alphabet', field: 'username' }]);
+	});
+
+	it('accepts a username of accented letters', () => {
+		expect(checkAccount({ ...ACCOUNT, username: 'rené' }, [])).toEqual([]);
+	});
+
+	it('reads that alphabet for an app-password account alone', () => {
+		expect(
+			checkAccount(
+				{
+					...ACCOUNT,
+					credentialType: 'oauth',
+					username: 'пользователь',
+				},
+				[],
+			),
+		).toEqual([]);
+	});
+
+	it('states the empty fault alone where the username has no characters', () => {
+		expect(checkAccount({ ...ACCOUNT, username: '' }, [])).toEqual([
+			{ kind: 'empty', field: 'username' },
+		]);
+	});
+});

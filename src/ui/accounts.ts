@@ -13,6 +13,11 @@
  * that store after it drew the rows. The answer arrives later, so the
  * section asks the screen whether the draw still stands. A draw that the
  * screen discarded changes nothing.
+ *
+ * A row also has a button that tests the connection of that account. The
+ * test speaks to the server, so the answer arrives later as well, and it
+ * lands in a paragraph under the row. The same rule holds there: an answer
+ * that arrives after the screen discarded the draw changes nothing.
  */
 
 import { App, Notice, Setting } from 'obsidian';
@@ -28,7 +33,15 @@ import {
 	REMOVE_ACCOUNT,
 	removeQuestion,
 } from './copy';
-import { accountsView, outcomeView, passwordNote, rowNote } from './view';
+import type { ConnectionView } from './view';
+import {
+	accountsView,
+	connectionRunningView,
+	connectionView,
+	outcomeView,
+	passwordNote,
+	rowNote,
+} from './view';
 
 /** The class of a paragraph that stands under a row of the screen. */
 const NOTE_CLASS = 'setting-item-description';
@@ -68,7 +81,11 @@ export function renderAccounts(
 		cls: view.storage.warning ? WARNING_CLASS : NOTE_CLASS,
 	});
 	const rows = view.rows.map((row) =>
-		renderAccount(containerEl, section, row.account, row.name, row.note),
+		renderAccount(containerEl, section, row.account, {
+			name: row.name,
+			note: row.note,
+			testButton: view.testButton,
+		}),
 	);
 	if (view.empty !== null) {
 		containerEl.createEl('p', { text: view.empty, cls: NOTE_CLASS });
@@ -95,15 +112,26 @@ export function renderAccounts(
 	void showCredentials(section, rows);
 }
 
-/** Draws one row of the list of accounts. */
+/** The words that one row of the list draws. */
+interface AccountRowText {
+	readonly name: string;
+	readonly note: string;
+	readonly testButton: string;
+}
+
+/**
+ * Draws one row of the list of accounts. The paragraph that states the
+ * result of a connection test stands after the row, and not inside the
+ * description of the row: a later read of the secret store writes that
+ * description again.
+ */
 function renderAccount(
 	containerEl: HTMLElement,
 	section: AccountsSection,
 	account: AccountConfig,
-	name: string,
-	note: string,
+	text: AccountRowText,
 ): AccountRow {
-	const row = new Setting(containerEl).setName(name).setDesc(note);
+	const row = new Setting(containerEl).setName(text.name).setDesc(text.note);
 	row.addButton((button) =>
 		button.setButtonText(EDIT).onClick(() => {
 			openEdit(section, account);
@@ -114,12 +142,45 @@ function renderAccount(
 			openRemove(section, account);
 		}),
 	);
+	const state = containerEl.createEl('p', { cls: NOTE_CLASS });
+	state.hide();
+	row.addButton((button) =>
+		button.setButtonText(text.testButton).onClick(() => {
+			void runTest(section, account, state);
+		}),
+	);
 	return {
 		account,
-		setNote: (text) => {
-			row.setDesc(text);
+		setNote: (note) => {
+			row.setDesc(note);
 		},
 	};
+}
+
+/**
+ * Tests the connection of one account and states the result under the row.
+ * The screen states that the test runs first, because the test speaks to a
+ * server and the answer takes time.
+ */
+async function runTest(
+	section: AccountsSection,
+	account: AccountConfig,
+	state: HTMLElement,
+): Promise<void> {
+	say(state, connectionRunningView());
+	const result = await section.service.testConnection(account.id);
+	if (!section.live()) {
+		return;
+	}
+	say(state, connectionView(result));
+}
+
+/** Writes one paragraph of the screen. */
+function say(element: HTMLElement, view: ConnectionView): void {
+	element.setText(view.text);
+	element.toggleClass(WARNING_CLASS, view.warning);
+	element.toggleClass(NOTE_CLASS, !view.warning);
+	element.show();
 }
 
 /**

@@ -59,6 +59,29 @@ export const EDIT = 'Edit';
 export const REMOVE = 'Remove';
 export const SAVE = 'Save';
 export const CANCEL = 'Cancel';
+export const TEST_CONNECTION = 'Test connection';
+
+/**
+ * What the screen states about one connection test.
+ *
+ * The test speaks to the calendar server of the account. The three
+ * results of the server come first. The other results state that the test
+ * did not start, because Davenport holds no credential that it can send.
+ */
+export const CONNECTION_RUNS = 'Davenport tests the connection.';
+export const CONNECTION_SIGNED_IN =
+	'Davenport reached the server. The server accepted your username and your app password.';
+export const CONNECTION_REFUSED =
+	'Davenport reached the server. The server did not accept your username or your app password. Check the username. Then select "Edit". Then enter the app password again.';
+export const CONNECTION_NOT_REACHED =
+	'Davenport reached no calendar server at that address. Check the server URL. Then check the network of this device.';
+export const CONNECTION_UNREADABLE =
+	'Davenport cannot read the app password of this account. Select "Edit". Then enter the app password again.';
+export const CONNECTION_ALPHABET =
+	'The username or the app password holds a character that Davenport cannot send to a calendar server. Select "Edit". Then give a username and an app password of letters, digits, and the marks of a keyboard.';
+export const CONNECTION_NO_TOKEN_FLOW =
+	'This account signs in with OAuth. This version of Davenport does not sign in with OAuth.';
+export const CONNECTION_NO_ACCOUNT = 'Davenport holds no account of that name.';
 
 export const SERVER_URL = 'Server URL';
 export const SERVER_URL_NOTE =

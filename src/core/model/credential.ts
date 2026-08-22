@@ -33,3 +33,34 @@ export const CREDENTIAL_TYPES: readonly CredentialType[] = [
 	'app-password',
 	'oauth',
 ];
+
+/**
+ * The largest character code that an HTTP Basic header can carry.
+ *
+ * The header holds the username and the password as base64, and that
+ * encoding takes one octet for each character. A character above this code
+ * needs more than one octet, and the header states no encoding for it.
+ * Servers therefore disagree about such a character, and the plugin sends
+ * none. The CalDAV library reads the same code and refuses the same
+ * characters.
+ */
+const BASIC_AUTH_LIMIT = 255;
+
+/**
+ * True where an HTTP Basic header can carry this text. The settings refuse
+ * a username and a password outside this alphabet at the moment the user
+ * gives them. The transport refuses a credential that a user gave before
+ * the settings held that rule.
+ *
+ * The test reads the text as the library reads it, one code unit at a
+ * time. A character outside the alphabet stands as one code unit above the
+ * limit, or as two of them.
+ */
+export function fitsBasicAuth(text: string): boolean {
+	for (let index = 0; index < text.length; index++) {
+		if (text.charCodeAt(index) > BASIC_AUTH_LIMIT) {
+			return false;
+		}
+	}
+	return true;
+}

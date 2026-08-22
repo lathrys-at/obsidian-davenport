@@ -35,6 +35,7 @@ const FAULTS: readonly FieldFault[] = [
 	{ kind: 'repeated', field: 'name', value: 'Work' },
 	{ kind: 'credentials-in-address', field: 'serverUrl' },
 	{ kind: 'feed-mode', field: 'mode', value: 'bidirectional' },
+	{ kind: 'sign-in-alphabet', field: 'password' },
 ];
 
 describe('the words of a fault of a field', () => {
@@ -50,6 +51,7 @@ describe('the words of a fault of a field', () => {
 			'The field "name" holds "Work". Another entry holds that value. Give each entry a value of its own.',
 			'The field "server URL" holds a username or a password before the name of the server. Write the address of the server alone. Give the username in the field "username". Give the app password in the field "app password".',
 			'The field "ownership mode" holds "bidirectional". A calendar of a feed takes the mode "remote-owned" alone, because Davenport writes to no feed.',
+			'The field "app password" holds a character that Davenport cannot send to a calendar server. Use letters, digits, and the marks of a keyboard. Do not use a character of another writing system. Do not use an emoji.',
 		]);
 	});
 
@@ -98,6 +100,7 @@ describe('the name of a fault, for the log', () => {
 			'name repeated',
 			'serverUrl credentials-in-address',
 			'mode feed-mode',
+			'password sign-in-alphabet',
 		]);
 	});
 
@@ -169,5 +172,29 @@ describe('the words of a problem of the settings', () => {
 		).toBe(
 			'Davenport did not read entry 3 of the accounts. The entry has no field "account id". Add that field.',
 		);
+	});
+});
+
+describe('the words of a character that the sign-in cannot carry', () => {
+	it('quote no value, because the field can hold a credential', () => {
+		const password = 'planted-app-password-пароль';
+		const message = describeFieldFault({
+			kind: 'sign-in-alphabet',
+			field: 'password',
+		});
+		expect(message).not.toContain(password);
+		expect(message).not.toContain('пароль');
+	});
+
+	it('name the username where that field holds the character', () => {
+		expect(
+			describeFieldFault({ kind: 'sign-in-alphabet', field: 'username' }),
+		).toContain('"username"');
+	});
+
+	it('say what the user can use in the place of that character', () => {
+		expect(
+			describeFieldFault({ kind: 'sign-in-alphabet', field: 'password' }),
+		).toContain('Use letters, digits, and the marks of a keyboard.');
 	});
 });

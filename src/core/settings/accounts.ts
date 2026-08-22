@@ -21,7 +21,7 @@
  */
 
 import type { AccountConfig, SyncedSettings } from '../model/settings';
-import { CREDENTIAL_TYPES } from '../model/credential';
+import { CREDENTIAL_TYPES, fitsBasicAuth } from '../model/credential';
 import type { FieldFault } from './problems';
 import type { UnknownMap } from './fields';
 import { requiredText, requiredWord } from './fields';
@@ -116,6 +116,11 @@ export function checkAccount(
 	}
 	if (account.username === '') {
 		faults.push({ kind: 'empty', field: 'username' });
+	} else if (
+		account.credentialType === 'app-password' &&
+		!fitsBasicAuth(account.username)
+	) {
+		faults.push({ kind: 'sign-in-alphabet', field: 'username' });
 	}
 	if (account.credentialRef === '') {
 		faults.push({ kind: 'empty', field: 'credentialRef' });

@@ -15,9 +15,15 @@
 
 import { describe, expect, it } from 'vitest';
 import { ControlledClock } from '../../../test/harness/clock';
+import { MockCalDavServer } from '../../../test/harness/caldav-mock/server';
+import {
+	FakeTransport,
+	refusingTransport,
+} from '../../../test/harness/transport';
 import type { Logger, SyncLogEntry } from '../ports/logger';
 import type { SecretStore, SecretTier } from '../ports/secret-store';
 import type { SettingsStore } from '../ports/settings-store';
+import type { HttpTransport } from '../ports/transport';
 import type { SyncedSettings } from '../model/settings';
 import {
 	DEFAULT_SETTINGS,
@@ -27,6 +33,13 @@ import {
 import { AccountService } from './service';
 
 const PASSWORD = 'correct-horse-battery-staple';
+/**
+ * Most cases of this file make no request. The default transport of a
+ * service therefore fails every request, and a case that must speak to a
+ * server gives a transport of its own.
+ */
+const NO_REQUESTS = 'this test makes no network request';
+
 const DRAFT = {
 	serverUrl: 'https://caldav.example.com/dav/',
 	username: 'ren',
@@ -111,7 +124,10 @@ class MemorySettings implements SettingsStore {
 }
 
 /** The parts of one service, with the doubles that a case reads. */
-function serviceParts(tier: SecretTier = 'secret-storage'): {
+function serviceParts(
+	tier: SecretTier = 'secret-storage',
+	transport: HttpTransport = refusingTransport(NO_REQUESTS),
+): {
 	readonly service: AccountService;
 	readonly secrets: MemorySecrets;
 	readonly settings: MemorySettings;
@@ -130,6 +146,7 @@ function serviceParts(tier: SecretTier = 'secret-storage'): {
 		secrets,
 		logger,
 		clock: new ControlledClock(),
+		transport,
 	});
 	return { service, secrets, settings, entries };
 }
@@ -682,5 +699,197 @@ describe('the log of the operations', () => {
 			reason: 'app password write',
 		});
 		expect(JSON.stringify(entries)).not.toContain('the storage is locked');
+	});
+});
+
+describe('the password against the alphabet of the sign-in header', () => {
+	const OUTSIDE = '\u043f\u0430\u0440\u043e\u043b\u044c';
+
+	it('refuses an add whose password the header cannot carry', async () => {
+		const { service, secrets } = serviceParts();
+		await service.load();
+		expect(await service.add(DRAFT, OUTSIDE)).toEqual({
+			ok: false,
+			faults: [{ kind: 'sign-in-alphabet', field: 'password' }],
+			failure: null,
+		});
+		expect(secrets.held.size).toBe(0);
+	});
+
+	it('refuses a change whose new password the header cannot carry', async () => {
+		const { service, secrets } = serviceParts();
+		await service.load();
+		await service.add(DRAFT, PASSWORD);
+		expect(await service.change(ID, DRAFT, OUTSIDE)).toEqual({
+			ok: false,
+			faults: [{ kind: 'sign-in-alphabet', field: 'password' }],
+			failure: null,
+		});
+		expect(secrets.held.get(ID)).toBe(PASSWORD);
+	});
+
+	it('keeps the password of the store where the field is empty', async () => {
+		const { service, secrets } = serviceParts();
+		await service.load();
+		await service.add(DRAFT, PASSWORD);
+		expect((await service.change(ID, DRAFT, '')).ok).toBe(true);
+		expect(secrets.held.get(ID)).toBe(PASSWORD);
+	});
+
+	it('names the field and the kind in the log, and no value', async () => {
+		const { service, entries } = serviceParts();
+		await service.load();
+		await service.add(DRAFT, OUTSIDE);
+		expect(entries[0]).toMatchObject({
+			action: 'add account',
+			outcome: 'refused',
+			reason: 'password sign-in-alphabet',
+		});
+		expect(JSON.stringify(entries)).not.toContain(OUTSIDE);
+	});
+});
+
+describe('the connection test of one account', () => {
+	/** A mock calendar server with one account and one calendar. */
+	function calendarServer(): MockCalDavServer {
+		return new MockCalDavServer({
+			accounts: [{ name: 'ren', collections: [{ name: 'home' }] }],
+		});
+	}
+
+	/** Adds the account of that server and gives its id back. */
+	async function withAccount(
+		service: AccountService,
+		serverUrl: string,
+		password = PASSWORD,
+	): Promise<string> {
+		await service.load();
+		const outcome = await service.add(
+			{ serverUrl, username: 'ren' },
+			password,
+		);
+		if (!outcome.ok) {
+			throw new Error('the case could not add the account');
+		}
+		return outcome.account.id;
+	}
+
+	it('states a sign-in where the server answers the discovery', async () => {
+		const mock = calendarServer();
+		const { service } = serviceParts('secret-storage', mock);
+		const id = await withAccount(service, mock.principalRootUrl);
+		expect(await service.testConnection(id)).toBe('signed-in');
+	});
+
+	it('states a refusal where the server refuses the credential', async () => {
+		const mock = calendarServer();
+		const { service } = serviceParts('secret-storage', mock);
+		const id = await withAccount(service, mock.principalRootUrl);
+		mock.configure({ faults: [{ kind: 'status', status: 401 }] });
+		expect(await service.testConnection(id)).toBe('refused');
+	});
+
+	it('states no server where the transport fails', async () => {
+		const { service } = serviceParts(
+			'secret-storage',
+			new FakeTransport({ fails: 'the network is down' }),
+		);
+		const id = await withAccount(
+			service,
+			'https://caldav.example.com/dav/',
+		);
+		expect(await service.testConnection(id)).toBe('not-reached');
+	});
+
+	it('states no account where the settings hold none of that name', async () => {
+		const { service } = serviceParts();
+		await service.load();
+		expect(await service.testConnection('no-such-account')).toBe(
+			'no-account',
+		);
+	});
+
+	it('states no credential where the store holds none', async () => {
+		const { service, secrets } = serviceParts();
+		const id = await withAccount(
+			service,
+			'https://caldav.example.com/dav/',
+		);
+		secrets.held.clear();
+		expect(await service.testConnection(id)).toBe('no-credential');
+	});
+
+	it('states an unreadable credential where the store fails', async () => {
+		const { service, secrets } = serviceParts();
+		const id = await withAccount(
+			service,
+			'https://caldav.example.com/dav/',
+		);
+		secrets.refuseGet = true;
+		expect(await service.testConnection(id)).toBe('credential-unreadable');
+	});
+
+	it('states an unreadable credential where the text states none of that type', async () => {
+		const { service, secrets, settings } = serviceParts();
+		const id = await withAccount(
+			service,
+			'https://caldav.example.com/dav/',
+		);
+		settings.settings = {
+			...settings.settings,
+			accounts: settings.settings.accounts.map((account) => ({
+				...account,
+				credentialType: 'oauth' as const,
+			})),
+		};
+		await service.load();
+		secrets.held.set(id, 'not a set of tokens');
+		expect(await service.testConnection(id)).toBe('credential-unreadable');
+	});
+
+	it('names the alphabet where the password stands outside it', async () => {
+		const { service, secrets } = serviceParts();
+		const id = await withAccount(
+			service,
+			'https://caldav.example.com/dav/',
+		);
+		secrets.held.set(id, 'пароль');
+		expect(await service.testConnection(id)).toBe('credential-alphabet');
+	});
+
+	it('writes one entry of the log, with the result and no value of the user', async () => {
+		const mock = calendarServer();
+		const { service, entries } = serviceParts('secret-storage', mock);
+		const id = await withAccount(service, mock.principalRootUrl);
+		entries.length = 0;
+		await service.testConnection(id);
+		expect(entries).toHaveLength(1);
+		expect(entries[0]).toMatchObject({
+			action: 'test connection',
+			item: id,
+			outcome: 'success',
+			reason: 'signed-in',
+		});
+		expect(JSON.stringify(entries)).not.toContain(PASSWORD);
+	});
+
+	it.each([
+		['refused', 'refused'],
+		['not-reached', 'failed'],
+	])('writes the outcome of %s as %s', async (result, outcome) => {
+		const mock = calendarServer();
+		const { service, entries } = serviceParts(
+			'secret-storage',
+			result === 'refused'
+				? mock
+				: new FakeTransport({ fails: 'the network is down' }),
+		);
+		const id = await withAccount(service, mock.principalRootUrl);
+		if (result === 'refused') {
+			mock.configure({ faults: [{ kind: 'status', status: 401 }] });
+		}
+		entries.length = 0;
+		expect(await service.testConnection(id)).toBe(result);
+		expect(entries[0]?.outcome).toBe(outcome);
 	});
 });
