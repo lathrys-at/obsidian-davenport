@@ -283,12 +283,20 @@ A finding matches an entry only when all three conditions hold.
 3. **The cause.** The repair that the entry states removes the finding. For a
    finding that reads the calendar which went in, the runner repairs the values
    of that calendar, writes the text again, and drives it. For every other
-   finding the runner repairs the lines of the text; there it first drives the
-   text that it rebuilt from those lines without a repair, and that text must
-   still give the same kind of finding. Without this control, a rebuild that
-   removed the finding by itself would look like a repair that worked. The
-   repaired text must then be a text that the boundary accepts and that gives
-   no finding.
+   finding the runner repairs the text, and the repaired text must be a text
+   that the boundary accepts and that gives no finding.
+
+The frame of an entry states how the runner reads a text while it repairs it,
+and the two frames need different controls. Over the logical lines, the runner
+rebuilds the text from those lines and repairs each line that carries the
+pattern; there it first drives the rebuilt text with no repair, and that text
+must still give the same kind of finding. Without this control, a rebuild that
+removed the finding by itself would look like a repair that worked. Over the
+whole text, the runner repairs the text as it stands. An entry takes that frame
+where the construct is a byte of the framing itself, because a rebuild writes
+the framing again and such a construct does not survive it. That frame needs no
+control of its own: the runner changes the bytes of the construct and nothing
+else, and the drive that made the finding is the control.
 
 Condition 3 keeps the ledger narrow. A defect that stands beside the construct
 of an entry survives the repair, so the run reports it.

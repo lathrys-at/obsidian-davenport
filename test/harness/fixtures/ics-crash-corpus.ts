@@ -67,7 +67,7 @@ const INDEX: readonly IcsCrashEntry[] = [
 			'A carriage return stands at the end of a physical line, and a fold continues that line. The reader of the boundary ends a line at a carriage return, and the library keeps that carriage return inside the value. The check for a control character therefore never reads it. The boundary accepts the text, and the canonical text of it breaks the property across two lines. The boundary then refuses that canonical text.',
 		state: 'open',
 		finding: 'refused-own-text',
-		issue: null,
+		issue: 234,
 	},
 	{
 		id: 'value-type-carries-an-escape',
@@ -75,7 +75,7 @@ const INDEX: readonly IcsCrashEntry[] = [
 			'The VALUE parameter holds three carets. The parse turns that parameter into the name of the value type, and it reads two of the carets as the escape of one caret. The serializer writes the name of the type back with no escape, so each trip loses one caret and the canonical text is no fixed point.',
 		state: 'open',
 		finding: 'not-a-fixed-point',
-		issue: null,
+		issue: 235,
 	},
 	{
 		id: 'value-type-carries-a-line-break',
@@ -83,7 +83,7 @@ const INDEX: readonly IcsCrashEntry[] = [
 			'The VALUE parameter holds a backslash and the letter n. The parse turns that parameter into the name of the value type, and it reads those two characters as a line break. The serializer writes that line break into the parameter with no escape, and the library cannot read the text that comes out.',
 		state: 'open',
 		finding: 'refused-own-text',
-		issue: null,
+		issue: 235,
 	},
 ];
 

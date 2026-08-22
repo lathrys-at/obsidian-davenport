@@ -35,14 +35,26 @@
  *   repaired calendar, and drives it against the repaired calendar. The
  *   drive that made the finding is the control of this test: the calendar
  *   before the repair already gave the finding.
- * - Every other finding carries a text alone. The runner repairs the lines
- *   of that text. Here the runner first drives the text that it rebuilt
- *   from the logical lines without a repair. That text must still give a
- *   finding of the same kind. Without this control, a rebuild that removed
- *   the finding by itself would look like a repair that worked. The
- *   repaired text must then be a text that the boundary accepts and that
+ * - Every other finding carries a text alone. The runner repairs that text,
+ *   and the repaired text must be a text that the boundary accepts and that
  *   gives no finding. A repaired text that the boundary refuses proves
  *   nothing, and the finding is new.
+ *
+ * The frame of an entry states how the runner reads a text while it repairs
+ * it, and the two frames need different controls.
+ *
+ * - Over the logical lines, the runner rebuilds the text from those lines
+ *   and repairs each line that carries the pattern. A fold hides the
+ *   construct of most entries, and a logical line shows it whole. The
+ *   rebuild writes the framing again, so the runner first drives the
+ *   rebuilt text with no repair, and that text must still give a finding of
+ *   the same kind. Without this control, a rebuild that removed the finding
+ *   by itself would look like a repair that worked.
+ * - Over the whole text, the runner repairs the text as it stands. An entry
+ *   takes this frame where the construct is a byte of the framing itself,
+ *   because such a construct does not survive a rebuild. Here the runner
+ *   needs no control of its own: it changes the bytes of the construct and
+ *   nothing else, and the drive that made the finding is the control.
  */
 
 import { ICS_FOLD_OCTET_LIMIT } from '../src/core/ics/fold.ts';
@@ -62,6 +74,13 @@ import { driveInput } from './fuzz-ics-core.ts';
 /** Where in a calendar the values of an entry stand. */
 export type KnownSite = 'parameter' | 'value';
 
+/** How the runner reads a text while it repairs it. */
+export type KnownFrame =
+	/** One logical line at a time, in a text that the runner rebuilt. */
+	| 'logical-lines'
+	/** The whole text, as it stands. */
+	| 'whole-text';
+
 /** One defect that is already filed. */
 export interface KnownFinding {
 	/** The number of the issue that holds the defect. */
@@ -76,13 +95,19 @@ export interface KnownFinding {
 	readonly site: KnownSite;
 	/** The repair of one value of a calendar. */
 	readonly repairValue: (value: string) => string;
-	/** The repair of one logical line of a text. */
-	readonly repairLine: (line: string) => string;
+	/** How the runner reads a text while it repairs it. */
+	readonly frame: KnownFrame;
+	/**
+	 * The repair of a text. The frame states what this repair receives: one
+	 * logical line that carries the pattern, or the whole text.
+	 */
+	readonly repairText: (piece: string) => string;
 }
 
 /**
- * The defects that the layer of property tests found and that the issue
- * tree holds. A new entry lands together with the issue that it names.
+ * The defects that the layer of property tests and this lane found, and
+ * that the issue tree holds. A new entry lands together with the issue that
+ * it names.
  *
  * The issue that reports a serializer which throws on a calendar outside
  * the range of the parse boundary carries no entry here. The lane drives
@@ -109,7 +134,8 @@ export const KNOWN_FINDINGS: readonly KnownFinding[] = [
 		pattern: /;[A-Za-z0-9-]+=[^\r\n]*"[^"\r\n]*:[^"\r\n]*"/,
 		site: 'parameter',
 		repairValue: (value) => value.replaceAll(':', '-'),
-		repairLine: (line) => repairQuotedColons(line),
+		frame: 'logical-lines',
+		repairText: (line) => repairQuotedColons(line),
 	},
 	{
 		issue: 230,
@@ -121,7 +147,8 @@ export const KNOWN_FINDINGS: readonly KnownFinding[] = [
 		pattern: /;[A-Za-z0-9-]+=[^\r\n]*(?:\^',|,\^')/,
 		site: 'parameter',
 		repairValue: (value) => value.replaceAll('"', '-'),
-		repairLine: (line) => line.replaceAll("^'", '-'),
+		frame: 'logical-lines',
+		repairText: (line) => line.replaceAll("^'", '-'),
 	},
 	{
 		issue: 231,
@@ -134,8 +161,56 @@ export const KNOWN_FINDINGS: readonly KnownFinding[] = [
 		pattern: /(?:^|[^\\])(?:\\\\)+[,;]/,
 		site: 'value',
 		repairValue: (value) => value.replace(/\\+$/, ''),
-		repairLine: (line) =>
+		frame: 'logical-lines',
+		repairText: (line) =>
 			line.replace(/(^|[^\\])((?:\\\\)+)(?=[,;])/g, '$1'),
+	},
+	{
+		issue: 234,
+		name: 'a bare carriage return inside a line',
+		// The reader of the boundary ends a line at a bare carriage return,
+		// and the library keeps that character inside the value. The check
+		// for a control character reads the lines of the reader, so it never
+		// sees the character. Where a fold continues the line, the canonical
+		// text breaks the property across two lines, and the boundary then
+		// refuses its own text.
+		//
+		// A logical line carries no line ending, so a carriage return that
+		// stands on one is a bare one and the pattern needs no more than that
+		// character. The repair reads the whole text, because the construct
+		// is the carriage return beside the fold: a rebuild from the logical
+		// lines writes the fold somewhere else, and the finding goes away
+		// with it. The repair takes away each carriage return that no line
+		// feed follows, and it leaves every line ending where it stands.
+		kinds: ['refused-own-text'],
+		pattern: /\r/,
+		site: 'value',
+		repairValue: (value) => value.replaceAll('\r', ''),
+		frame: 'whole-text',
+		repairText: (text) => text.replace(/\r(?!\n)/g, ''),
+	},
+	{
+		issue: 235,
+		name: 'the VALUE parameter carries an escape or a quotation mark',
+		// The parse turns the VALUE parameter into the name of the value
+		// type, and it reads the escapes of a parameter value on the way.
+		// The serializer writes the name of the type back raw: it writes no
+		// escape, and it writes no quotation mark. A caret, a backslash or a
+		// quotation mark in that parameter therefore moves the text on each
+		// trip, or makes a text that the library cannot read back. An
+		// ordinary parameter takes the encoding, so the pattern names the
+		// VALUE parameter alone. The repair keeps the letters, the digits
+		// and the dashes of that parameter and takes every other character
+		// away. A name of those characters needs no escape and no quotation
+		// mark, so the serializer writes it back as it stands. The repair
+		// leaves the parameter where it is, because a property that states
+		// its type needs that parameter to keep its value.
+		kinds: ['not-a-fixed-point', 'refused-own-text'],
+		pattern: /;VALUE=[^;:\r\n]*["^\\]/i,
+		site: 'parameter',
+		repairValue: (value) => value.replaceAll('^', '').replaceAll('\\', ''),
+		frame: 'logical-lines',
+		repairText: (line) => plainValueParameter(line),
 	},
 ];
 
@@ -199,25 +274,17 @@ function repairsTheCalendar(
 	);
 }
 
-/** True when the repair of the lines removes the finding. */
+/** True when the repair of the text removes the finding. */
 function repairsTheText(
 	engine: IcsEngine,
 	found: Finding,
 	entry: KnownFinding,
 ): boolean {
-	const lines = logicalLinesOf(found.input);
-	const framed = foldedAt(lines, ICS_FOLD_OCTET_LIMIT);
-	const control = driveInput(engine, { text: framed, promise: 'any' });
-	if (control?.kind !== found.kind) {
-		return false;
-	}
-	const repaired = foldedAt(
-		lines.map((line) =>
-			entry.pattern.test(line) ? entry.repairLine(line) : line,
-		),
-		ICS_FOLD_OCTET_LIMIT,
-	);
-	if (repaired === framed) {
+	const repaired =
+		entry.frame === 'whole-text'
+			? repairedWhole(found, entry)
+			: repairedLines(engine, found, entry);
+	if (repaired === null) {
 		return false;
 	}
 	let accepted: boolean;
@@ -230,6 +297,47 @@ function repairsTheText(
 		accepted &&
 		driveInput(engine, { text: repaired, promise: 'any' }) === null
 	);
+}
+
+/**
+ * The text with the repair over the whole of it, or null where the repair
+ * changed nothing. The repair reads the text as it stands, so this form
+ * needs no control: the drive that made the finding is the control.
+ */
+function repairedWhole(found: Finding, entry: KnownFinding): string | null {
+	const repaired = entry.repairText(found.input);
+	return repaired === found.input ? null : repaired;
+}
+
+/**
+ * The text with the repair over each logical line that carries the pattern,
+ * or null where the repair changed nothing, or where the rebuild is what
+ * removed the finding.
+ *
+ * The runner rebuilds the text from its logical lines, and that rebuild
+ * writes the framing again. The runner therefore drives the rebuilt text
+ * with no repair first, and that text must still give a finding of the same
+ * kind. Without this control, a rebuild that removed the finding by itself
+ * would look like a repair that worked.
+ */
+function repairedLines(
+	engine: IcsEngine,
+	found: Finding,
+	entry: KnownFinding,
+): string | null {
+	const lines = logicalLinesOf(found.input);
+	const framed = foldedAt(lines, ICS_FOLD_OCTET_LIMIT);
+	const control = driveInput(engine, { text: framed, promise: 'any' });
+	if (control?.kind !== found.kind) {
+		return null;
+	}
+	const repaired = foldedAt(
+		lines.map((line) =>
+			entry.pattern.test(line) ? entry.repairText(line) : line,
+		),
+		ICS_FOLD_OCTET_LIMIT,
+	);
+	return repaired === framed ? null : repaired;
 }
 
 /** The text of a calendar, or an empty text where the serializer throws. */
@@ -309,6 +417,67 @@ function repairedValue(
  * because that colon ends the parameters and starts the value of the
  * property. The value of the property therefore keeps its colons.
  */
+/** How a VALUE parameter starts, in either case of the letters. */
+const VALUE_PARAMETER = ';VALUE=';
+
+/**
+ * The line where every VALUE parameter holds a plain name: the letters, the
+ * digits and the dashes of the name that the line states, and nothing else.
+ * The walk stops at the first colon that stands outside quotation marks,
+ * because that colon ends the parameters and starts the value of the
+ * property. The value of the property therefore keeps its own text.
+ */
+function plainValueParameter(line: string): string {
+	let repaired = '';
+	let at = 0;
+	let inside = false;
+	while (at < line.length) {
+		const character = line[at] ?? '';
+		if (!inside && character === ':') {
+			return repaired + line.slice(at);
+		}
+		if (
+			!inside &&
+			line.slice(at, at + VALUE_PARAMETER.length).toUpperCase() ===
+				VALUE_PARAMETER
+		) {
+			const from = at + VALUE_PARAMETER.length;
+			const end = parameterEnd(line, from);
+			repaired +=
+				line.slice(at, from) +
+				line.slice(from, end).replace(/[^A-Za-z0-9-]/g, '');
+			at = end;
+			continue;
+		}
+		if (character === '"') {
+			inside = !inside;
+		}
+		repaired += character;
+		at += 1;
+	}
+	return repaired;
+}
+
+/**
+ * The place where the value of the parameter that starts at `at` ends. That
+ * is the next semicolon or colon, and a quoted value carries the search to
+ * the character after its closing quotation mark. A value that opens a
+ * quotation mark and closes none is a damaged value, and the search then
+ * reads it as an ordinary one. The repair therefore takes away the
+ * characters of one parameter, and never the rest of a damaged line.
+ */
+function parameterEnd(line: string, at: number): number {
+	const quoted = line[at] === '"' ? line.indexOf('"', at + 1) : -1;
+	const from = quoted === -1 ? at : quoted + 1;
+	const semicolon = line.indexOf(';', from);
+	const colon = line.indexOf(':', from);
+	const end = Math.min(
+		semicolon === -1 ? line.length : semicolon,
+		colon === -1 ? line.length : colon,
+	);
+	return end;
+}
+
 function repairQuotedColons(line: string): string {
 	let inside = false;
 	let repaired = '';

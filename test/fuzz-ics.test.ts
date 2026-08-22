@@ -273,6 +273,23 @@ describe('the ledger of the filed defects', () => {
 		expect(knownFinding(engine, found)?.issue).toBe(231);
 	});
 
+	it('recognises a bare carriage return inside a line', () => {
+		const found = findingFor(
+			'BEGIN:VCALENDAR\r\nVERSION:2.0\r\nSUMMARY:a\r\r\n b\r\nEND:VCALENDAR\r\n',
+		);
+		expect(found.kind).toBe('refused-own-text');
+		expect(knownFinding(engine, found)?.issue).toBe(234);
+	});
+
+	it('recognises an escape in the VALUE parameter', () => {
+		const found = findingFor(calendar('X-A;VALUE=^^^:x'));
+		expect(found.kind).toBe('not-a-fixed-point');
+		expect(knownFinding(engine, found)?.issue).toBe(235);
+		const quoted = findingFor(calendar('X-A;VALUE="a;b":x'));
+		expect(quoted.kind).toBe('refused-own-text');
+		expect(knownFinding(engine, quoted)?.issue).toBe(235);
+	});
+
 	it('reports a defect that stands beside a filed one', () => {
 		// The line carries the construct of the filed defect, and the text
 		// carries a second defect that the repair of that construct leaves
@@ -280,6 +297,45 @@ describe('the ledger of the filed defects', () => {
 		const found = findingFor(
 			'BEGIN:VCALENDAR\r\nVERSION:2.0\r\nX-A;MEMBER="a","b:c":v\r\r\n w\r\nEND:VCALENDAR\r\n',
 		);
+		expect(knownFinding(engine, found)).toBeNull();
+	});
+
+	it('reports a bare carriage return that stands beside another defect', () => {
+		// The carriage return and the fold make the finding, and the text
+		// carries a second defect on another line. The repair of the
+		// carriage return leaves that defect where it is, so the finding is
+		// not the one that the entry states, and the lane reports it.
+		const found = findingFor(
+			[
+				'BEGIN:VCALENDAR',
+				'VERSION:2.0',
+				'X-A;MEMBER="a","b:c":v',
+				'X-B:q\r',
+				' r',
+				'END:VCALENDAR',
+				'',
+			].join('\r\n'),
+		);
+		expect(found.kind).toBe('refused-own-text');
+		expect(knownFinding(engine, found)).toBeNull();
+	});
+
+	it('reports a VALUE parameter that stands beside another defect', () => {
+		// One line carries the construct of the entry, and the line below it
+		// carries a second defect. The repair of the VALUE parameter leaves
+		// that defect where it is, so the finding is not the one that the
+		// entry states, and the lane reports it.
+		const found = findingFor(
+			[
+				'BEGIN:VCALENDAR',
+				'VERSION:2.0',
+				'X-A;VALUE=^^^:x',
+				'X-B;MEMBER="a","b:c":v',
+				'END:VCALENDAR',
+				'',
+			].join('\r\n'),
+		);
+		expect(found.kind).toBe('not-a-fixed-point');
 		expect(knownFinding(engine, found)).toBeNull();
 	});
 
@@ -295,11 +351,15 @@ describe('the ledger of the filed defects', () => {
 	});
 
 	it('gives every entry an issue, a pattern and two repairs', () => {
+		// The sample carries the construct of every entry, so each repair
+		// has something to take away and no entry passes this case with a
+		// repair that does nothing.
+		const sample = '\r^a:b"c\\';
 		for (const entry of KNOWN_FINDINGS) {
 			expect(entry.issue).toBeGreaterThan(0);
 			expect(entry.kinds.length).toBeGreaterThan(0);
-			expect(entry.repairValue('a:b"c\\')).not.toBe('a:b"c\\');
-			expect(typeof entry.repairLine('X-A;P="a:b":v')).toBe('string');
+			expect(entry.repairValue(sample)).not.toBe(sample);
+			expect(typeof entry.repairText('X-A;P="a:b":v')).toBe('string');
 		}
 	});
 });
