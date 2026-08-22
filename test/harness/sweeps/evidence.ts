@@ -91,6 +91,21 @@ export interface VaultSyncEvidence {
 	readonly deliveries: readonly LandedDelivery[];
 }
 
+/**
+ * What the data file of the plugin held during the run. The record holds
+ * the text of each write, and the text at the end of the run. A value that
+ * one write put in the file and a later write took out is still evidence,
+ * because the file held that value.
+ *
+ * The record holds the text and not the parsed value. The plugin writes
+ * that text to disk, and a sweep that reads the text therefore reads what
+ * the disk holds.
+ */
+export interface PluginDataEvidence {
+	readonly writes: readonly string[];
+	readonly document: string | null;
+}
+
 export interface NetworkEvidence {
 	/**
 	 * True when the fetch poison held for the full run. The poison
@@ -208,6 +223,7 @@ export interface RunEvidence {
 	readonly feed: FeedEvidence;
 	readonly vault: VaultEvidence;
 	readonly vaultSync: VaultSyncEvidence;
+	readonly pluginData: PluginDataEvidence;
 	readonly syncLog: readonly SyncLogEntry[];
 	readonly network: NetworkEvidence;
 	readonly remoteObserved: readonly RemoteObservedWindow[];
@@ -218,6 +234,7 @@ const NO_CALDAV: CalDavEvidence = { requests: [], scheduling: [] };
 const NO_FEED: FeedEvidence = { requests: [] };
 const NO_VAULT: VaultEvidence = { changes: [], files: {} };
 const NO_VAULT_SYNC: VaultSyncEvidence = { deliveries: [] };
+const NO_PLUGIN_DATA: PluginDataEvidence = { writes: [], document: null };
 
 /**
  * Makes a record. For each surface that the caller does not give, the
@@ -234,6 +251,7 @@ export function evidence(parts: Partial<RunEvidence> = {}): RunEvidence {
 		feed: parts.feed ?? NO_FEED,
 		vault: parts.vault ?? NO_VAULT,
 		vaultSync: parts.vaultSync ?? NO_VAULT_SYNC,
+		pluginData: parts.pluginData ?? NO_PLUGIN_DATA,
 		syncLog: parts.syncLog ?? [],
 		network: parts.network ?? {
 			poisoned: fetchPoisonHolds(),

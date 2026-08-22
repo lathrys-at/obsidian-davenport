@@ -326,6 +326,22 @@ export default defineConfig(
 			'@typescript-eslint/no-implied-eval': 'off',
 		},
 	},
+	// Obsidian 1.13.0 renders a settings tab from the definitions that
+	// getSettingDefinitions() returns, and it calls display() only where a
+	// tab returns no definition. The manifest states the minimum version
+	// 1.1.0, so most versions that this plugin supports call display() and
+	// know no definition at all. The settings tab therefore renders itself
+	// in display(), and the API marks that method deprecated. The two rules
+	// below report that choice. They come back the day the minimum version
+	// reaches 1.13.0.
+	{
+		name: 'davenport/settings-tab',
+		files: ['src/ui/settings-tab.ts'],
+		rules: {
+			'obsidianmd/settings-tab/prefer-setting-definitions': 'off',
+			'@typescript-eslint/no-deprecated': 'off',
+		},
+	},
 	// All network I/O flows through the transport port; the Obsidian
 	// adapter backs it with requestUrl. A direct fetch breaks on mobile.
 	//

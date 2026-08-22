@@ -31,6 +31,7 @@ describe('the evidence builder', () => {
 			feed: { requests: [] },
 			vault: { changes: [], files: {} },
 			vaultSync: { deliveries: [] },
+			pluginData: { writes: [], document: null },
 			syncLog: [],
 			network: { poisoned: true, attempts: [] },
 			remoteObserved: [],

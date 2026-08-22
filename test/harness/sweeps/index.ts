@@ -26,6 +26,7 @@ export type {
 	NetworkCursor,
 	NetworkEvidence,
 	NetworkSurface,
+	PluginDataEvidence,
 	RecordedRequest,
 	RemoteObservedWindow,
 	RunEvidence,
