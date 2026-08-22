@@ -19,8 +19,11 @@
  * log holds the same fact.
  *
  * The credential passes through this module and stops here. It goes into
- * the secret store, and it goes nowhere else. It reaches no settings
- * value, no log entry, and no message.
+ * the secret store, and it goes nowhere else. The log holds only words
+ * that this plugin wrote: a refusal writes the field and the kind of the
+ * fault, and a failure writes the name of the step that failed. The words
+ * of a store and the values that the user typed reach the screen of that
+ * user alone, and they reach no settings value and no log entry.
  */
 
 import type { Clock } from '../ports/clock';
@@ -107,13 +110,8 @@ export class AccountService {
 				if (value !== null) {
 					held.add(account.id);
 				}
-			} catch (error) {
-				this.record(
-					'read app password',
-					account.id,
-					'failed',
-					words(error, NO_READ_REASON),
-				);
+			} catch {
+				this.record('read app password', account.id, 'failed');
 			}
 		}
 		return held;
@@ -147,7 +145,7 @@ export class AccountService {
 				encodeCredential({ type: 'app-password', password }),
 			);
 		} catch (error) {
-			return this.fail('add account', id, error, NO_WRITE_REASON);
+			return this.fail('add account', id, error, PASSWORD_WRITE);
 		}
 		try {
 			await this.write(addAccount(this.reading.settings, account));
@@ -157,7 +155,7 @@ export class AccountService {
 				'add account',
 				id,
 				error,
-				NO_SETTINGS_REASON,
+				SETTINGS_WRITE,
 				back ? undefined : PASSWORD_STANDS,
 			);
 		}
@@ -195,24 +193,23 @@ export class AccountService {
 		if (password !== '') {
 			try {
 				previous = await this.parts.secrets.get(account.credentialRef);
+			} catch (error) {
+				return this.fail('change account', id, error, PASSWORD_READ);
+			}
+			try {
 				await this.parts.secrets.set(
 					account.credentialRef,
 					encodeCredential({ type: 'app-password', password }),
 				);
 			} catch (error) {
-				return this.fail('change account', id, error, NO_WRITE_REASON);
+				return this.fail('change account', id, error, PASSWORD_WRITE);
 			}
 		}
 		try {
 			await this.write(replaceAccount(this.reading.settings, account));
 		} catch (error) {
 			if (password === '') {
-				return this.fail(
-					'change account',
-					id,
-					error,
-					NO_SETTINGS_REASON,
-				);
+				return this.fail('change account', id, error, SETTINGS_WRITE);
 			}
 			const back = await this.restore(
 				id,
@@ -223,7 +220,7 @@ export class AccountService {
 				'change account',
 				id,
 				error,
-				NO_SETTINGS_REASON,
+				SETTINGS_WRITE,
 				back ? undefined : NEW_PASSWORD_STANDS,
 			);
 		}
@@ -240,9 +237,13 @@ export class AccountService {
 		let previous: string | null = null;
 		try {
 			previous = await this.parts.secrets.get(account.credentialRef);
+		} catch (error) {
+			return this.fail('remove account', id, error, PASSWORD_READ);
+		}
+		try {
 			await this.parts.secrets.remove(account.credentialRef);
 		} catch (error) {
-			return this.fail('remove account', id, error, NO_REMOVAL_REASON);
+			return this.fail('remove account', id, error, PASSWORD_REMOVAL);
 		}
 		try {
 			await this.write(removeAccount(this.reading.settings, id));
@@ -256,7 +257,7 @@ export class AccountService {
 				'remove account',
 				id,
 				error,
-				NO_SETTINGS_REASON,
+				SETTINGS_WRITE,
 				back ? undefined : PASSWORD_GONE,
 			);
 		}
@@ -276,6 +277,7 @@ export class AccountService {
 		try {
 			this.reading = await this.parts.settings.read();
 		} catch {
+			this.record('read settings', 'settings', 'failed');
 			this.reading = { settings, problems: this.reading.problems };
 		}
 	}
@@ -297,23 +299,18 @@ export class AccountService {
 				await this.parts.secrets.set(ref, previous);
 			}
 			return true;
-		} catch (error) {
-			this.record(
-				'restore app password',
-				id,
-				'failed',
-				words(error, NO_WRITE_REASON),
-			);
+		} catch {
+			this.record('restore app password', id, 'failed');
 			return false;
 		}
 	}
 
 	/**
 	 * States that the settings hold no account of that id. The log takes
-	 * the name of the field alone, as it does for every other fault.
+	 * a word of the plugin and no value of the caller.
 	 */
 	private missing(action: string, id: string): AccountOutcome {
-		this.record(action, id, 'failed', 'id no-such-account');
+		this.record(action, id, 'failed', 'no-such-account');
 		return { ok: false, faults: [], failure: NO_ACCOUNT };
 	}
 
@@ -331,16 +328,22 @@ export class AccountService {
 		return { ok: false, faults, failure: null };
 	}
 
+	/**
+	 * States a failure of one step. The screen takes the words of the
+	 * store, with the fallback of the step where the store states none,
+	 * and the note where a repair failed. The log takes the name of the
+	 * step alone, because the words of a store can carry any value.
+	 */
 	private fail(
 		action: string,
 		id: string,
 		error: unknown,
-		fallback: string,
+		step: FailedStep,
 		note?: string,
 	): AccountOutcome {
-		const reason = words(error, fallback);
+		const reason = words(error, step.fallback);
 		const failure = note === undefined ? reason : `${reason} ${note}`;
-		this.record(action, id, 'failed', failure);
+		this.record(action, id, 'failed', step.name);
 		return { ok: false, faults: [], failure };
 	}
 
@@ -362,15 +365,35 @@ export class AccountService {
 
 const NO_ACCOUNT = 'Davenport holds no account of that name.';
 
-/** The words for a failure of a store that states no reason of its own. */
-const NO_SETTINGS_REASON =
-	'Davenport could not save the settings, and the reason is not known.';
-const NO_WRITE_REASON =
-	'Davenport could not save the app password, and the reason is not known.';
-const NO_REMOVAL_REASON =
-	'Davenport could not remove the app password, and the reason is not known.';
-const NO_READ_REASON =
-	'Davenport could not read the app password, and the reason is not known.';
+/**
+ * A step that can fail. The name goes into the log. The fallback goes to
+ * the screen where the store states no reason of its own.
+ */
+interface FailedStep {
+	readonly name: string;
+	readonly fallback: string;
+}
+
+const SETTINGS_WRITE: FailedStep = {
+	name: 'settings write',
+	fallback:
+		'Davenport could not save the settings, and the reason is not known.',
+};
+const PASSWORD_WRITE: FailedStep = {
+	name: 'app password write',
+	fallback:
+		'Davenport could not save the app password, and the reason is not known.',
+};
+const PASSWORD_REMOVAL: FailedStep = {
+	name: 'app password removal',
+	fallback:
+		'Davenport could not remove the app password, and the reason is not known.',
+};
+const PASSWORD_READ: FailedStep = {
+	name: 'app password read',
+	fallback:
+		'Davenport could not read the app password, and the reason is not known.',
+};
 
 /** The words that state what the stores hold after a repair that failed. */
 const PASSWORD_STANDS =

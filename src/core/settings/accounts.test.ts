@@ -13,7 +13,6 @@ import {
 	addressFault,
 	checkAccount,
 	findAccount,
-	isWebAddress,
 	mintCredentialRef,
 	proposeAccountId,
 	removeAccount,
@@ -117,31 +116,44 @@ describe('the check of an account', () => {
 	});
 
 	it('takes the two schemes that the plugin speaks', () => {
-		expect(isWebAddress('https://caldav.example.com/')).toBe(true);
-		expect(isWebAddress('http://caldav.example.com/')).toBe(true);
-		expect(isWebAddress('ftp://caldav.example.com/')).toBe(false);
-		expect(isWebAddress('javascript:alert(1)')).toBe(false);
-		expect(isWebAddress('/dav/calendars/')).toBe(false);
+		expect(
+			addressFault('https://caldav.example.com/', 'serverUrl'),
+		).toBeNull();
+		expect(
+			addressFault('http://caldav.example.com/', 'serverUrl'),
+		).toBeNull();
+		expect(
+			addressFault('ftp://caldav.example.com/', 'serverUrl'),
+		).toMatchObject({ kind: 'not-a-web-address' });
+		expect(addressFault('javascript:alert(1)', 'serverUrl')).toMatchObject({
+			kind: 'not-a-web-address',
+		});
+		expect(addressFault('/dav/calendars/', 'serverUrl')).toMatchObject({
+			kind: 'not-a-web-address',
+		});
 	});
 
 	it('refuses an address that carries a username or a password', () => {
 		const password = 'planted-app-password-8f3c1d';
 		const address = `https://ren:${password}@caldav.example.com/`;
-		expect(isWebAddress(address)).toBe(false);
 		const fault = addressFault(address, 'serverUrl');
 		expect(fault).toEqual({
 			kind: 'credentials-in-address',
 			field: 'serverUrl',
 		});
 		expect(JSON.stringify(fault)).not.toContain(password);
-		expect(isWebAddress('https://ren@caldav.example.com/')).toBe(false);
+		expect(
+			addressFault('https://ren@caldav.example.com/', 'serverUrl'),
+		).toMatchObject({ kind: 'credentials-in-address' });
 		expect(checkAccount({ ...ACCOUNT, serverUrl: address }, [])).toEqual([
 			{ kind: 'credentials-in-address', field: 'serverUrl' },
 		]);
 	});
 
 	it('states no fault for an address that names a port or a path', () => {
-		expect(isWebAddress('https://caldav.example.com:8443/dav/')).toBe(true);
+		expect(
+			addressFault('https://caldav.example.com:8443/dav/', 'serverUrl'),
+		).toBeNull();
 		expect(
 			addressFault('https://caldav.example.com/dav/', 'serverUrl'),
 		).toBeNull();

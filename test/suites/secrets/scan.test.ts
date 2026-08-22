@@ -40,6 +40,17 @@ class FakeSecretStorage {
 	}
 }
 
+/** A double of the secret storage whose error carries the value it refused. */
+class EchoingSecretStorage {
+	setSecret(id: string, secret: string): never {
+		throw new Error(`refused secret ${secret}`);
+	}
+
+	getSecret(): string | null {
+		return null;
+	}
+}
+
 /** Runs the write path of the settings with the app that the case gives. */
 function service(
 	app: { readonly secretStorage?: unknown },
@@ -141,6 +152,27 @@ describe('SC-2 the credential material around the settings', () => {
 		expect(document.secretFallback).toEqual({
 			'caldav-example-com': PASSWORD,
 		});
+	});
+
+	it('SC-2: the words of a store that echo a password reach no log', async () => {
+		const data = new FakePluginData();
+		await runSimulation(
+			{ name: 'store words in the log', pluginData: data },
+			async (run) => {
+				run.registerSecret({ label: 'app password', value: PASSWORD });
+				const accounts = service(
+					{ secretStorage: new EchoingSecretStorage() },
+					data,
+					run.logger,
+				);
+				await accounts.load();
+				const outcome = await accounts.add(DRAFT, PASSWORD);
+				expect(outcome.ok).toBe(false);
+				expect(outcome.ok ? '' : (outcome.failure ?? '')).toContain(
+					PASSWORD,
+				);
+			},
+		);
 	});
 
 	it('SC-2: the scan reads the data file, so a password there fails the run', async () => {

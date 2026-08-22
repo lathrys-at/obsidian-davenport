@@ -445,6 +445,22 @@ describe('an account that goes', () => {
 		expect(secrets.held.get(ID)).toBe(PASSWORD);
 	});
 
+	it('keeps the account where it cannot read the credential', async () => {
+		const { service, secrets, entries } = serviceParts();
+		await service.load();
+		await service.add(DRAFT, PASSWORD);
+		secrets.refuseGet = true;
+		const outcome = await service.remove(ID);
+		expect(outcome.ok).toBe(false);
+		expect(service.accounts).toHaveLength(1);
+		expect(secrets.held.get(ID)).toBe(PASSWORD);
+		expect(entries[entries.length - 1]).toMatchObject({
+			action: 'remove account',
+			outcome: 'failed',
+			reason: 'app password read',
+		});
+	});
+
 	it('states a failure for an id that no account holds', async () => {
 		const { service } = serviceParts();
 		await service.load();
@@ -580,11 +596,11 @@ describe('the log of the operations', () => {
 		expect(JSON.stringify(entries)).not.toContain(PASSWORD);
 	});
 
-	it('records the field alone for an id that no account holds', async () => {
+	it('records a word of the plugin for an id that no account holds', async () => {
 		const { service, entries } = serviceParts();
 		await service.load();
 		await service.remove('nothing');
-		expect(entries[0]?.reason).toBe('id no-such-account');
+		expect(entries[0]?.reason).toBe('no-such-account');
 	});
 
 	it('reads the words of a value that a store throws and is no error', async () => {
@@ -598,7 +614,7 @@ describe('the log of the operations', () => {
 			faults: [],
 			failure: 'the storage is locked',
 		});
-		expect(entries[0]?.reason).toBe('the storage is locked');
+		expect(entries[0]?.reason).toBe('app password write');
 	});
 
 	it('states a reason for a value that a store throws and that has no words', async () => {
@@ -650,7 +666,7 @@ describe('the log of the operations', () => {
 		});
 	});
 
-	it('states why an operation failed', async () => {
+	it('names the step that failed in the log, and no words of a store', async () => {
 		const { service, entries, secrets } = serviceParts();
 		await service.load();
 		secrets.refuseSet = true;
@@ -658,7 +674,8 @@ describe('the log of the operations', () => {
 		expect(entries[0]).toMatchObject({
 			action: 'add account',
 			outcome: 'failed',
-			reason: 'the storage is locked',
+			reason: 'app password write',
 		});
+		expect(JSON.stringify(entries)).not.toContain('the storage is locked');
 	});
 });

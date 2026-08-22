@@ -234,11 +234,6 @@ export function addressFault(
 	return null;
 }
 
-/** True where the plugin can use the text as a server address. */
-export function isWebAddress(text: string): boolean {
-	return addressFault(text, 'serverUrl') === null;
-}
-
 /** The address that the text states, or null where the text states none. */
 function parseAddress(text: string): URL | null {
 	try {
