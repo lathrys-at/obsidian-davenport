@@ -44,12 +44,15 @@ class FakeSecretStorage {
 }
 
 /** The plugin, with the app that the case gives it. */
-function plugin(app: { readonly secretStorage?: unknown }): {
+function plugin(
+	app: { readonly secretStorage?: unknown },
+	file?: unknown,
+): {
 	readonly service: AccountService;
 	readonly data: FakePluginData;
 	readonly entries: SyncLogEntry[];
 } {
-	const data = new FakePluginData();
+	const data = new FakePluginData(file);
 	const settings = new PluginDataStore(data);
 	const entries: SyncLogEntry[] = [];
 	const service = new AccountService({
@@ -106,6 +109,70 @@ describe('SC-1 the storage that holds the credentials', () => {
 		await second.service.add(DRAFT, PASSWORD);
 		await second.service.remove('caldav-example-com');
 		expect(second.data.document).not.toContain(PASSWORD);
+	});
+});
+
+describe('SC-1 an entry that the plugin cannot read', () => {
+	const LEGACY = 'legacy-plain-text-password-9a2b';
+	const ACCOUNT = {
+		id: 'dav-example-com',
+		serverUrl: 'https://a.example.com/',
+		username: 'ren',
+		credentialType: 'oauth2-pkce',
+		credentialRef: 'dav-example-com',
+	};
+
+	it('SC-1: the credential of that entry keeps its owner in the data file', async () => {
+		const { service, data } = plugin(
+			{},
+			{
+				settings: { accounts: [ACCOUNT], calendars: [] },
+				secretFallback: { 'dav-example-com': LEGACY },
+			},
+		);
+		await service.load();
+		expect(service.accounts).toEqual([]);
+		expect(service.problems).toHaveLength(1);
+
+		expect((await service.add(DRAFT, PASSWORD)).ok).toBe(true);
+
+		const document = data.value as Record<string, unknown>;
+		expect(document.settings).toEqual({
+			accounts: [
+				ACCOUNT,
+				{
+					id: 'caldav-example-com',
+					serverUrl: DRAFT.serverUrl,
+					username: DRAFT.username,
+					credentialType: 'app-password',
+					credentialRef: 'caldav-example-com',
+				},
+			],
+			calendars: [],
+		});
+		expect(document.secretFallback).toEqual({
+			'dav-example-com': LEGACY,
+			'caldav-example-com': PASSWORD,
+		});
+	});
+
+	it('SC-1: the screen states the problem of that entry after the write', async () => {
+		const { service } = plugin(
+			{},
+			{ settings: { accounts: [ACCOUNT], calendars: [] } },
+		);
+		await service.load();
+		const before = service.problems;
+		await service.add(DRAFT, PASSWORD);
+		expect(service.problems).toEqual(before);
+		const view = accountsView(
+			service.tier,
+			service.accounts,
+			service.problems,
+		);
+		expect(view.problems).toHaveLength(1);
+		expect(view.problems[0]).toContain('dav-example-com');
+		expect(view.problemsNote).toContain('keeps each of these entries');
 	});
 });
 

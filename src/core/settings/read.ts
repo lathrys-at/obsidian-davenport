@@ -15,10 +15,16 @@
  *    other field. A field of a later version of the plugin is therefore
  *    not a fault.
  *
- * The writer below states the fields of the settings one by one. No other
- * value reaches the data file through this path. A credential holds no
- * field of the settings, so no credential reaches the file through this
- * path either.
+ * 3. The reader keeps the raw form of every entry that it refuses. A
+ *    write puts each of those entries back into the file without a
+ *    change, so a refusal never becomes an erasure. An entry that a newer
+ *    version of the plugin wrote therefore survives the writes of this
+ *    version, and the credential of that entry keeps its owner.
+ *
+ * The writers below state the fields of one entry one by one. No other
+ * value reaches the data file through them. A credential holds no field
+ * of the settings, so no credential reaches the file through this path
+ * either.
  */
 
 import type { AccountConfig, SyncedSettings } from '../model/settings';
@@ -32,27 +38,67 @@ import { readCalendar } from './calendars';
 /** The settings of a plugin that holds no account and no calendar. */
 export const DEFAULT_SETTINGS: SyncedSettings = { accounts: [], calendars: [] };
 
+/**
+ * One entry of the file, as the reader found it.
+ *
+ * An accepted entry carries the value that finds it again: the id of an
+ * account, and the name of a calendar. A refused entry carries no such
+ * value. The reader refuses an entry because a field of that entry is
+ * wrong, and the field that holds the fault can be the field that would
+ * name the entry. A refused entry therefore travels as the value that the
+ * file holds, and nothing reads inside it.
+ */
+export type HeldEntry =
+	| {
+			readonly kind: 'accepted';
+			readonly key: string;
+			readonly value: UnknownMap;
+	  }
+	| { readonly kind: 'refused'; readonly value: unknown };
+
+/** The entries of each section, in the order that the file holds them. */
+export interface HeldSections {
+	readonly accounts: readonly HeldEntry[];
+	readonly calendars: readonly HeldEntry[];
+}
+
+/** The sections of a file that holds no entry. */
+export const NO_HELD_SECTIONS: HeldSections = { accounts: [], calendars: [] };
+
 export interface SettingsReading {
 	readonly settings: SyncedSettings;
 	readonly problems: readonly SettingsProblem[];
+	/**
+	 * Every entry that the file holds, accepted and refused. A write
+	 * reads this list to put each refused entry back where it stood.
+	 */
+	readonly held: HeldSections;
 }
 
 /** Reads the settings out of the value that the data file holds. */
 export function readSettings(value: unknown): SettingsReading {
 	if (value === undefined || value === null) {
-		return { settings: DEFAULT_SETTINGS, problems: [] };
+		return {
+			settings: DEFAULT_SETTINGS,
+			problems: [],
+			held: NO_HELD_SECTIONS,
+		};
 	}
 	if (!isMap(value)) {
 		return {
 			settings: DEFAULT_SETTINGS,
 			problems: [{ kind: 'not-a-map' }],
+			held: NO_HELD_SECTIONS,
 		};
 	}
 	const problems: SettingsProblem[] = [];
+	const heldAccounts: HeldEntry[] = [];
+	const heldCalendars: HeldEntry[] = [];
 	const accounts = readSection(
 		value.accounts,
 		'accounts',
 		problems,
+		heldAccounts,
 		(entry) => {
 			const reading = readAccount(entry);
 			return {
@@ -68,6 +114,7 @@ export function readSettings(value: unknown): SettingsReading {
 		value.calendars,
 		'calendars',
 		problems,
+		heldCalendars,
 		(entry) => {
 			const reading = readCalendar(entry);
 			return {
@@ -79,27 +126,18 @@ export function readSettings(value: unknown): SettingsReading {
 			};
 		},
 	);
-	return { settings: { accounts, calendars }, problems };
-}
-
-/** The settings in the form that the data file holds. */
-export interface SettingsDocument {
-	readonly accounts: readonly UnknownMap[];
-	readonly calendars: readonly UnknownMap[];
-}
-
-/**
- * The settings in the form that the data file holds. The result states
- * each field of each entry, and it holds no other value.
- */
-export function settingsDocument(settings: SyncedSettings): SettingsDocument {
 	return {
-		accounts: settings.accounts.map(accountDocument),
-		calendars: settings.calendars.map(calendarDocument),
+		settings: { accounts, calendars },
+		problems,
+		held: { accounts: heldAccounts, calendars: heldCalendars },
 	};
 }
 
-function accountDocument(account: AccountConfig): UnknownMap {
+/**
+ * One account in the form that the data file holds. The result states
+ * each field of the account, and it holds no other value.
+ */
+export function accountDocument(account: AccountConfig): UnknownMap {
 	return {
 		id: account.id,
 		serverUrl: account.serverUrl,
@@ -109,7 +147,11 @@ function accountDocument(account: AccountConfig): UnknownMap {
 	};
 }
 
-function calendarDocument(entry: CalendarRegistryEntry): UnknownMap {
+/**
+ * One entry of the registry in the form that the data file holds. The
+ * result states each field of the entry, and it holds no other value.
+ */
+export function calendarDocument(entry: CalendarRegistryEntry): UnknownMap {
 	return {
 		name: entry.name,
 		source: entry.source,
@@ -145,6 +187,7 @@ function readSection<T>(
 	value: unknown,
 	section: SettingsSection,
 	problems: SettingsProblem[],
+	held: HeldEntry[],
 	read: (entry: UnknownMap) => EntryReading<T>,
 ): readonly T[] {
 	if (value === undefined || value === null) {
@@ -160,6 +203,7 @@ function readSection<T>(
 	entries.forEach((entry, index) => {
 		if (!isMap(entry)) {
 			problems.push({ kind: 'entry-not-a-map', section, index });
+			held.push({ kind: 'refused', value: entry });
 			return;
 		}
 		const reading = read(entry);
@@ -173,6 +217,7 @@ function readSection<T>(
 			});
 		}
 		if (reading.value === null || reading.key === null) {
+			held.push({ kind: 'refused', value: entry });
 			return;
 		}
 		if (keys.includes(reading.key)) {
@@ -187,9 +232,11 @@ function readSection<T>(
 					value: reading.key,
 				},
 			});
+			held.push({ kind: 'refused', value: entry });
 			return;
 		}
 		keys.push(reading.key);
+		held.push({ kind: 'accepted', key: reading.key, value: entry });
 		accepted.push(reading.value);
 	});
 	return accepted;

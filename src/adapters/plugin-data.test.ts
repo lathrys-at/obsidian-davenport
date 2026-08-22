@@ -10,12 +10,20 @@
 
 import { describe, expect, it } from 'vitest';
 import { FakePluginData } from '../../test/harness/obsidian-fake';
-import type { SyncedSettings } from '../core/model/settings';
+import type { AccountConfig, SyncedSettings } from '../core/model/settings';
 import {
 	PluginDataStore,
 	SECRET_FALLBACK_KEY,
 	SETTINGS_KEY,
 } from './plugin-data';
+
+const ACCOUNT: AccountConfig = {
+	id: 'caldav-example-com',
+	serverUrl: 'https://caldav.example.com/',
+	username: 'ren',
+	credentialType: 'app-password',
+	credentialRef: 'caldav-example-com',
+};
 
 const SETTINGS: SyncedSettings = {
 	accounts: [
@@ -155,6 +163,120 @@ describe('the settings in the data file', () => {
 			unknown
 		>;
 		expect(settings.accounts).toEqual([SETTINGS.accounts[0]]);
+	});
+
+	it('puts back an entry that a newer version of the plugin wrote', async () => {
+		const account = {
+			id: 'dav-example-com',
+			serverUrl: 'https://a.example.com/',
+			username: 'ren',
+			credentialType: 'oauth2-pkce',
+			credentialRef: 'a-example-com',
+		};
+		const calendar = {
+			name: 'Work',
+			source: 'ics-subscription',
+			collectionHref: '/cal/',
+			mode: 'remote-owned',
+			components: ['VEVENT'],
+		};
+		const data = new FakePluginData({
+			[SETTINGS_KEY]: { accounts: [account], calendars: [calendar] },
+		});
+		const store = new PluginDataStore(data);
+		const first = await store.read();
+		expect(first.settings).toEqual({ accounts: [], calendars: [] });
+		expect(first.problems).toHaveLength(2);
+
+		await store.write(first.settings);
+		expect(documentOf(data)[SETTINGS_KEY]).toEqual({
+			accounts: [account],
+			calendars: [calendar],
+		});
+
+		const again = await store.read();
+		expect(again.problems).toEqual(first.problems);
+	});
+
+	it('holds the value of a refused entry through any number of writes', async () => {
+		const entry = { id: 'dav', futureField: { deep: [1, 'two', null] } };
+		const data = new FakePluginData({
+			[SETTINGS_KEY]: { accounts: [entry] },
+		});
+		const store = new PluginDataStore(data);
+		for (let round = 0; round < 3; round += 1) {
+			const reading = await store.read();
+			await store.write(reading.settings);
+		}
+		const settings = documentOf(data)[SETTINGS_KEY] as Record<
+			string,
+			unknown
+		>;
+		expect(settings.accounts).toEqual([entry]);
+	});
+
+	it('puts each entry back where the file held it', async () => {
+		const refused = { id: 'refused', serverUrl: 'ftp://example.com/' };
+		const data = new FakePluginData({
+			[SETTINGS_KEY]: {
+				accounts: [refused, SETTINGS.accounts[0], refused],
+			},
+		});
+		const store = new PluginDataStore(data);
+		const reading = await store.read();
+		const second: AccountConfig = {
+			...ACCOUNT,
+			id: 'later',
+			credentialRef: 'later',
+		};
+		await store.write({
+			accounts: [...reading.settings.accounts, second],
+			calendars: [],
+		});
+		const settings = documentOf(data)[SETTINGS_KEY] as Record<
+			string,
+			unknown
+		>;
+		expect(settings.accounts).toEqual([
+			refused,
+			SETTINGS.accounts[0],
+			refused,
+			second,
+		]);
+	});
+
+	it('takes away the entry that the settings no longer hold', async () => {
+		const refused = { id: 'refused', serverUrl: 'ftp://example.com/' };
+		const data = new FakePluginData({
+			[SETTINGS_KEY]: { accounts: [SETTINGS.accounts[0], refused] },
+		});
+		const store = new PluginDataStore(data);
+		await store.write({ accounts: [], calendars: [] });
+		const settings = documentOf(data)[SETTINGS_KEY] as Record<
+			string,
+			unknown
+		>;
+		expect(settings.accounts).toEqual([refused]);
+	});
+
+	it('keeps a refused entry that holds the id of an accepted entry', async () => {
+		const refused = {
+			...SETTINGS.accounts[0],
+			serverUrl: 'ftp://example.com/',
+			futureField: 'of the refused entry',
+		};
+		const data = new FakePluginData({
+			[SETTINGS_KEY]: { accounts: [refused, SETTINGS.accounts[0]] },
+		});
+		const store = new PluginDataStore(data);
+		const reading = await store.read();
+		expect(reading.settings.accounts).toHaveLength(1);
+		await store.write(reading.settings);
+		const settings = documentOf(data)[SETTINGS_KEY] as Record<
+			string,
+			unknown
+		>;
+		expect(settings.accounts).toEqual([refused, SETTINGS.accounts[0]]);
 	});
 
 	it('states the problems that the read of the settings found', async () => {

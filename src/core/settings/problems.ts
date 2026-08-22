@@ -13,8 +13,10 @@
  * which field to correct, because the plugin corrects nothing by itself.
  *
  * A refused entry is not part of the settings that the plugin uses. A
- * later write of the settings does not carry that entry, so the settings
- * screen states every problem that a read found.
+ * write of the settings puts that entry back into the data file without a
+ * change, so a refusal takes no data away. The settings screen states
+ * every problem that a read found, and a read after a write finds each of
+ * those problems again.
  *
  * A message quotes the value that a field holds. A user can put an app
  * password in the wrong field, so such a message can hold a credential.

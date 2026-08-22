@@ -10,7 +10,20 @@
 import { describe, expect, it } from 'vitest';
 import type { SyncedSettings } from '../model/settings';
 import { describeSettingsProblem } from './problems';
-import { DEFAULT_SETTINGS, readSettings, settingsDocument } from './read';
+import {
+	DEFAULT_SETTINGS,
+	accountDocument,
+	calendarDocument,
+	readSettings,
+} from './read';
+
+/** The settings in the form that the data file holds. */
+function settingsDocument(settings: SyncedSettings): Record<string, unknown> {
+	return {
+		accounts: settings.accounts.map(accountDocument),
+		calendars: settings.calendars.map(calendarDocument),
+	};
+}
 
 const ACCOUNT = {
 	id: 'caldav-example-com',
@@ -45,6 +58,7 @@ describe('the settings of a data file with nothing in it', () => {
 		expect(readSettings(undefined)).toEqual({
 			settings: DEFAULT_SETTINGS,
 			problems: [],
+			held: { accounts: [], calendars: [] },
 		});
 		expect(readSettings(null).settings).toEqual(DEFAULT_SETTINGS);
 	});
@@ -121,6 +135,69 @@ describe('the settings that a write left', () => {
 		const reading = readSettings({ accounts: [], routing: ['later'] });
 		expect(reading.problems).toEqual([]);
 		expect(reading.settings.accounts).toEqual([]);
+	});
+});
+
+describe('the entries that the reader refuses', () => {
+	it('keeps the value of the file for a refused account', () => {
+		const entry = { ...ACCOUNT, credentialType: 'oauth2-pkce' };
+		const reading = readSettings({ accounts: [entry] });
+		expect(reading.settings.accounts).toEqual([]);
+		expect(reading.held.accounts).toEqual([
+			{ kind: 'refused', value: entry },
+		]);
+	});
+
+	it('keeps the value of the file for a refused calendar', () => {
+		const entry = { ...CALENDAR, source: 'ics-subscription' };
+		const reading = readSettings({ calendars: [entry] });
+		expect(reading.settings.calendars).toEqual([]);
+		expect(reading.held.calendars).toEqual([
+			{ kind: 'refused', value: entry },
+		]);
+	});
+
+	it('keeps an entry that is not a set of fields', () => {
+		const reading = readSettings({ accounts: ['fastmail'] });
+		expect(reading.held.accounts).toEqual([
+			{ kind: 'refused', value: 'fastmail' },
+		]);
+	});
+
+	it('keeps the entry that holds the id of an entry before it', () => {
+		const reading = readSettings({ accounts: [ACCOUNT, ACCOUNT] });
+		expect(reading.held.accounts).toEqual([
+			{ kind: 'accepted', key: ACCOUNT.id, value: ACCOUNT },
+			{ kind: 'refused', value: ACCOUNT },
+		]);
+	});
+
+	it('names an accepted entry by the value that finds it again', () => {
+		const reading = readSettings({
+			accounts: [ACCOUNT],
+			calendars: [CALENDAR],
+		});
+		expect(reading.held.accounts).toEqual([
+			{ kind: 'accepted', key: ACCOUNT.id, value: ACCOUNT },
+		]);
+		expect(reading.held.calendars).toEqual([
+			{ kind: 'accepted', key: CALENDAR.name, value: CALENDAR },
+		]);
+	});
+
+	it('holds no entry where the file holds no settings', () => {
+		expect(readSettings(undefined).held).toEqual({
+			accounts: [],
+			calendars: [],
+		});
+		expect(readSettings('the settings').held).toEqual({
+			accounts: [],
+			calendars: [],
+		});
+		expect(readSettings({ accounts: 'one' }).held).toEqual({
+			accounts: [],
+			calendars: [],
+		});
 	});
 });
 

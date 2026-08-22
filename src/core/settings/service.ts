@@ -45,7 +45,11 @@ import {
 import { encodeCredential } from './credential';
 import type { FieldFault, SettingsProblem } from './problems';
 import { nameFieldFault } from './problems';
-import { DEFAULT_SETTINGS, type SettingsReading } from './read';
+import {
+	DEFAULT_SETTINGS,
+	NO_HELD_SECTIONS,
+	type SettingsReading,
+} from './read';
 
 /** What one account operation gives back to the settings screen. */
 export type AccountOutcome =
@@ -70,6 +74,7 @@ export class AccountService {
 	private reading: SettingsReading = {
 		settings: DEFAULT_SETTINGS,
 		problems: [],
+		held: NO_HELD_SECTIONS,
 	};
 
 	constructor(parts: AccountServiceParts) {
@@ -278,7 +283,11 @@ export class AccountService {
 			this.reading = await this.parts.settings.read();
 		} catch {
 			this.record('read settings', 'settings', 'failed');
-			this.reading = { settings, problems: this.reading.problems };
+			this.reading = {
+				settings,
+				problems: this.reading.problems,
+				held: this.reading.held,
+			};
 		}
 	}
 

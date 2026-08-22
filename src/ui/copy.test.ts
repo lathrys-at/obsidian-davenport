@@ -64,10 +64,14 @@ describe('the words that ask for an app password', () => {
 });
 
 describe('the words about the entries that Davenport did not read', () => {
-	it('name Davenport as the one that does not keep them', () => {
+	it('state that Davenport keeps each entry and changes none of them', () => {
 		expect(PROBLEMS_NOTE).toContain(
-			'Davenport does not keep them when it writes the settings.',
+			'Davenport keeps each of these entries in the data file, and it changes none of them.',
 		);
+	});
+
+	it('state no removal of an entry', () => {
+		expect(PROBLEMS_NOTE).not.toContain('does not keep');
 	});
 });
 

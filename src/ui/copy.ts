@@ -80,7 +80,7 @@ export const KEEP_PASSWORD =
 
 export const PROBLEMS_HEADING = 'Entries that Davenport did not read';
 export const PROBLEMS_NOTE =
-	'Davenport did not read these entries. Davenport does not keep them when it writes the settings. Correct the data file of the plugin, or add the entries again.';
+	'Davenport did not read these entries. Davenport keeps each of these entries in the data file, and it changes none of them. Correct the data file of the plugin where you want Davenport to read an entry.';
 
 /** The words of the question that stands before a removal. */
 export function removeQuestion(username: string, serverUrl: string): string {

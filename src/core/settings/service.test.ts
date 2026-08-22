@@ -19,7 +19,11 @@ import type { Logger, SyncLogEntry } from '../ports/logger';
 import type { SecretStore, SecretTier } from '../ports/secret-store';
 import type { SettingsStore } from '../ports/settings-store';
 import type { SyncedSettings } from '../model/settings';
-import { DEFAULT_SETTINGS, type SettingsReading } from './read';
+import {
+	DEFAULT_SETTINGS,
+	NO_HELD_SECTIONS,
+	type SettingsReading,
+} from './read';
 import { AccountService } from './service';
 
 const PASSWORD = 'correct-horse-battery-staple';
@@ -92,6 +96,7 @@ class MemorySettings implements SettingsStore {
 		return Promise.resolve({
 			settings: this.settings,
 			problems: this.problems,
+			held: NO_HELD_SECTIONS,
 		});
 	}
 

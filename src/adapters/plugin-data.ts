@@ -39,8 +39,12 @@ import type { SettingsStore } from '../core/ports/settings-store';
 import type { SyncedSettings } from '../core/model/settings';
 import type { UnknownMap } from '../core/settings/fields';
 import { isMap } from '../core/settings/fields';
-import type { SettingsReading } from '../core/settings/read';
-import { readSettings, settingsDocument } from '../core/settings/read';
+import type { HeldEntry, SettingsReading } from '../core/settings/read';
+import {
+	accountDocument,
+	calendarDocument,
+	readSettings,
+} from '../core/settings/read';
 
 /**
  * The part of the plugin class that this module uses. The `Plugin` class
@@ -78,19 +82,23 @@ export class PluginDataStore implements SettingsStore {
 		return this.queue(async () => {
 			const document = await this.document();
 			const held = document[SETTINGS_KEY];
-			const written = settingsDocument(settings);
 			const heldSettings = isMap(held) ? held : {};
+			const reading = readSettings(held);
 			document[SETTINGS_KEY] = {
 				...heldSettings,
-				accounts: mergeEntries(
-					written.accounts,
-					heldSettings.accounts,
-					'id',
+				accounts: sectionDocument(
+					settings.accounts.map((account) => ({
+						key: account.id,
+						value: accountDocument(account),
+					})),
+					reading.held.accounts,
 				),
-				calendars: mergeEntries(
-					written.calendars,
-					heldSettings.calendars,
-					'name',
+				calendars: sectionDocument(
+					settings.calendars.map((entry) => ({
+						key: entry.name,
+						value: calendarDocument(entry),
+					})),
+					reading.held.calendars,
 				),
 			};
 			await this.host.saveData(document);
@@ -172,28 +180,52 @@ export class PluginDataStore implements SettingsStore {
 	}
 }
 
+/** One entry that the settings hold, with the value that finds it again. */
+interface WrittenEntry {
+	readonly key: string;
+	readonly value: UnknownMap;
+}
+
 /**
- * The entries of one section, each with the fields that the file holds
- * for that entry and the plugin does not know. The write states each
- * field that it knows, so the fields of the file stand under those fields
- * and never over them. The key names the field that finds the entry of
- * the file: the id of an account, and the name of a calendar.
+ * The entries of one section, in the order that the file holds them.
+ *
+ * An entry that the reader refused goes back into the file as it stands.
+ * The plugin reads nothing inside such an entry, so the write carries it
+ * whole and changes no byte of it. A refusal is therefore never an
+ * erasure, and an entry that a newer version of the plugin wrote survives
+ * the writes of this version.
+ *
+ * An entry that the reader accepted takes the fields of the write. The
+ * fields of the file that the write does not state stand under those
+ * fields, so a field that this version does not know survives as well. An
+ * entry that the settings no longer hold goes. An entry that the settings
+ * hold and the file does not comes after the entries of the file.
  */
-function mergeEntries(
-	written: readonly UnknownMap[],
-	held: unknown,
-	key: string,
-): readonly UnknownMap[] {
-	if (!Array.isArray(held)) {
-		return written;
+function sectionDocument(
+	written: readonly WrittenEntry[],
+	held: readonly HeldEntry[],
+): readonly unknown[] {
+	const byKey = new Map(written.map((entry) => [entry.key, entry.value]));
+	const taken = new Set<string>();
+	const entries: unknown[] = [];
+	for (const entry of held) {
+		if (entry.kind === 'refused') {
+			entries.push(entry.value);
+			continue;
+		}
+		const match = byKey.get(entry.key);
+		if (match === undefined) {
+			continue;
+		}
+		taken.add(entry.key);
+		entries.push({ ...entry.value, ...match });
 	}
-	const heldEntries: readonly unknown[] = held;
-	return written.map((entry) => {
-		const match = heldEntries.find(
-			(candidate) => isMap(candidate) && candidate[key] === entry[key],
-		);
-		return isMap(match) ? { ...match, ...entry } : entry;
-	});
+	for (const entry of written) {
+		if (!taken.has(entry.key)) {
+			entries.push(entry.value);
+		}
+	}
+	return entries;
 }
 
 /** The same set of values, without the value of one key. */
