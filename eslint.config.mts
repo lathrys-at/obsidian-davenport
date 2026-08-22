@@ -116,15 +116,15 @@ export default defineConfig(
 						'tools/timezone-table/*.mjs',
 					],
 					// The patterns above name fifteen paths. The linter
-					// counts the thirteen that hold code: this file, and
+					// counts the fourteen that hold code: this file, and
 					// each .mjs entry point under scripts/ and tools/.
 					// Each of these files is outside tsconfig.json, so the
 					// linter builds a program of its own for the file. The
 					// default limit is eight files, and the linter stops
 					// past that limit. The limit guards the run time of the
-					// lint. The limit below gives room for three more
-					// files. A change that adds a fourth file must raise
-					// that limit.
+					// lint. The limit below gives room for two more files.
+					// A change that adds a third file must raise that
+					// limit.
 					maximumDefaultProjectFileMatchCount_THIS_WILL_SLOW_DOWN_LINTING: 16,
 				},
 				tsconfigRootDir: import.meta.dirname,

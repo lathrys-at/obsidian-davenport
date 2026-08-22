@@ -39,39 +39,8 @@ import {
 } from '../../harness/arbitraries/ics-mutations';
 import { assertProperty } from '../../harness/arbitraries/seed';
 import { icsFixtureArbitrary } from '../../harness/fixtures/ics-corpus';
+import { contentOf } from '../../harness/ics-content';
 import { octetLength } from '../../harness/ics-octets';
-
-/**
- * The text of a value, with the keys of every object in order. Two objects
- * that hold the same entries in another order give the same text. The
- * serializer owns the order of the parameters of a property and the order
- * of the parts of a repeat rule, so a comparison of content must not read
- * those orders.
- */
-function stableJson(value: unknown): string {
-	if (Array.isArray(value)) {
-		return `[${value.map(stableJson).join(',')}]`;
-	}
-	if (typeof value === 'object' && value !== null) {
-		const entries = Object.entries(value)
-			.map(([key, item]) => `${JSON.stringify(key)}:${stableJson(item)}`)
-			.sort();
-		return `{${entries.join(',')}}`;
-	}
-	return JSON.stringify(value);
-}
-
-/**
- * The content of a component, without the order of its properties and
- * without the order of the components inside it. Two components with this
- * same text hold the same names, the same parameters and the same values.
- */
-function contentOf(component: JCalComponent): string {
-	const [name, properties, components] = component;
-	const propertyTexts = properties.map(stableJson).sort();
-	const componentTexts = components.map(contentOf).sort();
-	return stableJson([name.toLowerCase(), propertyTexts, componentTexts]);
-}
 
 /** The canonical text of a text, or a failure that names the refusal. */
 function canonical(text: string): string {

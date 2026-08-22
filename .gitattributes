@@ -2,6 +2,12 @@
 # line endings, and tests that count them. Keep git out of the conversion.
 test/harness/fixtures/ics/*.ics -text
 
+# The crash corpus holds the inputs that the fuzzing lane found. An input
+# carries the line endings that made it a finding, and one of them holds a
+# carriage return that stands alone. A conversion of the line endings would
+# take the finding out of the file.
+test/harness/fixtures/ics-crash/*.ics -text
+
 # The inputs of the golden gate carry CRLF line endings, and the golden files
 # hold the octets that the canonical serializer writes. A conversion of the
 # line endings would change the bytes under the test that compares them.

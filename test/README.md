@@ -217,8 +217,163 @@ DAVENPORT_PROPERTY_SEED=17 npm test -- test/properties
 A failure states the command that draws the same inputs again.
 
 `test/properties/ics/known-defects.test.ts` holds the defects that these tests
-found. Every case in that file is skipped, and each one is the smallest input
-that reaches the defect.
+and the fuzzing lane found. Every case in that file is skipped, and each one is
+the smallest input that reaches the defect.
+
+## The fuzzing lane
+
+A feed subscription points at any location that the user names, so the parse
+boundary receives every byte that a generator, a proxy or an attacker sends.
+The property tests above drive that boundary with legal calendars. The fuzzing
+lane drives it with damaged text as well, and it drives it far longer than a
+suite of every commit can afford.
+
+```bash
+npm run fuzz                          # 30 seconds at a desk
+npm run fuzz -- --budget=600          # the budget of the workflow
+npm run fuzz -- --seed=17             # another place in the space
+npm run fuzz -- --all-findings        # report the filed defects too
+```
+
+The command gives the status 0 when it found nothing new, and the status 1 when
+it found something new or when it examined no input. It writes its report and
+two seed files for each new finding into `reports/fuzz`: the smallest input
+that the run found, and the input as the generator left it. Git ignores that
+folder.
+
+A seed file holds one JSON string, and not the text of a calendar. A file holds
+octets, and this lane writes its files as UTF-8. UTF-8 carries no lone
+surrogate. A seed file of plain text therefore held the replacement character
+in the place of such a code unit. The fixture that came out of that seed file
+then stated another input than the finding. JSON writes a lone surrogate as an
+escape, and it writes every other code unit of a JavaScript string as well. The
+seed file therefore gives the input back whole.
+
+The rules of the lane live under `scripts/`. The coverage floor of
+`coverage-baseline.json` reads the files under `src/` alone, so no floor guards
+those rules. `test/fuzz-ics.test.ts` guards them instead, and the required
+check runs that file on every commit.
+
+The lane has two arms, and each arm knows something different about its input.
+
+- The model arm draws a calendar from the generators of the property tests and
+  writes the text of it. The arm knows which calendar the text states, so the
+  drive can ask whether the calendar comes back whole. That question is the
+  only one that sees a value which the parse loses without a change of the
+  bytes. Those generators leave out the shapes that the boundary reads wrongly
+  today, and this arm puts one of those shapes back into the calendar that it
+  drew.
+- The text arm draws a text and changes it. The text comes from the adversarial
+  corpus, from a calendar of the model arm, from a feed of ordinary shape, or
+  from noise that carries the words of the format. The changes that keep the
+  meaning come from the property tests. The changes of the bytes damage the
+  text: they remove a run, repeat a run, write a character over a run, cut the
+  text short, and take a line ending apart.
+
+The drive sends one input through the boundary, through the canonical
+serializer, and back through the boundary.
+[`scripts/fuzz-ics-core.ts`](../scripts/fuzz-ics-core.ts) states the rules, and
+a breach of one of them is a finding: a call that throws, a refusal that names
+no problem, a refusal of a text that the serializer wrote, a canonical text
+that moves on the second trip, a canonical text that gives back another
+calendar, and a calendar that comes back other than it went in.
+
+### The ledger of the filed defects
+
+The lane rediscovers a filed defect on every run, and a report that buries its
+new findings under the known ones is a report that nobody reads.
+[`scripts/fuzz-ics-ledger.ts`](../scripts/fuzz-ics-ledger.ts) therefore holds
+one entry for each filed defect. A finding that an entry recognises is counted
+and set aside; the report names it under its issue, and the run does not fail
+on it. Every other finding is new, and the run fails.
+
+A finding matches an entry only when all three conditions hold.
+
+1. **The kind.** The kind of the finding is one of the kinds that the entry
+   states. A crash is in no entry: a crash on a line that carries the construct
+   of an entry is another defect.
+2. **The pattern.** One logical line of the input matches the pattern of the
+   entry. The pattern is a cheap first reading and never the proof, so a line
+   that carries the construct beside another defect matches it too.
+3. **The cause.** The repair that the entry states removes the finding. For a
+   finding that reads the calendar which went in, the runner repairs the values
+   of that calendar, writes the text again, and drives it. For every other
+   finding the runner repairs the text, and the repaired text must be a text
+   that the boundary accepts and that gives no finding.
+
+The frame of an entry states how the runner reads a text while it repairs it,
+and the two frames need different controls. Over the logical lines, the runner
+rebuilds the text from those lines and repairs each line that carries the
+pattern; there it first drives the rebuilt text with no repair, and that text
+must still give the same kind of finding. Without this control, a rebuild that
+removed the finding by itself would look like a repair that worked. Over the
+whole text, the runner repairs the text as it stands. An entry takes that frame
+where the construct is a byte of the framing itself, because a rebuild writes
+the framing again and such a construct does not survive it. That frame needs no
+control of its own: the runner changes the bytes of the construct and nothing
+else, and the drive that made the finding is the control.
+
+Condition 3 keeps the ledger narrow. A defect that stands beside the construct
+of an entry survives the repair, so the run reports it.
+
+### The crash corpus, and how a finding gets there
+
+[`test/harness/fixtures/ics-crash/`](harness/fixtures/ics-crash) holds the
+inputs that the lane found and that a person kept. A file stays there after a
+change repairs the defect, so a finding of the lane becomes a case that the
+required check drives on every commit. `ics-crash-corpus.ts` beside it holds the index.
+
+Turn a finding into a fixture in four steps.
+
+1. Run the command with the seed file of the finding:
+
+    ```bash
+    node scripts/fuzz-ics.mjs \
+        --graduate=reports/fuzz/finding-01-crash.json \
+        --name=a-name-for-the-fixture
+    ```
+
+    The command reads the input out of the seed file, writes that input into
+    the corpus, drives it, and says which finding it gives today. The command
+    writes no other file, and it refuses a name that the corpus already holds.
+    It also refuses an input that UTF-8 cannot carry, because a fixture is a
+    file and such a file would state another input than the finding. Read the
+    input in the seed file and write that fixture by hand.
+
+2. Add the entry to the index in
+   [`harness/fixtures/ics-crash-corpus.ts`](harness/fixtures/ics-crash-corpus.ts).
+   The entry states the id, one sentence that says what the input holds and
+   what the engine does with it, and the state. The state `held` says that the
+   engine keeps the rule today, and the test then asks for no finding. The
+   state `open` says that the defect waits for a decision, and the entry names
+   the kind of finding that the file still gives.
+
+3. Add the case that states the rule to
+   [`../test/properties/ics/known-defects.test.ts`](properties/ics/known-defects.test.ts),
+   and skip that case while the defect waits.
+
+4. When somebody files the issue, put the number of it in the entry of the
+   index, and add an entry to the ledger so that the lane stops reporting the
+   finding as new.
+
+### The workflow
+
+[`.github/workflows/fuzz.yml`](../.github/workflows/fuzz.yml) runs the lane.
+The workflow has the `workflow_dispatch` trigger alone, and it carries no
+schedule: the owner starts a run at a point that suits the work. The lane is
+not part of the required `ci-ok` check, and no merge waits for it. A run takes
+minutes, and a run draws inputs that no earlier run drew, so the lane can turn
+red on a commit that changed nothing.
+
+The dispatch takes a budget in seconds, and the default is 600. One run of that
+budget on a desktop examined about five thousand inputs a second, so ten
+minutes buys about three million inputs. A runner is slower than a desktop. The
+run also stops early when it collects twenty new findings, because one defect
+answers to many inputs.
+
+The workflow keeps the report and the seed files as an artifact of each run,
+and it keeps them after a run that failed as well. A run that failed is the run
+whose findings a person reads, and the seed file is the material of a fixture.
 
 ## Where a test goes
 
