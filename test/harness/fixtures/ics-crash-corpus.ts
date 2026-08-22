@@ -27,6 +27,12 @@
  * `scripts/fuzz-ics-ledger.ts` so that the lane stops reporting the finding
  * as new.
  *
+ * A change that repairs the defect goes the other way. Move the entry to
+ * `held`, set its finding to null, and write the summary again so that it
+ * states the rule that the engine now keeps. Take the entry of the defect
+ * out of the ledger in the same change. The file stays here, and the
+ * required check drives it from that day forward.
+ *
  * `scripts/fuzz-ics.mjs --graduate` writes a file into this folder.
  * `test/README.md` states the whole procedure.
  */
@@ -64,26 +70,42 @@ const INDEX: readonly IcsCrashEntry[] = [
 	{
 		id: 'carriage-return-in-a-value',
 		summary:
-			'A carriage return stands at the end of a physical line, and a fold continues that line. The reader of the boundary ends a line at a carriage return, and the library keeps that carriage return inside the value. The check for a control character therefore never reads it. The boundary accepts the text, and the canonical text of it breaks the property across two lines. The boundary then refuses that canonical text.',
-		state: 'open',
-		finding: 'refused-own-text',
+			'A carriage return stands at the end of a physical line, and a fold continues that line. The library keeps that carriage return inside the value. The reader of the boundary held the carriage return to be the end of a line, so the check for a control character never read it. The reader now ends a line at a line feed alone, the check reads the character, and the boundary refuses the text and names the character.',
+		state: 'held',
+		finding: null,
 		issue: 234,
 	},
 	{
 		id: 'value-type-carries-an-escape',
 		summary:
-			'The VALUE parameter holds three carets. The parse turns that parameter into the name of the value type, and it reads two of the carets as the escape of one caret. The serializer writes the name of the type back with no escape, so each trip loses one caret and the canonical text is no fixed point.',
-		state: 'open',
-		finding: 'not-a-fixed-point',
+			'The VALUE parameter holds three carets. The parse turns that parameter into the name of the value type, and it reads two of the carets as the escape of one caret. The serializer writes the name of the type back with no escape, so each trip lost one caret. The boundary now holds the value type to the promise of every other parameter, and it refuses a name that does not keep the bytes of the text.',
+		state: 'held',
+		finding: null,
 		issue: 235,
 	},
 	{
 		id: 'value-type-carries-a-line-break',
 		summary:
-			'The VALUE parameter holds a backslash and the letter n. The parse turns that parameter into the name of the value type, and it reads those two characters as a line break. The serializer writes that line break into the parameter with no escape, and the library cannot read the text that comes out.',
-		state: 'open',
-		finding: 'refused-own-text',
+			'The VALUE parameter holds a backslash and the letter n. The parse turns that parameter into the name of the value type, and it reads those two characters as a line break. The serializer wrote that line break into the parameter with no escape, and the library could not read the text that came out. The boundary refuses the text under the same rule.',
+		state: 'held',
+		finding: null,
 		issue: 235,
+	},
+	{
+		id: 'list-parameter-that-is-not-last',
+		summary:
+			'A list parameter whose last value holds a colon stands in front of another parameter. The library computes the start of the value of the property from the last parameter, so it read this line correctly. The canonical serializer writes the parameters in the order of their names, and it wrote the list parameter last. The engine therefore wrote a text that it could not read back. The check of the start of the value reads every parameter, and the boundary refuses the line.',
+		state: 'held',
+		finding: null,
+		issue: 230,
+	},
+	{
+		id: 'colon-in-a-list-parameter',
+		summary:
+			'The last value of a list parameter holds a colon. The library adds the lengths of the values of that parameter and counts none of the characters between two values, so it looks for the colon of the property from a place inside the last value. The value that it reported held the tail of the parameter, and the text grew by three octets on every trip. The boundary computes the same place and refuses a line where the two colons are not the same one.',
+		state: 'held',
+		finding: null,
+		issue: 230,
 	},
 ];
 

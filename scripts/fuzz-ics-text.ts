@@ -181,7 +181,7 @@ export function graduationLines(
 			`add the entry to the index in test/harness/fixtures/ics-crash-corpus.ts, with the id ${JSON.stringify(name)} and one sentence that says what the input holds`,
 		),
 		say(
-			'add the case that states the rule to test/properties/ics/known-defects.test.ts, and skip that case while the defect waits for a decision',
+			'add the case that states the rule to test/properties/ics/library-defects.test.ts, and skip that case while the defect waits for a decision',
 		),
 	];
 }

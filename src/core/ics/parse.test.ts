@@ -200,6 +200,16 @@ const REFUSED: [string, string, IcsParseProblem][] = [
 		event('RDATE;VALUE=PERIOD:garbage'),
 		'value',
 	],
+	[
+		'a period whose start holds no date-time',
+		event('RDATE;VALUE=PERIOD:garbage/20260101T000000Z'),
+		'value',
+	],
+	[
+		'a period whose end is neither a date-time nor a duration',
+		event('RDATE;VALUE=PERIOD:20260101T000000Z/garbage'),
+		'value',
+	],
 	['a repeat rule that holds no parts', event('RRULE:garbage'), 'not-jcal'],
 	[
 		'a repeat rule part that holds no value',
@@ -319,6 +329,26 @@ const REFUSED: [string, string, IcsParseProblem][] = [
 	[
 		'a backslash before a semicolon in a quoted parameter',
 		calendar('X-PLACE;X-NAME="a\\;b":value'),
+		'value',
+	],
+	[
+		'a colon in the last value of a list parameter',
+		calendar('X-NOTE;MEMBER="a","b:c":value'),
+		'value',
+	],
+	[
+		'a colon in the last value of a list parameter before a date',
+		calendar('DTSTART;MEMBER="a","b:c":19000101T000000'),
+		'value',
+	],
+	[
+		'a value type that carries a list of values',
+		calendar('X-NOTE;VALUE="a","b":value'),
+		'value',
+	],
+	[
+		'a value type that needs quotation marks',
+		calendar('X-NOTE;VALUE="a;b":value'),
 		'value',
 	],
 ];
@@ -475,6 +505,18 @@ const ACCEPTED: [string, string][] = [
 		),
 	],
 	['a fold that no length requires', calendar('X-SHORT:one', '  two')],
+	[
+		'a list parameter whose values each hold a colon',
+		calendar('ATTENDEE;MEMBER="mailto:a@b.c","mailto:d@e.f":mailto:x@y.z'),
+	],
+	[
+		'a reference on a property that divides its values',
+		calendar('CATEGORIES;VALUE=URI:a,b'),
+	],
+	[
+		'a value type that a quoted parameter writes',
+		calendar('X-NOTE;VALUE="TEXT":value'),
+	],
 ];
 
 describe('the parse boundary and the values that the library keeps', () => {
