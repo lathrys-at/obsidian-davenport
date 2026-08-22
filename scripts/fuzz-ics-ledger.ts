@@ -105,114 +105,21 @@ export interface KnownFinding {
 }
 
 /**
- * The defects that the layer of property tests and this lane found, and
- * that the issue tree holds. A new entry lands together with the issue that
- * it names.
+ * The defects that are already filed. The list is empty: the parse
+ * boundary now refuses every shape that the entries of this list named,
+ * and each of those defects left the list together with the change that
+ * repaired it.
+ *
+ * A new entry lands together with the issue that it names. While the list
+ * is empty, every finding of a run is a new finding, and the run fails on
+ * it.
  *
  * The issue that reports a serializer which throws on a calendar outside
  * the range of the parse boundary carries no entry here. The lane drives
  * the parse boundary, and no input of the lane reaches that calendar.
  */
-export const KNOWN_FINDINGS: readonly KnownFinding[] = [
-	{
-		issue: 230,
-		name: 'a colon inside a quoted parameter value',
-		// The library takes the value of the property from the colon inside
-		// the quotation marks. The property value then grows on each trip
-		// through the serializer, so the canonical text is no fixed point.
-		// Where the property states a type that the wrong value disobeys,
-		// the boundary refuses the text instead. Both readings have this
-		// one root. A crash is not among the kinds: a crash on such a line
-		// is another defect, and the run reports it.
-		kinds: [
-			'not-a-fixed-point',
-			'model-divergence',
-			'value-divergence',
-			'refused',
-			'refused-own-text',
-		],
-		pattern: /;[A-Za-z0-9-]+=[^\r\n]*"[^"\r\n]*:[^"\r\n]*"/,
-		site: 'parameter',
-		repairValue: (value) => value.replaceAll(':', '-'),
-		frame: 'logical-lines',
-		repairText: (line) => repairQuotedColons(line),
-	},
-	{
-		issue: 230,
-		name: 'a quotation mark beside a comma in a parameter value',
-		// The library divides the list of values at the comma inside the
-		// quotation marks, so the values that it reports are not the values
-		// that the text states. The bytes stay the same on every trip.
-		kinds: ['model-divergence', 'value-divergence', 'not-a-fixed-point'],
-		pattern: /;[A-Za-z0-9-]+=[^\r\n]*(?:\^',|,\^')/,
-		site: 'parameter',
-		repairValue: (value) => value.replaceAll('"', '-'),
-		frame: 'logical-lines',
-		repairText: (line) => line.replaceAll("^'", '-'),
-	},
-	{
-		issue: 231,
-		name: 'a value that ends with an escaped backslash',
-		// The library reads the escape of the backslash and the separator
-		// that follows it as one escape. Two values then come back as one
-		// value that holds the separator. The bytes stay the same on every
-		// trip, so only a calendar that went in shows the loss.
-		kinds: ['model-divergence'],
-		pattern: /(?:^|[^\\])(?:\\\\)+[,;]/,
-		site: 'value',
-		repairValue: (value) => value.replace(/\\+$/, ''),
-		frame: 'logical-lines',
-		repairText: (line) =>
-			line.replace(/(^|[^\\])((?:\\\\)+)(?=[,;])/g, '$1'),
-	},
-	{
-		issue: 234,
-		name: 'a bare carriage return inside a line',
-		// The reader of the boundary ends a line at a bare carriage return,
-		// and the library keeps that character inside the value. The check
-		// for a control character reads the lines of the reader, so it never
-		// sees the character. Where a fold continues the line, the canonical
-		// text breaks the property across two lines, and the boundary then
-		// refuses its own text.
-		//
-		// A logical line carries no line ending, so a carriage return that
-		// stands on one is a bare one and the pattern needs no more than that
-		// character. The repair reads the whole text, because the construct
-		// is the carriage return beside the fold: a rebuild from the logical
-		// lines writes the fold somewhere else, and the finding goes away
-		// with it. The repair takes away each carriage return that no line
-		// feed follows, and it leaves every line ending where it stands.
-		kinds: ['refused-own-text'],
-		pattern: /\r/,
-		site: 'value',
-		repairValue: (value) => value.replaceAll('\r', ''),
-		frame: 'whole-text',
-		repairText: (text) => text.replace(/\r(?!\n)/g, ''),
-	},
-	{
-		issue: 235,
-		name: 'the VALUE parameter carries an escape or a quotation mark',
-		// The parse turns the VALUE parameter into the name of the value
-		// type, and it reads the escapes of a parameter value on the way.
-		// The serializer writes the name of the type back raw: it writes no
-		// escape, and it writes no quotation mark. A caret, a backslash or a
-		// quotation mark in that parameter therefore moves the text on each
-		// trip, or makes a text that the library cannot read back. An
-		// ordinary parameter takes the encoding, so the pattern names the
-		// VALUE parameter alone. The repair keeps the letters, the digits
-		// and the dashes of that parameter and takes every other character
-		// away. A name of those characters needs no escape and no quotation
-		// mark, so the serializer writes it back as it stands. The repair
-		// leaves the parameter where it is, because a property that states
-		// its type needs that parameter to keep its value.
-		kinds: ['not-a-fixed-point', 'refused-own-text'],
-		pattern: /;VALUE=[^;:\r\n]*["^\\]/i,
-		site: 'parameter',
-		repairValue: (value) => value.replaceAll('^', '').replaceAll('\\', ''),
-		frame: 'logical-lines',
-		repairText: (line) => plainValueParameter(line),
-	},
-];
+export const KNOWN_FINDINGS: readonly KnownFinding[] = [];
+
 
 /** The entry that recognises the finding, or null for a new finding. */
 export function knownFinding(
@@ -409,93 +316,4 @@ function repairedValue(
 		);
 	}
 	return value;
-}
-
-/** How a VALUE parameter starts, in either case of the letters. */
-const VALUE_PARAMETER = ';VALUE=';
-
-/**
- * The line where every VALUE parameter holds a plain name: the letters, the
- * digits and the dashes of the name that the line states, and nothing else.
- * The walk stops at the first colon that stands outside quotation marks,
- * because that colon ends the parameters and starts the value of the
- * property. The value of the property therefore keeps its own text.
- */
-function plainValueParameter(line: string): string {
-	let repaired = '';
-	let at = 0;
-	let inside = false;
-	while (at < line.length) {
-		const character = line[at] ?? '';
-		if (!inside && character === ':') {
-			return repaired + line.slice(at);
-		}
-		if (
-			!inside &&
-			line.slice(at, at + VALUE_PARAMETER.length).toUpperCase() ===
-				VALUE_PARAMETER
-		) {
-			const from = at + VALUE_PARAMETER.length;
-			const end = parameterEnd(line, from);
-			repaired +=
-				line.slice(at, from) +
-				line.slice(from, end).replace(/[^A-Za-z0-9-]/g, '');
-			at = end;
-			continue;
-		}
-		if (character === '"') {
-			inside = !inside;
-		}
-		repaired += character;
-		at += 1;
-	}
-	return repaired;
-}
-
-/**
- * The place where the value of the parameter that starts at `at` ends. That
- * is the next semicolon or colon, and a quoted value carries the search to
- * the character after its closing quotation mark. A value that opens a
- * quotation mark and closes none is a damaged value, and the search then
- * reads it as an ordinary one. The repair therefore takes away the
- * characters of one parameter, and never the rest of a damaged line.
- */
-function parameterEnd(line: string, at: number): number {
-	const quoted = line[at] === '"' ? line.indexOf('"', at + 1) : -1;
-	const from = quoted === -1 ? at : quoted + 1;
-	const semicolon = line.indexOf(';', from);
-	const colon = line.indexOf(':', from);
-	const end = Math.min(
-		semicolon === -1 ? line.length : semicolon,
-		colon === -1 ? line.length : colon,
-	);
-	return end;
-}
-
-/**
- * The line with every colon inside quotation marks changed to a dash. The
- * walk stops at the first colon that stands outside the quotation marks,
- * because that colon ends the parameters and starts the value of the
- * property. The value of the property therefore keeps its colons.
- */
-function repairQuotedColons(line: string): string {
-	let inside = false;
-	let repaired = '';
-	for (let at = 0; at < line.length; at += 1) {
-		const character = line[at] ?? '';
-		if (character === '"') {
-			inside = !inside;
-			repaired += character;
-			continue;
-		}
-		if (character === ':') {
-			if (!inside) {
-				return repaired + line.slice(at);
-			}
-			repaired += '-';
-			continue;
-		}
-		repaired += character;
-	}
-	return repaired;
 }

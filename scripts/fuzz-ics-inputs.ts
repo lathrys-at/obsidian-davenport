@@ -11,13 +11,20 @@
  * only rule that sees a value which the parse loses without a change of the
  * bytes.
  *
- * The generators of the property tests leave out the shapes that the parse
- * boundary reads wrongly today, so that the tests of every commit stay
- * green. This lane must reach those shapes: they are the neighbourhood of
- * the defects that are filed, and a defect that stands beside a filed one
- * is what the lane exists to find. The arm therefore draws a calendar and
- * then puts one of those shapes back into it. The ledger of the filed
- * defects decides which of the findings that follow are already known.
+ * The generators of the property tests leave out the shapes that no text
+ * of the format carries through the parse whole. The boundary refuses a
+ * text that states one of them, so no calendar that the boundary gives
+ * back holds one, and a calendar that holds one stands outside the range
+ * of the boundary. This lane must still reach those shapes: they are the
+ * neighbourhood of the defects that the boundary refuses, and a defect
+ * that stands beside one of them is what the lane exists to find. The arm
+ * therefore draws a calendar and then puts one of those shapes back into
+ * it. Such a calendar carries no promise that the boundary accepts the
+ * text of it. The boundary must read that text exactly or refuse it, and
+ * it must never read it wrongly. Every other rule of the drive stands over
+ * the text: no call throws, a refusal names its reason, the canonical text
+ * does not move, and the calendar that comes back holds what the canonical
+ * text states.
  *
  * The text arm draws a text and changes its bytes. The text comes from the
  * adversarial corpus, from a calendar of the model arm, from a feed of
@@ -44,7 +51,7 @@ import {
 	renderVariant,
 } from '../test/harness/feed-fixture/variants.ts';
 import { icsCorpus } from '../test/harness/fixtures/ics-corpus.ts';
-import type { IcsEngine } from './fuzz-ics-core.ts';
+import type { IcsEngine, InputPromise } from './fuzz-ics-core.ts';
 
 /**
  * One input, with the recipe that made it. The model arm carries the
@@ -58,6 +65,14 @@ export type FuzzInput =
 			/** What the arm did, for the report of a finding. */
 			readonly recipe: string;
 			readonly model: JCalComponent;
+			/**
+			 * Whether the boundary must accept the text of this calendar. A
+			 * widening that changed the calendar put a shape into it that
+			 * stands outside the range of the boundary, and the boundary
+			 * refuses the text of such a shape. A refusal is then the right
+			 * answer and no finding.
+			 */
+			readonly promise: InputPromise;
 	  }
 	| {
 			readonly arm: 'text';
@@ -127,23 +142,24 @@ const NOISE_PARTS: readonly string[] = [
 ];
 
 /**
- * The shapes that the generators of the property tests leave out. Each one
- * has a case in the file of known defects, and the ledger of this lane
- * holds the issue that the case names.
+ * The shapes that the generators of the property tests leave out. The
+ * parse boundary refuses a text that states one of them, so a calendar
+ * that holds one stands outside the range of the boundary. The regression
+ * suite of the boundary holds one case for each shape.
  */
 export const WIDENINGS: readonly Widening[] = [
 	{ name: 'no change', apply: (model) => model },
 	{
 		// The last value of the list is the value that stands beside the
-		// colon of the property, and the case that is filed puts the colon
-		// there.
+		// colon of the property, and a colon there moves the value that the
+		// library reads for the property.
 		name: 'puts a colon in the last value of a list parameter',
 		apply: (model, choice) =>
 			overListParameter(model, choice, 'last', (value) => `${value}:x`),
 	},
 	{
-		// The case that is filed puts the quotation mark in a value that
-		// another value follows.
+		// A quotation mark beside a comma divides the list of the library at
+		// a place that the text does not divide it.
 		name: 'puts a quotation mark and a comma in the first value of a list parameter',
 		apply: (model, choice) =>
 			overListParameter(model, choice, 'first', (value) => `${value}",`),
@@ -234,11 +250,21 @@ export function modelInput(): fc.Arbitrary<FuzzInput> {
 			fc.constantFrom(...WIDENINGS),
 			fc.nat({ max: 999 }),
 		)
-		.map(([drawn, widening, choice]): FuzzInput => ({
-			arm: 'model',
-			recipe: `a generated calendar, and the widening that ${widening.name}`,
-			model: widening.apply(drawn, choice),
-		}));
+		.map(([drawn, widening, choice]): FuzzInput => {
+			const model = widening.apply(drawn, choice);
+			// A calendar that the widening left alone holds only the shapes
+			// that the generators draw, and the boundary accepts the text of
+			// every one of those. A calendar that the widening changed holds
+			// a shape that the boundary refuses.
+			const widened =
+				JSON.stringify(model) !== JSON.stringify(drawn);
+			return {
+				arm: 'model',
+				recipe: `a generated calendar, and the widening that ${widening.name}`,
+				model,
+				promise: widened ? 'any' : 'accepted',
+			};
+		});
 }
 
 /** An input of the text arm. */

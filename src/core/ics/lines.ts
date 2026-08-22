@@ -17,6 +17,13 @@
  * reader that treats every double quote as a delimiter disagrees with the
  * library on a value that holds an inch mark.
  *
+ * A line ends at a line feed, and one carriage return in front of that line
+ * feed belongs to the ending. A carriage return that no line feed follows
+ * is not an ending: it is one more character of the line. The library holds
+ * the same rule. A reader that ended a line at such a carriage return would
+ * hand the check for a control character a line that no longer holds the
+ * character, and the character would reach a record.
+ *
  * One divergence stands: `logicalLines` removes an empty physical line
  * before it joins the folds, and the library removes an empty line only
  * after it. A fold that comes after an empty line therefore joins a line
@@ -30,8 +37,23 @@ export interface ContentParameter {
 	readonly name: string;
 	/** The text of the value. A quoted value loses its quotation marks. */
 	readonly text: string;
+	/**
+	 * The values that the text states, in order. A parameter that writes
+	 * each of its values in its own quotation marks states one value for
+	 * each pair of those marks, and the text between two of those pairs
+	 * belongs to no value. Every other parameter states one value, and that
+	 * value is the whole text.
+	 *
+	 * The reader divides the values before it decodes any of them. The
+	 * library decodes the whole text first and divides it after, so an
+	 * escape of a quotation mark becomes a divider there. The two readings
+	 * then disagree, and the gate refuses the text.
+	 */
+	readonly values: readonly string[];
 	/** True when quotation marks enclose the value in the text. */
 	readonly quoted: boolean;
+	/** Where the text of the value starts in the line. */
+	readonly at: number;
 }
 
 /** The name, the parameters and the value of one logical line. */
@@ -39,6 +61,8 @@ export interface ContentLine {
 	readonly name: string;
 	readonly parameters: readonly ContentParameter[];
 	readonly value: string;
+	/** Where the colon that starts the value stands in the line. */
+	readonly valueAt: number;
 }
 
 /** What a read of one logical line gives back. */
@@ -46,7 +70,7 @@ export type ContentLineReading =
 	| { readonly ok: true; readonly line: ContentLine }
 	| { readonly ok: false; readonly problem: string };
 
-const LINE_BREAK = /\r\n|\n|\r/;
+const LINE_BREAK = /\r\n|\n/;
 
 /**
  * The logical lines of the text. The function joins each folded piece to
@@ -95,7 +119,12 @@ export function readContentLine(line: string): ContentLineReading {
 	if (line.charAt(nameEnd) === ':') {
 		return {
 			ok: true,
-			line: { name, parameters: [], value: line.slice(nameEnd + 1) },
+			line: {
+				name,
+				parameters: [],
+				value: line.slice(nameEnd + 1),
+				valueAt: nameEnd,
+			},
 		};
 	}
 	const parameters: ContentParameter[] = [];
@@ -120,7 +149,12 @@ export function readContentLine(line: string): ContentLineReading {
 	}
 	return {
 		ok: true,
-		line: { name, parameters, value: line.slice(index + 1) },
+		line: {
+			name,
+			parameters,
+			value: line.slice(index + 1),
+			valueAt: index,
+		},
 	};
 }
 
@@ -172,10 +206,17 @@ function readParameter(
 			? line.length
 			: colon
 		: semicolon;
+	const text = line.slice(valueStart, end);
 	return {
 		ok: true,
 		value: {
-			value: { name, text: line.slice(valueStart, end), quoted: false },
+			value: {
+				name,
+				text,
+				values: [text],
+				quoted: false,
+				at: valueStart,
+			},
 			next: end,
 		},
 	};
@@ -200,12 +241,16 @@ function readQuotedParameter(
 	// own quotation marks. The library reads across the comma between two
 	// such values, so this reader does the same. Where the library reads
 	// only the first value, the two readings of the text differ and the
-	// gate reports the difference.
+	// gate reports the difference. The reader keeps each value on its own,
+	// because the text between two pairs of quotation marks divides the
+	// values and belongs to none of them.
+	const values: string[] = [line.slice(valueStart, close)];
 	while (line.charAt(close + 1) === ',' && line.charAt(close + 2) === '"') {
 		const next = line.indexOf('"', close + 3);
 		if (next < 0) {
 			return unclosed;
 		}
+		values.push(line.slice(close + 3, next));
 		close = next;
 	}
 	const text = line.slice(valueStart, close);
@@ -214,7 +259,7 @@ function readQuotedParameter(
 	return {
 		ok: true,
 		value: {
-			value: { name, text, quoted: true },
+			value: { name, text, values, quoted: true, at: valueStart },
 			next: stopsHere(semicolon, colon) ? close + 1 : semicolon,
 		},
 	};

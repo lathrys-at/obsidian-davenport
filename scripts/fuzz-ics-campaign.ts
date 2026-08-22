@@ -219,7 +219,7 @@ export function findingOf(engine: IcsEngine, input: FuzzInput): Finding | null {
 	}
 	return driveInput(engine, {
 		text,
-		promise: 'accepted',
+		promise: input.promise,
 		model: input.model,
 	});
 }

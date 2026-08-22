@@ -61,6 +61,26 @@ export type JCalComponent = readonly [
 	components: readonly JCalComponent[],
 ];
 
+/**
+ * How the library divides the text of the value of one property. The
+ * design set of the library holds these two characters for each property
+ * that carries more than one value or that carries a structured value.
+ */
+export interface JCalDividers {
+	/**
+	 * The character that stands between two values of the property, or
+	 * null where the property carries one value.
+	 */
+	readonly between: string | null;
+	/**
+	 * The character that stands between two parts of one value, or null
+	 * where a value of the property holds no parts.
+	 */
+	readonly inside: string | null;
+}
+
+const NO_DIVIDERS: JCalDividers = { between: null, inside: null };
+
 /** What a read of an untyped structure gives back. */
 export type JCalReading =
 	| { readonly ok: true; readonly component: JCalComponent }
@@ -101,6 +121,30 @@ export function jcalListLength(value: unknown): number | null {
 export function jcalValues(property: JCalProperty): readonly JCalValue[] {
 	const [, , , ...values] = property;
 	return values;
+}
+
+/**
+ * The dividers that the design set of the library states for the property
+ * with this name. A name that the design set does not hold carries one
+ * value and no parts. The library reads a name in lower case, and this
+ * function reads the name in the same way.
+ */
+export function jcalDividers(name: string): JCalDividers {
+	const properties = ICAL.design.icalendar.property as Readonly<
+		Record<string, unknown>
+	>;
+	const details = properties[name.toLowerCase()];
+	if (!isRecord(details)) {
+		return NO_DIVIDERS;
+	}
+	return {
+		between: oneCharacter(details['multiValue']),
+		inside: oneCharacter(details['structuredValue']),
+	};
+}
+
+function oneCharacter(value: unknown): string | null {
+	return typeof value === 'string' && value.length === 1 ? value : null;
 }
 
 /** One property, from its name, its parameters, its value type and its values. */

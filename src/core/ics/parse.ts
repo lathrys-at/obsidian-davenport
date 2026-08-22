@@ -34,11 +34,19 @@
  *   because the parser turns VALUE into the value type of the property.
  * - Each parameter keeps its bytes. The value that the parser reports for
  *   a parameter equals the text of that parameter after the changes that
- *   keep the meaning. The file parameters.ts states those changes.
+ *   keep the meaning. A parameter that carries a list keeps the count of
+ *   its values, and each value of the list takes the same comparison. The
+ *   file parameters.ts states those changes. The VALUE parameter takes the
+ *   same rule through a check of its own, because the parser holds that
+ *   parameter as the value type of the property and the serializer writes
+ *   the type back raw.
  * - The text of a value obeys the lexical rules of the value type that the
  *   parser gave to that value. These types are the boolean, the date, the
  *   date-time, the duration, the float, the integer, the period, the time,
  *   and the offset from universal time.
+ * - The values that the parser read are the values that the text states.
+ *   The file value-text.ts holds this comparison, and it covers the type
+ *   text and the types that the parser carries with no change.
  * - A number that the parser read equals the number that the text writes.
  *   The parser holds a number in a form that carries fewer digits than
  *   iCalendar permits, and a text past that width comes back changed.
@@ -50,6 +58,9 @@
  *   parser, so the gate gives it no rule.
  * - No line holds a control character. The format permits the horizontal
  *   tab only. The parser keeps every other control character in the value.
+ *   A line ends at a line feed, and a carriage return that no line feed
+ *   follows stays inside the line. The parser holds the same rule, so this
+ *   check reads every such carriage return and refuses it.
  *
  * The gate removes one byte-order mark from the head of the text before
  * the parse. A byte-order mark is common on a file that a calendar
@@ -111,10 +122,16 @@
 
 import ICAL from 'ical.js';
 import type { JCalComponent } from './jcal';
-import { jcalListLength, jcalValues, readJCalComponent } from './jcal';
+import {
+	jcalDividers,
+	jcalListLength,
+	jcalValues,
+	readJCalComponent,
+} from './jcal';
 import type { ContentLine, ContentParameter } from './lines';
 import { hasControlCharacter, logicalLines, readContentLine } from './lines';
-import { parameterTextProblem } from './parameters';
+import { parameterTextProblem, valueTypeTextProblem } from './parameters';
+import { valueContentProblem } from './value-text';
 import { valueTextProblem } from './values';
 
 /** Why the boundary refused the text. */
@@ -376,21 +393,35 @@ function takeProperty(
 			`the property ${content.name} carries ${String(written.length)} parameters, and the parser reports ${String(reported)}`,
 		);
 	}
-	for (const parameter of written) {
-		const problem = parameterTextProblem(
-			parameter,
-			property[1][parameter.name.toLowerCase()],
-		);
+	// Every parameter takes the same rule: the value that the parser read
+	// must keep the bytes that the text writes for it. VALUE takes that
+	// rule through a check of its own, because the parser keeps no
+	// parameter of that name and holds the value as the type of the
+	// property.
+	for (const parameter of content.parameters) {
+		const problem =
+			parameter.name.toUpperCase() === 'VALUE'
+				? valueTypeTextProblem(parameter, property[2])
+				: parameterTextProblem(
+						parameter,
+						property[1][parameter.name.toLowerCase()],
+					);
 		if (problem !== null) {
 			return valueFailure(
 				`the property ${content.name} holds ${problem}`,
 			);
 		}
 	}
-	const problem = valueTextProblem(
+	const values = jcalValues(property);
+	const lexical = valueTextProblem(property[2], content.value, values);
+	if (lexical !== null) {
+		return valueFailure(`the property ${content.name} ${lexical}`);
+	}
+	const problem = valueContentProblem(
 		property[2],
 		content.value,
-		jcalValues(property),
+		values,
+		jcalDividers(property[0]),
 	);
 	return problem === null
 		? null
