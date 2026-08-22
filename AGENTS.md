@@ -60,7 +60,7 @@ npm run build
       ui/               # Views, modals, settings tab (arrives with features)
     ```
 - **Do not commit build artifacts**: Never commit `node_modules/`, `main.js`, or other generated files to version control.
-- Keep the plugin small. Do not add large dependencies. Prefer browser-compatible packages.
+- Prefer browser-compatible packages.
 - The generated output should go to the plugin root or to `dist/`. Your build setup decides which of the two locations applies. The release artifacts must be at the top level of the plugin folder in the vault (`main.js`, `manifest.json`, `styles.css`).
 
 ## Manifest rules (`manifest.json`)
