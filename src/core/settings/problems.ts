@@ -153,9 +153,9 @@ const SECTION_LABELS: Readonly<Record<SettingsSection, string>> = {
 export function describeSettingsProblem(problem: SettingsProblem): string {
 	switch (problem.kind) {
 		case 'not-a-map':
-			return 'The data file holds settings of another shape. The plugin starts with empty settings.';
+			return 'The data file holds settings of another shape. The plugin starts with empty settings. Davenport writes the settings again and does not keep that value.';
 		case 'section-not-a-list':
-			return `The settings hold the ${SECTION_LABELS[problem.section]} as a value that is not a list. The plugin reads no entry there.`;
+			return `The settings hold the ${SECTION_LABELS[problem.section]} as a value that is not a list. The plugin reads no entry there. Davenport writes this section again and does not keep that value.`;
 		case 'entry-not-a-map':
 			return `${refusal(problem.section, problem.index, null)} That entry is not a set of fields.`;
 		case 'entry-field':

@@ -116,7 +116,7 @@ describe('the name of a fault, for the log', () => {
 describe('the words of a problem of the settings', () => {
 	it('state that the plugin starts again where the settings are of another shape', () => {
 		expect(describeSettingsProblem({ kind: 'not-a-map' })).toBe(
-			'The data file holds settings of another shape. The plugin starts with empty settings.',
+			'The data file holds settings of another shape. The plugin starts with empty settings. Davenport writes the settings again and does not keep that value.',
 		);
 	});
 
@@ -126,8 +126,8 @@ describe('the words of a problem of the settings', () => {
 			{ kind: 'section-not-a-list', section: 'calendars' },
 		];
 		expect(problems.map(describeSettingsProblem)).toEqual([
-			'The settings hold the accounts as a value that is not a list. The plugin reads no entry there.',
-			'The settings hold the calendars as a value that is not a list. The plugin reads no entry there.',
+			'The settings hold the accounts as a value that is not a list. The plugin reads no entry there. Davenport writes this section again and does not keep that value.',
+			'The settings hold the calendars as a value that is not a list. The plugin reads no entry there. Davenport writes this section again and does not keep that value.',
 		]);
 	});
 
