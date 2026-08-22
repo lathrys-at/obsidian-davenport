@@ -10,6 +10,11 @@
  * That step is not part of the plugin yet. The reader stands here now, so
  * that a registry which reaches the data file from another device survives
  * a read and a write on this device.
+ *
+ * Two rules stand beside the fields. A calendar of a feed takes the mode
+ * `remote-owned` alone, because Davenport writes to no feed. A calendar of
+ * a CalDAV server names the account that reaches that server; a calendar
+ * of a feed names no account.
  */
 
 import type {
@@ -65,6 +70,12 @@ export function readCalendar(entry: UnknownMap): CalendarReading {
 	const accountId = optionalText(entry, 'accountId', faults);
 	const defaultTimezone = optionalText(entry, 'defaultTimezone', faults);
 	const color = optionalText(entry, 'color', faults);
+	if (source === 'feed' && mode !== null && mode !== 'remote-owned') {
+		faults.push({ kind: 'feed-mode', field: 'mode', value: mode });
+	}
+	if (source === 'caldav' && accountId === undefined) {
+		faults.push({ kind: 'missing', field: 'accountId' });
+	}
 	if (
 		faults.length > 0 ||
 		name === null ||

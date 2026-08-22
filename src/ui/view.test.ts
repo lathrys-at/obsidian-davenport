@@ -9,7 +9,7 @@
 import { describe, expect, it } from 'vitest';
 import type { AccountConfig } from '../core/model/settings';
 import { DATA_FILE_WARNING, SECRET_STORAGE_NOTE } from './copy';
-import { accountsView } from './view';
+import { accountsView, outcomeView, passwordNote, rowNote } from './view';
 
 const ACCOUNT: AccountConfig = {
 	id: 'caldav-example-com',
@@ -60,6 +60,73 @@ describe('the list of accounts', () => {
 		const view = accountsView('secret-storage', [], []);
 		expect(view.rows).toEqual([]);
 		expect(view.empty).toContain('Add account');
+	});
+});
+
+describe('the words under the name of one account', () => {
+	it('state the address of the server', () => {
+		expect(rowNote('https://caldav.example.com/', true)).toBe(
+			'https://caldav.example.com/',
+		);
+	});
+
+	it('state the way to the field where the account holds no password', () => {
+		const note = rowNote('https://caldav.example.com/', false);
+		expect(note).toContain('https://caldav.example.com/');
+		expect(note).toContain('This account has no app password');
+		expect(note).toContain('"Edit"');
+	});
+});
+
+describe('the words beside the field of the password', () => {
+	it('state the storage where the window takes a new account', () => {
+		expect(passwordNote('secret-storage', false)).toBe(
+			'Davenport keeps this password in the secret storage of Obsidian.',
+		);
+	});
+
+	it('state the empty field first where the account stands', () => {
+		const note = passwordNote('data-json', true);
+		expect(note.startsWith('Leave this field empty')).toBe(true);
+		expect(note).toContain('data file');
+	});
+});
+
+describe('what the screen does with one outcome', () => {
+	it('closes the window and draws the section again after a write', () => {
+		expect(outcomeView({ ok: true, account: ACCOUNT })).toEqual({
+			done: true,
+			messages: [],
+			notice: null,
+			redraw: true,
+		});
+	});
+
+	it('states each fault in the window that the user works in', () => {
+		const view = outcomeView({
+			ok: false,
+			failure: null,
+			faults: [
+				{ kind: 'empty', field: 'username' },
+				{ kind: 'empty', field: 'password' },
+			],
+		});
+		expect(view.done).toBe(false);
+		expect(view.redraw).toBe(false);
+		expect(view.notice).toBeNull();
+		expect(view.messages).toHaveLength(2);
+		expect(view.messages[0]).toContain('"username"');
+	});
+
+	it('states a failure of a store in the window and in a notice', () => {
+		const view = outcomeView({
+			ok: false,
+			faults: [],
+			failure: 'the file is read-only',
+		});
+		expect(view.messages).toEqual(['the file is read-only']);
+		expect(view.notice).toBe('the file is read-only');
+		expect(view.redraw).toBe(false);
 	});
 });
 

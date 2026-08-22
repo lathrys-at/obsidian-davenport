@@ -80,6 +80,51 @@ describe('SC-2 the credential material around the settings', () => {
 		);
 	});
 
+	it('SC-2: a password that a user types into the field of the server address reaches no log', async () => {
+		const data = new FakePluginData();
+		await runSimulation(
+			{ name: 'password in the wrong field', pluginData: data },
+			async (run) => {
+				run.registerSecret({ label: 'app password', value: PASSWORD });
+				const accounts = service(
+					{ secretStorage: new FakeSecretStorage() },
+					data,
+					run.logger,
+				);
+				await accounts.load();
+				const outcome = await accounts.add(
+					{ serverUrl: PASSWORD, username: 'ren' },
+					PASSWORD,
+				);
+				expect(outcome.ok).toBe(false);
+			},
+		);
+	});
+
+	it('SC-2: a password inside a server address reaches no settings and no log', async () => {
+		const data = new FakePluginData();
+		await runSimulation(
+			{ name: 'password inside the address', pluginData: data },
+			async (run) => {
+				run.registerSecret({ label: 'app password', value: PASSWORD });
+				const accounts = service(
+					{ secretStorage: new FakeSecretStorage() },
+					data,
+					run.logger,
+				);
+				await accounts.load();
+				const outcome = await accounts.add(
+					{
+						serverUrl: `https://ren:${PASSWORD}@caldav.example.com/`,
+						username: 'ren',
+					},
+					PASSWORD,
+				);
+				expect(outcome.ok).toBe(false);
+			},
+		);
+	});
+
 	it('SC-2: the settings hold no password where the data file holds the credentials', async () => {
 		const data = new FakePluginData();
 		const entries: string[] = [];

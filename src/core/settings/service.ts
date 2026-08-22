@@ -8,9 +8,15 @@
  * and it states what happened.
  *
  * The order is the same for every operation: the credential first, and the
- * settings after it. A step that fails stops the operation. An add that
- * fails at the second step removes the credential that the first step
- * wrote, so no credential stays behind with no account.
+ * settings after it. A step that fails stops the operation, and the
+ * operation then puts the credential back as it stood. An add removes the
+ * credential that it wrote. A change writes the credential that stood
+ * there before it. A removal writes the credential back. The user reads a
+ * failure and the two stores hold what they held.
+ *
+ * One step of that repair can fail too. The operation then states what
+ * stands in the two stores now, in the words that the user reads, and the
+ * log holds the same fact.
  *
  * The credential passes through this module and stops here. It goes into
  * the secret store, and it goes nowhere else. It reaches no settings
@@ -31,10 +37,11 @@ import {
 	proposeAccountId,
 	removeAccount,
 	replaceAccount,
+	trimDraft,
 } from './accounts';
 import { encodeCredential } from './credential';
 import type { FieldFault, SettingsProblem } from './problems';
-import { describeFieldFault } from './problems';
+import { nameFieldFault } from './problems';
 import { DEFAULT_SETTINGS, type SettingsReading } from './read';
 
 /** What one account operation gives back to the settings screen. */
@@ -66,10 +73,6 @@ export class AccountService {
 		this.parts = parts;
 	}
 
-	get settings(): SyncedSettings {
-		return this.reading.settings;
-	}
-
 	get accounts(): readonly AccountConfig[] {
 		return this.reading.settings.accounts;
 	}
@@ -89,20 +92,39 @@ export class AccountService {
 		this.reading = await this.parts.settings.read();
 	}
 
-	/** True where the secret store holds a credential for the account. */
-	async hasCredential(id: string): Promise<boolean> {
-		const account = findAccount(this.reading.settings, id);
-		if (account === null) {
-			return false;
+	/**
+	 * The ids of the accounts that hold a credential in the secret store.
+	 * The call reads the store one time for each account. Where a read
+	 * fails, the id stays out of the set and the log holds the failure.
+	 */
+	async accountsWithCredential(): Promise<ReadonlySet<string>> {
+		const held = new Set<string>();
+		for (const account of this.accounts) {
+			try {
+				const value = await this.parts.secrets.get(
+					account.credentialRef,
+				);
+				if (value !== null) {
+					held.add(account.id);
+				}
+			} catch (error) {
+				this.record(
+					'read app password',
+					account.id,
+					'failed',
+					words(error, NO_READ_REASON),
+				);
+			}
 		}
-		return (await this.parts.secrets.get(account.credentialRef)) !== null;
+		return held;
 	}
 
 	/**
 	 * Adds an account that signs in with an app password. The plugin
 	 * builds the id and the credential reference of the account.
 	 */
-	async add(draft: AccountDraft, password: string): Promise<AccountOutcome> {
+	async add(input: AccountDraft, password: string): Promise<AccountOutcome> {
+		const draft = trimDraft(input);
 		const taken = this.accounts.map((account) => account.id);
 		const id = proposeAccountId(draft.serverUrl, taken);
 		const account: AccountConfig = {
@@ -125,13 +147,19 @@ export class AccountService {
 				encodeCredential({ type: 'app-password', password }),
 			);
 		} catch (error) {
-			return this.fail('add account', id, error);
+			return this.fail('add account', id, error, NO_WRITE_REASON);
 		}
 		try {
 			await this.write(addAccount(this.reading.settings, account));
 		} catch (error) {
-			await this.discard(account.credentialRef);
-			return this.fail('add account', id, error);
+			const back = await this.restore(id, account.credentialRef, null);
+			return this.fail(
+				'add account',
+				id,
+				error,
+				NO_SETTINGS_REASON,
+				back ? undefined : PASSWORD_STANDS,
+			);
 		}
 		this.record('add account', id, 'success');
 		return { ok: true, account };
@@ -143,13 +171,14 @@ export class AccountService {
 	 */
 	async change(
 		id: string,
-		draft: AccountDraft,
+		input: AccountDraft,
 		password: string,
 	): Promise<AccountOutcome> {
 		const held = findAccount(this.reading.settings, id);
 		if (held === null) {
-			return this.fail('change account', id, new Error(NO_ACCOUNT));
+			return this.missing('change account', id);
 		}
+		const draft = trimDraft(input);
 		const account: AccountConfig = {
 			...held,
 			serverUrl: draft.serverUrl,
@@ -162,20 +191,41 @@ export class AccountService {
 		if (faults.length > 0) {
 			return this.refuse('change account', id, faults);
 		}
+		let previous: string | null = null;
 		if (password !== '') {
 			try {
+				previous = await this.parts.secrets.get(account.credentialRef);
 				await this.parts.secrets.set(
 					account.credentialRef,
 					encodeCredential({ type: 'app-password', password }),
 				);
 			} catch (error) {
-				return this.fail('change account', id, error);
+				return this.fail('change account', id, error, NO_WRITE_REASON);
 			}
 		}
 		try {
 			await this.write(replaceAccount(this.reading.settings, account));
 		} catch (error) {
-			return this.fail('change account', id, error);
+			if (password === '') {
+				return this.fail(
+					'change account',
+					id,
+					error,
+					NO_SETTINGS_REASON,
+				);
+			}
+			const back = await this.restore(
+				id,
+				account.credentialRef,
+				previous,
+			);
+			return this.fail(
+				'change account',
+				id,
+				error,
+				NO_SETTINGS_REASON,
+				back ? undefined : NEW_PASSWORD_STANDS,
+			);
 		}
 		this.record('change account', id, 'success');
 		return { ok: true, account };
@@ -185,39 +235,86 @@ export class AccountService {
 	async remove(id: string): Promise<AccountOutcome> {
 		const account = findAccount(this.reading.settings, id);
 		if (account === null) {
-			return this.fail('remove account', id, new Error(NO_ACCOUNT));
+			return this.missing('remove account', id);
 		}
+		let previous: string | null = null;
 		try {
+			previous = await this.parts.secrets.get(account.credentialRef);
 			await this.parts.secrets.remove(account.credentialRef);
 		} catch (error) {
-			return this.fail('remove account', id, error);
+			return this.fail('remove account', id, error, NO_REMOVAL_REASON);
 		}
 		try {
 			await this.write(removeAccount(this.reading.settings, id));
 		} catch (error) {
-			return this.fail('remove account', id, error);
+			const back = await this.restore(
+				id,
+				account.credentialRef,
+				previous,
+			);
+			return this.fail(
+				'remove account',
+				id,
+				error,
+				NO_SETTINGS_REASON,
+				back ? undefined : PASSWORD_GONE,
+			);
 		}
 		this.record('remove account', id, 'success');
 		return { ok: true, account };
 	}
 
-	/** Writes the settings and keeps what the write left. */
+	/**
+	 * Writes the settings, and then reads the settings back. The read
+	 * gives the problems of the file as the file stands after the write,
+	 * so the screen states no problem of an entry that the write took
+	 * away. A read that fails leaves the settings of the write in place
+	 * with the problems of the read before it.
+	 */
 	private async write(settings: SyncedSettings): Promise<void> {
 		await this.parts.settings.write(settings);
-		this.reading = { settings, problems: this.reading.problems };
+		try {
+			this.reading = await this.parts.settings.read();
+		} catch {
+			this.reading = { settings, problems: this.reading.problems };
+		}
 	}
 
 	/**
-	 * Removes a credential that an operation wrote and then could not
-	 * use. A failure of this step reaches the log and stops nothing: the
-	 * operation already failed, and the caller reads that failure.
+	 * Puts a credential back as it stood before the operation wrote it.
+	 * Gives false back where that step fails, and the log then holds the
+	 * failure. The caller states the condition of the stores to the user.
 	 */
-	private async discard(ref: string): Promise<void> {
+	private async restore(
+		id: string,
+		ref: string,
+		previous: string | null,
+	): Promise<boolean> {
 		try {
-			await this.parts.secrets.remove(ref);
+			if (previous === null) {
+				await this.parts.secrets.remove(ref);
+			} else {
+				await this.parts.secrets.set(ref, previous);
+			}
+			return true;
 		} catch (error) {
-			this.record('remove credential', ref, 'failed', words(error));
+			this.record(
+				'restore app password',
+				id,
+				'failed',
+				words(error, NO_WRITE_REASON),
+			);
+			return false;
 		}
+	}
+
+	/**
+	 * States that the settings hold no account of that id. The log takes
+	 * the name of the field alone, as it does for every other fault.
+	 */
+	private missing(action: string, id: string): AccountOutcome {
+		this.record(action, id, 'failed', 'id no-such-account');
+		return { ok: false, faults: [], failure: NO_ACCOUNT };
 	}
 
 	private refuse(
@@ -229,13 +326,20 @@ export class AccountService {
 			action,
 			id,
 			'refused',
-			faults.map(describeFieldFault).join(' '),
+			faults.map(nameFieldFault).join(' '),
 		);
 		return { ok: false, faults, failure: null };
 	}
 
-	private fail(action: string, id: string, error: unknown): AccountOutcome {
-		const failure = words(error);
+	private fail(
+		action: string,
+		id: string,
+		error: unknown,
+		fallback: string,
+		note?: string,
+	): AccountOutcome {
+		const reason = words(error, fallback);
+		const failure = note === undefined ? reason : `${reason} ${note}`;
 		this.record(action, id, 'failed', failure);
 		return { ok: false, faults: [], failure };
 	}
@@ -256,7 +360,25 @@ export class AccountService {
 	}
 }
 
-const NO_ACCOUNT = 'The settings hold no account with that id.';
+const NO_ACCOUNT = 'Davenport holds no account of that name.';
+
+/** The words for a failure of a store that states no reason of its own. */
+const NO_SETTINGS_REASON =
+	'Davenport could not save the settings, and the reason is not known.';
+const NO_WRITE_REASON =
+	'Davenport could not save the app password, and the reason is not known.';
+const NO_REMOVAL_REASON =
+	'Davenport could not remove the app password, and the reason is not known.';
+const NO_READ_REASON =
+	'Davenport could not read the app password, and the reason is not known.';
+
+/** The words that state what the stores hold after a repair that failed. */
+const PASSWORD_STANDS =
+	'Davenport saved the app password and could not remove it again. That password stands in the storage, and no account holds it.';
+const NEW_PASSWORD_STANDS =
+	'Davenport could not put the old app password back. This account now holds the new app password.';
+const PASSWORD_GONE =
+	'Davenport removed the app password of this account and could not put it back. Enter the app password again.';
 
 /** The faults of the password that the user gave. */
 function passwordFaults(password: string): readonly FieldFault[] {
@@ -264,19 +386,19 @@ function passwordFaults(password: string): readonly FieldFault[] {
 }
 
 /**
- * The words of a failure. The value that a store throws can refuse to
- * become text, so the reading of that value stands inside a guard.
+ * The words of a failure. A store can state a reason, and the words of
+ * that reason go to the user. Where the store states no reason, the words
+ * of the caller go to the user instead. The value that a store throws can
+ * refuse to become text, so the reading of that value stands in a guard.
  */
-function words(error: unknown): string {
+function words(error: unknown, fallback: string): string {
 	try {
 		const text =
 			error instanceof Error && typeof error.message === 'string'
 				? error.message
 				: String(error);
-		return text.trim() === '' ? NO_REASON : text;
+		return text.trim() === '' ? fallback : text;
 	} catch {
-		return NO_REASON;
+		return fallback;
 	}
 }
-
-const NO_REASON = 'The store refused the write and stated no reason.';

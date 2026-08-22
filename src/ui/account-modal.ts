@@ -7,9 +7,12 @@
  * fault and stays open, so the user corrects the value in place.
  *
  * The field that takes the password uses the secret component of Obsidian
- * where the version of Obsidian has that component. On an older version
- * the field is a text field that shows dots in the place of the
- * characters. The window shows no password that the plugin already holds.
+ * where two conditions hold: the version of Obsidian has that component,
+ * and the secret storage of Obsidian holds the passwords. A component
+ * that states "secret" beside a field would otherwise stand over a data
+ * file that holds the password as plain text. In every other case the
+ * field is a text field that shows dots in the place of the characters.
+ * The window shows no password that the plugin already holds.
  */
 
 import {
@@ -19,8 +22,9 @@ import {
 	Setting,
 	requireApiVersion,
 } from 'obsidian';
+import type { SecretTier } from '../core/ports/secret-store';
 import type { AccountOutcome } from '../core/settings/service';
-import { describeFieldFault } from '../core/settings/problems';
+import { outcomeView } from './view';
 import {
 	APP_PASSWORD,
 	CANCEL,
@@ -40,6 +44,8 @@ export interface AccountFormValues {
 
 export interface AccountFormParts {
 	readonly title: string;
+	/** The storage that holds the passwords. */
+	readonly tier: SecretTier;
 	/** The values that the fields hold when the window opens. */
 	readonly values: AccountFormValues;
 	/** The words that stand beside the field of the password. */
@@ -117,10 +123,14 @@ export class AccountModal extends Modal {
 	/**
 	 * Adds the field that takes the password. The secret component of
 	 * Obsidian arrives in version 1.11.4, and the version test asks for
-	 * that version.
+	 * that version. The component stands over the secret storage, so the
+	 * field takes it only while that storage holds the passwords.
 	 */
 	private password(setting: Setting): void {
-		if (requireApiVersion('1.11.4')) {
+		if (
+			requireApiVersion('1.11.4') &&
+			this.parts.tier === 'secret-storage'
+		) {
 			const secret = new SecretComponent(this.app, setting.controlEl);
 			secret.setValue(this.values.password).onChange((value) => {
 				this.values.password = value;
@@ -136,15 +146,12 @@ export class AccountModal extends Modal {
 	}
 
 	private async submit(): Promise<void> {
-		const outcome = await this.parts.onSubmit({ ...this.values });
-		if (outcome.ok) {
+		const view = outcomeView(await this.parts.onSubmit({ ...this.values }));
+		if (view.done) {
 			this.close();
 			return;
 		}
-		this.messages = [
-			...outcome.faults.map(describeFieldFault),
-			...(outcome.failure === null ? [] : [outcome.failure]),
-		];
+		this.messages = view.messages;
 		this.showMessages();
 	}
 

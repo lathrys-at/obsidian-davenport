@@ -9,7 +9,11 @@
 
 import { describe, expect, it } from 'vitest';
 import type { FieldFault, SettingsProblem } from './problems';
-import { describeFieldFault, describeSettingsProblem } from './problems';
+import {
+	describeFieldFault,
+	describeSettingsProblem,
+	nameFieldFault,
+} from './problems';
 
 const FAULTS: readonly FieldFault[] = [
 	{ kind: 'missing', field: 'serverUrl' },
@@ -29,6 +33,8 @@ const FAULTS: readonly FieldFault[] = [
 	},
 	{ kind: 'alphabet', field: 'id', value: 'CalDAV' },
 	{ kind: 'repeated', field: 'name', value: 'Work' },
+	{ kind: 'credentials-in-address', field: 'serverUrl' },
+	{ kind: 'feed-mode', field: 'mode', value: 'bidirectional' },
 ];
 
 describe('the words of a fault of a field', () => {
@@ -42,7 +48,19 @@ describe('the words of a fault of a field', () => {
 			'The field "server URL" holds "ftp://example.com/". Write a web address that starts with https:// or http://.',
 			'The field "account id" holds "CalDAV". That field takes lowercase letters, digits, and dashes.',
 			'The field "name" holds "Work". Another entry holds that value. Give each entry a value of its own.',
+			'The field "server URL" holds a username or a password before the name of the server. Write the address of the server alone. Give the username in the field "username". Give the app password in the field "app password".',
+			'The field "ownership mode" holds "bidirectional". A calendar of a feed takes the mode "remote-owned" alone, because Davenport writes to no feed.',
 		]);
+	});
+
+	it('quote no part of an address that carries a credential', () => {
+		const address = 'https://ren:planted-app-password-8f3c1d@dav.test/';
+		const message = describeFieldFault({
+			kind: 'credentials-in-address',
+			field: 'serverUrl',
+		});
+		expect(message).not.toContain('planted-app-password-8f3c1d');
+		expect(message).not.toContain(address);
 	});
 
 	it('name each field of an account and of a calendar', () => {
@@ -64,6 +82,34 @@ describe('the words of a fault of a field', () => {
 			'The entry has no field "default timezone". Add that field.',
 			'The entry has no field "color". Add that field.',
 		]);
+	});
+});
+
+describe('the name of a fault, for the log', () => {
+	it('holds the field and the kind, and holds no value', () => {
+		expect(FAULTS.map(nameFieldFault)).toEqual([
+			'serverUrl missing',
+			'username not-text',
+			'password empty',
+			'components not-a-list',
+			'mode unknown-value',
+			'serverUrl not-a-web-address',
+			'id alphabet',
+			'name repeated',
+			'serverUrl credentials-in-address',
+			'mode feed-mode',
+		]);
+	});
+
+	it('states no value that a user typed', () => {
+		const password = 'planted-app-password-8f3c1d';
+		expect(
+			nameFieldFault({
+				kind: 'not-a-web-address',
+				field: 'serverUrl',
+				value: password,
+			}),
+		).toBe('serverUrl not-a-web-address');
 	});
 });
 

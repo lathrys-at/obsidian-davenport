@@ -10,6 +10,7 @@ import { describe, expect, it } from 'vitest';
 import type { AccountConfig, SyncedSettings } from '../model/settings';
 import {
 	addAccount,
+	addressFault,
 	checkAccount,
 	findAccount,
 	isWebAddress,
@@ -17,6 +18,7 @@ import {
 	proposeAccountId,
 	removeAccount,
 	replaceAccount,
+	trimDraft,
 } from './accounts';
 
 const ACCOUNT: AccountConfig = {
@@ -120,6 +122,43 @@ describe('the check of an account', () => {
 		expect(isWebAddress('ftp://caldav.example.com/')).toBe(false);
 		expect(isWebAddress('javascript:alert(1)')).toBe(false);
 		expect(isWebAddress('/dav/calendars/')).toBe(false);
+	});
+
+	it('refuses an address that carries a username or a password', () => {
+		const password = 'planted-app-password-8f3c1d';
+		const address = `https://ren:${password}@caldav.example.com/`;
+		expect(isWebAddress(address)).toBe(false);
+		const fault = addressFault(address, 'serverUrl');
+		expect(fault).toEqual({
+			kind: 'credentials-in-address',
+			field: 'serverUrl',
+		});
+		expect(JSON.stringify(fault)).not.toContain(password);
+		expect(isWebAddress('https://ren@caldav.example.com/')).toBe(false);
+		expect(checkAccount({ ...ACCOUNT, serverUrl: address }, [])).toEqual([
+			{ kind: 'credentials-in-address', field: 'serverUrl' },
+		]);
+	});
+
+	it('states no fault for an address that names a port or a path', () => {
+		expect(isWebAddress('https://caldav.example.com:8443/dav/')).toBe(true);
+		expect(
+			addressFault('https://caldav.example.com/dav/', 'serverUrl'),
+		).toBeNull();
+	});
+});
+
+describe('the values that the user gives', () => {
+	it('lose the white space at their two ends', () => {
+		expect(
+			trimDraft({
+				serverUrl: '  https://caldav.example.com/  ',
+				username: '\tren\n',
+			}),
+		).toEqual({
+			serverUrl: 'https://caldav.example.com/',
+			username: 'ren',
+		});
 	});
 });
 

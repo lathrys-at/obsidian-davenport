@@ -17,16 +17,27 @@
  * The two keys never mix. A write of the settings touches no credential,
  * and a write of a credential touches no setting.
  *
- * A write keeps every key that this module does not own. Two conditions
- * make that rule necessary. First, the file travels between devices when
- * the setup of the user carries it, and a later version of the plugin can
- * write a key that this version does not know. Second, the read of the
- * settings passes over a field that it does not know, so a write that
- * dropped such a field would take it away from the device that wrote it.
+ * A write keeps every key that this module does not own. It keeps such a
+ * key at the top level of the file, inside the settings, and inside each
+ * entry that the settings hold. Two conditions make that rule necessary.
+ * First, the file travels between devices when the setup of the user
+ * carries it, and a later version of the plugin can write a key that this
+ * version does not know. Second, the read of the settings passes over a
+ * field that it does not know, so a write that dropped such a field would
+ * take it away from the device that wrote it. A write finds the entry of
+ * the file that stands for an entry of the settings by the id of an
+ * account and by the name of a calendar.
+ *
+ * One call of this module runs at a time. Each method reads the whole
+ * file, changes one part of it, and writes the whole file back. Two calls
+ * that ran together would each write what the other one did not see, and
+ * one of the two changes would go. The queue below therefore holds each
+ * call until the call before it ends.
  */
 
 import type { SettingsStore } from '../core/ports/settings-store';
 import type { SyncedSettings } from '../core/model/settings';
+import type { UnknownMap } from '../core/settings/fields';
 import { isMap } from '../core/settings/fields';
 import type { SettingsReading } from '../core/settings/read';
 import { readSettings, settingsDocument } from '../core/settings/read';
@@ -49,24 +60,41 @@ export const SECRET_FALLBACK_KEY = 'secretFallback';
 
 export class PluginDataStore implements SettingsStore {
 	private readonly host: PluginDataHost;
+	/** The call that runs now. The next call waits for it to end. */
+	private last: Promise<unknown> = Promise.resolve();
 
 	constructor(host: PluginDataHost) {
 		this.host = host;
 	}
 
-	async read(): Promise<SettingsReading> {
-		const document = await this.document();
-		return readSettings(document[SETTINGS_KEY]);
+	read(): Promise<SettingsReading> {
+		return this.queue(async () => {
+			const document = await this.document();
+			return readSettings(document[SETTINGS_KEY]);
+		});
 	}
 
-	async write(settings: SyncedSettings): Promise<void> {
-		const document = await this.document();
-		const held = document[SETTINGS_KEY];
-		document[SETTINGS_KEY] = {
-			...(isMap(held) ? held : {}),
-			...settingsDocument(settings),
-		};
-		await this.host.saveData(document);
+	write(settings: SyncedSettings): Promise<void> {
+		return this.queue(async () => {
+			const document = await this.document();
+			const held = document[SETTINGS_KEY];
+			const written = settingsDocument(settings);
+			const heldSettings = isMap(held) ? held : {};
+			document[SETTINGS_KEY] = {
+				...heldSettings,
+				accounts: mergeEntries(
+					written.accounts,
+					heldSettings.accounts,
+					'id',
+				),
+				calendars: mergeEntries(
+					written.calendars,
+					heldSettings.calendars,
+					'name',
+				),
+			};
+			await this.host.saveData(document);
+		});
 	}
 
 	/**
@@ -74,18 +102,22 @@ export class PluginDataStore implements SettingsStore {
 	 * holds none. The value comes back as the file holds it. The caller
 	 * decides what an empty value states.
 	 */
-	async readSecret(ref: string): Promise<string | null> {
-		const fallback = this.fallbackOf(await this.document());
-		const value = fallback[ref];
-		return typeof value === 'string' ? value : null;
+	readSecret(ref: string): Promise<string | null> {
+		return this.queue(async () => {
+			const fallback = this.fallbackOf(await this.document());
+			const value = fallback[ref];
+			return typeof value === 'string' ? value : null;
+		});
 	}
 
-	async writeSecret(ref: string, value: string): Promise<void> {
-		const document = await this.document();
-		const fallback = this.fallbackOf(document);
-		fallback[ref] = value;
-		document[SECRET_FALLBACK_KEY] = fallback;
-		await this.host.saveData(document);
+	writeSecret(ref: string, value: string): Promise<void> {
+		return this.queue(async () => {
+			const document = await this.document();
+			const fallback = this.fallbackOf(document);
+			fallback[ref] = value;
+			document[SECRET_FALLBACK_KEY] = fallback;
+			await this.host.saveData(document);
+		});
 	}
 
 	/**
@@ -93,19 +125,37 @@ export class PluginDataStore implements SettingsStore {
 	 * empty set of credentials: where the last credential goes, the key
 	 * of the fallback goes with it.
 	 */
-	async removeSecret(ref: string): Promise<void> {
-		const document = await this.document();
-		const fallback = this.fallbackOf(document);
-		if (!(ref in fallback)) {
-			return;
-		}
-		const kept = without(fallback, ref);
-		if (Object.keys(kept).length === 0) {
-			await this.host.saveData(without(document, SECRET_FALLBACK_KEY));
-			return;
-		}
-		document[SECRET_FALLBACK_KEY] = kept;
-		await this.host.saveData(document);
+	removeSecret(ref: string): Promise<void> {
+		return this.queue(async () => {
+			const document = await this.document();
+			const fallback = this.fallbackOf(document);
+			if (!(ref in fallback)) {
+				return;
+			}
+			const kept = without(fallback, ref);
+			if (Object.keys(kept).length === 0) {
+				await this.host.saveData(
+					without(document, SECRET_FALLBACK_KEY),
+				);
+				return;
+			}
+			document[SECRET_FALLBACK_KEY] = kept;
+			await this.host.saveData(document);
+		});
+	}
+
+	/**
+	 * Runs one job after the job before it ends. A job that fails stops
+	 * no later job: the queue holds the order of the jobs, and it carries
+	 * no result from one job to the next.
+	 */
+	private queue<T>(job: () => Promise<T>): Promise<T> {
+		const next = this.last.then(job, job);
+		this.last = next.then(
+			() => undefined,
+			() => undefined,
+		);
+		return next;
 	}
 
 	/** The whole data file, as a set of named values. */
@@ -120,6 +170,30 @@ export class PluginDataStore implements SettingsStore {
 		const held = document[SECRET_FALLBACK_KEY];
 		return isMap(held) ? { ...held } : {};
 	}
+}
+
+/**
+ * The entries of one section, each with the fields that the file holds
+ * for that entry and the plugin does not know. The write states each
+ * field that it knows, so the fields of the file stand under those fields
+ * and never over them. The key names the field that finds the entry of
+ * the file: the id of an account, and the name of a calendar.
+ */
+function mergeEntries(
+	written: readonly UnknownMap[],
+	held: unknown,
+	key: string,
+): readonly UnknownMap[] {
+	if (!Array.isArray(held)) {
+		return written;
+	}
+	const heldEntries: readonly unknown[] = held;
+	return written.map((entry) => {
+		const match = heldEntries.find(
+			(candidate) => isMap(candidate) && candidate[key] === entry[key],
+		);
+		return isMap(match) ? { ...match, ...entry } : entry;
+	});
 }
 
 /** The same set of values, without the value of one key. */

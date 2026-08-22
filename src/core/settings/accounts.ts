@@ -11,8 +11,11 @@
  * builds the id of each secret from the id of the account. An id outside
  * that alphabet would therefore make a secret that the storage refuses.
  *
- * The plugin builds the id from the host name of the server address. A
- * person who reads the data file then sees which server each entry is for.
+ * The plugin builds the id from the host name of the server address when
+ * it makes the account. The id then stays as it is: the id names the
+ * credential of the account in the secret store, so a change of the id
+ * would leave that credential with no name. A user who moves an account
+ * to another server therefore keeps an id that names the first server.
  * The username stays out of the id, because the secret storage is one set
  * of names for the whole app, and every plugin can read the names in it.
  */
@@ -36,6 +39,18 @@ const ID_LIMIT = 48;
 export interface AccountDraft {
 	readonly serverUrl: string;
 	readonly username: string;
+}
+
+/**
+ * The draft without the white space at the two ends of each value. A user
+ * who copies an address or a username takes a space with it, and a space
+ * at an end changes no value that a server reads.
+ */
+export function trimDraft(draft: AccountDraft): AccountDraft {
+	return {
+		serverUrl: draft.serverUrl.trim(),
+		username: draft.username.trim(),
+	};
 }
 
 /** What the reader made of one entry of the accounts. */
@@ -93,12 +108,11 @@ export function checkAccount(
 	}
 	if (account.serverUrl === '') {
 		faults.push({ kind: 'empty', field: 'serverUrl' });
-	} else if (!isWebAddress(account.serverUrl)) {
-		faults.push({
-			kind: 'not-a-web-address',
-			field: 'serverUrl',
-			value: account.serverUrl,
-		});
+	} else {
+		const fault = addressFault(account.serverUrl, 'serverUrl');
+		if (fault !== null) {
+			faults.push(fault);
+		}
 	}
 	if (account.username === '') {
 		faults.push({ kind: 'empty', field: 'username' });
@@ -125,12 +139,11 @@ export function readAccount(entry: UnknownMap): AccountReading {
 	if (id !== null && !ACCOUNT_ID_PATTERN.test(id)) {
 		faults.push({ kind: 'alphabet', field: 'id', value: id });
 	}
-	if (serverUrl !== null && !isWebAddress(serverUrl)) {
-		faults.push({
-			kind: 'not-a-web-address',
-			field: 'serverUrl',
-			value: serverUrl,
-		});
+	if (serverUrl !== null) {
+		const fault = addressFault(serverUrl, 'serverUrl');
+		if (fault !== null) {
+			faults.push(fault);
+		}
 	}
 	if (
 		faults.length > 0 ||
@@ -192,16 +205,44 @@ export function removeAccount(
 	};
 }
 
-/** True where the text is a web address that the plugin can reach. */
-export function isWebAddress(text: string): boolean {
+/**
+ * The fault of a server address, or null where the address is one that
+ * the plugin can use.
+ *
+ * The plugin takes an address of the schemes `http` and `https`. It
+ * refuses an address that carries a username or a password in front of
+ * the name of the host. A server can state such an address on its setup
+ * page, and a user can paste it. The settings hold the address, and the
+ * settings go to each device of that user. A password in the address
+ * would therefore stand in the settings as plain text, on each device,
+ * and outside the secret store.
+ */
+export function addressFault(
+	text: string,
+	field: 'serverUrl',
+): FieldFault | null {
 	const address = parseAddress(text);
-	return address !== null && (address === 'http:' || address === 'https:');
+	if (address === null) {
+		return { kind: 'not-a-web-address', field, value: text };
+	}
+	if (address.protocol !== 'http:' && address.protocol !== 'https:') {
+		return { kind: 'not-a-web-address', field, value: text };
+	}
+	if (address.username !== '' || address.password !== '') {
+		return { kind: 'credentials-in-address', field };
+	}
+	return null;
 }
 
-/** The scheme of the address, or null where the text is no address. */
-function parseAddress(text: string): string | null {
+/** True where the plugin can use the text as a server address. */
+export function isWebAddress(text: string): boolean {
+	return addressFault(text, 'serverUrl') === null;
+}
+
+/** The address that the text states, or null where the text states none. */
+function parseAddress(text: string): URL | null {
 	try {
-		return new URL(text).protocol;
+		return new URL(text);
 	} catch {
 		return null;
 	}

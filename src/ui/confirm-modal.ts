@@ -41,9 +41,11 @@ export class ConfirmModal extends Modal {
 					this.parts.onConfirm();
 				});
 				// The class gives the button the colors of an action that
-				// takes data away. The method of the API that adds this
-				// class needs a version of Obsidian that is newer than
-				// the version that the manifest states.
+				// takes data away. Two methods of the API add this class.
+				// `setDestructive` needs Obsidian 1.13.0, which is newer
+				// than the version that the manifest states.
+				// `setWarning` works on that version and carries a
+				// deprecation.
 				button.buttonEl.addClass('mod-warning');
 			});
 	}

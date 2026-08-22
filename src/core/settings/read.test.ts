@@ -198,6 +198,37 @@ describe('the faults of an account', () => {
 		});
 	});
 
+	it('refuses a server address that carries a username or a password', () => {
+		const password = 'planted-app-password-8f3c1d';
+		const reading = readSettings({
+			accounts: [
+				{
+					...ACCOUNT,
+					serverUrl: `https://ren:${password}@caldav.example.com/`,
+				},
+			],
+		});
+		expect(reading.settings.accounts).toEqual([]);
+		expect(reading.problems).toEqual([
+			{
+				kind: 'entry-field',
+				section: 'accounts',
+				index: 0,
+				name: ACCOUNT.id,
+				fault: {
+					kind: 'credentials-in-address',
+					field: 'serverUrl',
+				},
+			},
+		]);
+		expect(JSON.stringify(reading.problems)).not.toContain(password);
+		expect(
+			describeSettingsProblem(
+				reading.problems[0] ?? { kind: 'not-a-map' },
+			),
+		).not.toContain(password);
+	});
+
 	it('refuses a credential type that the plugin does not know', () => {
 		const reading = readSettings({
 			accounts: [{ ...ACCOUNT, credentialType: 'kerberos' }],
@@ -370,6 +401,62 @@ describe('the faults of a calendar', () => {
 				value: 'VJOURNAL',
 				permitted: ['VEVENT', 'VTODO'],
 			},
+		});
+	});
+
+	it('refuses a calendar of a feed that holds another mode', () => {
+		const reading = readSettings({
+			calendars: [
+				{
+					name: 'Feed',
+					source: 'feed',
+					collectionHref: 'https://feed.example.com/work.ics',
+					mode: 'bidirectional',
+					components: ['VEVENT'],
+				},
+			],
+		});
+		expect(reading.settings.calendars).toEqual([]);
+		expect(reading.problems).toContainEqual({
+			kind: 'entry-field',
+			section: 'calendars',
+			index: 0,
+			name: 'Feed',
+			fault: {
+				kind: 'feed-mode',
+				field: 'mode',
+				value: 'bidirectional',
+			},
+		});
+	});
+
+	it('takes a calendar of a feed that states the one mode of a feed', () => {
+		const reading = readSettings({
+			calendars: [
+				{
+					name: 'Feed',
+					source: 'feed',
+					collectionHref: 'https://feed.example.com/work.ics',
+					mode: 'remote-owned',
+					components: ['VEVENT'],
+				},
+			],
+		});
+		expect(reading.problems).toEqual([]);
+		expect(reading.settings.calendars).toHaveLength(1);
+	});
+
+	it('refuses a calendar of a server that names no account', () => {
+		const reading = readSettings({
+			calendars: [{ ...CALENDAR, accountId: undefined }],
+		});
+		expect(reading.settings.calendars).toEqual([]);
+		expect(reading.problems).toContainEqual({
+			kind: 'entry-field',
+			section: 'calendars',
+			index: 0,
+			name: 'Work',
+			fault: { kind: 'missing', field: 'accountId' },
 		});
 	});
 

@@ -99,9 +99,7 @@ describe('SC-1 the storage that holds the credentials', () => {
 		expect(storage.getSecret('davenport-account-caldav-example-com')).toBe(
 			'',
 		);
-		expect(await first.service.hasCredential('caldav-example-com')).toBe(
-			false,
-		);
+		expect([...(await first.service.accountsWithCredential())]).toEqual([]);
 
 		const second = plugin({});
 		await second.service.load();

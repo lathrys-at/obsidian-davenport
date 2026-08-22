@@ -82,11 +82,17 @@ export function readSettings(value: unknown): SettingsReading {
 	return { settings: { accounts, calendars }, problems };
 }
 
+/** The settings in the form that the data file holds. */
+export interface SettingsDocument {
+	readonly accounts: readonly UnknownMap[];
+	readonly calendars: readonly UnknownMap[];
+}
+
 /**
  * The settings in the form that the data file holds. The result states
  * each field of each entry, and it holds no other value.
  */
-export function settingsDocument(settings: SyncedSettings): UnknownMap {
+export function settingsDocument(settings: SyncedSettings): SettingsDocument {
 	return {
 		accounts: settings.accounts.map(accountDocument),
 		calendars: settings.calendars.map(calendarDocument),

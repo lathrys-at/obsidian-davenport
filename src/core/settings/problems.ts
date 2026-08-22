@@ -16,9 +16,11 @@
  * later write of the settings does not carry that entry, so the settings
  * screen states every problem that a read found.
  *
- * No message holds a credential. A message quotes the value of a field
- * only where that field belongs to the settings, and no field of the
- * settings holds a credential.
+ * A message quotes the value that a field holds. A user can put an app
+ * password in the wrong field, so such a message can hold a credential.
+ * A message therefore goes to the screen of the user who typed the value,
+ * and it goes nowhere else. The log takes the name of the field and the
+ * kind of the fault, which `nameFieldFault` below gives it.
  */
 
 /**
@@ -80,6 +82,18 @@ export type FieldFault =
 	/** Another entry holds the same value in the same field. */
 	| {
 			readonly kind: 'repeated';
+			readonly field: EntryField;
+			readonly value: string;
+	  }
+	/**
+	 * The address holds a username or a password before the name of the
+	 * host. A message about this fault quotes no part of the address,
+	 * because the part that the fault is about is a credential.
+	 */
+	| { readonly kind: 'credentials-in-address'; readonly field: EntryField }
+	/** A calendar of a feed holds a mode that a feed does not take. */
+	| {
+			readonly kind: 'feed-mode';
 			readonly field: EntryField;
 			readonly value: string;
 	  };
@@ -167,7 +181,24 @@ export function describeFieldFault(fault: FieldFault): string {
 			return `The field ${field} holds ${quote(fault.value)}. That field takes lowercase letters, digits, and dashes.`;
 		case 'repeated':
 			return `The field ${field} holds ${quote(fault.value)}. Another entry holds that value. Give each entry a value of its own.`;
+		case 'credentials-in-address':
+			return `The field ${field} holds a username or a password before the name of the server. Write the address of the server alone. Give the username in the field "username". Give the app password in the field "app password".`;
+		case 'feed-mode':
+			return `The field ${field} holds ${quote(fault.value)}. A calendar of a feed takes the mode "remote-owned" alone, because Davenport writes to no feed.`;
 	}
+}
+
+/**
+ * The name of one fault, for the log of the plugin.
+ *
+ * The log takes the name of the field and the kind of the fault, and it
+ * takes no value. A user can put a value in the wrong field, and an app
+ * password in the field of the server address is the case that this rule
+ * is about. The words above state the fault on the screen of that user,
+ * where the user typed the value.
+ */
+export function nameFieldFault(fault: FieldFault): string {
+	return `${fault.field} ${fault.kind}`;
 }
 
 /** The words that name the entry that the plugin did not read. */
