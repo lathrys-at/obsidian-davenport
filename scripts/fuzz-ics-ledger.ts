@@ -411,12 +411,6 @@ function repairedValue(
 	return value;
 }
 
-/**
- * The line with every colon inside quotation marks changed to a dash. The
- * walk stops at the first colon that stands outside the quotation marks,
- * because that colon ends the parameters and starts the value of the
- * property. The value of the property therefore keeps its colons.
- */
 /** How a VALUE parameter starts, in either case of the letters. */
 const VALUE_PARAMETER = ';VALUE=';
 
@@ -478,6 +472,12 @@ function parameterEnd(line: string, at: number): number {
 	return end;
 }
 
+/**
+ * The line with every colon inside quotation marks changed to a dash. The
+ * walk stops at the first colon that stands outside the quotation marks,
+ * because that colon ends the parameters and starts the value of the
+ * property. The value of the property therefore keeps its colons.
+ */
 function repairQuotedColons(line: string): string {
 	let inside = false;
 	let repaired = '';

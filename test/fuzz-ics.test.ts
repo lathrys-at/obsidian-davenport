@@ -24,6 +24,9 @@ import {
 	failureLines,
 	reportLines,
 	seedFileName,
+	seedInput,
+	seedText,
+	utf8CanCarry,
 } from '../scripts/fuzz-ics-text';
 import { samples } from './harness/arbitraries/seed';
 import type { JCalComponent } from '../src/core/ics/jcal';
@@ -34,6 +37,19 @@ import { serializeCalendar } from '../src/core/ics/serializer';
 const engine: IcsEngine = { parseIcs, serializeCalendar };
 
 const EMPTY_CALENDAR = 'BEGIN:VCALENDAR\r\nVERSION:2.0\r\nEND:VCALENDAR\r\n';
+
+/**
+ * One text for each entry of the ledger, in the order of the ledger. The
+ * text carries the construct of that entry and nothing else, so the repair
+ * of the entry must change it.
+ */
+const TEXTS_TO_REPAIR: readonly string[] = [
+	'X-A;MEMBER="a:b":v',
+	"X-A;MEMBER=^',x",
+	'X-A:a\\\\,b',
+	'X-A:a\rb',
+	'X-A;VALUE=^^^:x',
+];
 
 /** A calendar that holds the one line under test. */
 function calendar(line: string): string {
@@ -351,15 +367,20 @@ describe('the ledger of the filed defects', () => {
 	});
 
 	it('gives every entry an issue, a pattern and two repairs', () => {
-		// The sample carries the construct of every entry, so each repair
-		// has something to take away and no entry passes this case with a
-		// repair that does nothing.
-		const sample = '\r^a:b"c\\';
-		for (const entry of KNOWN_FINDINGS) {
+		// One value carries the construct of every entry, so each repair of
+		// a value has something to take away. A repair of a text reads the
+		// construct of its own entry alone, so each entry needs a text of
+		// its own. No entry passes this case with a repair that does
+		// nothing.
+		const value = '\r^a:b"c\\';
+		expect(TEXTS_TO_REPAIR).toHaveLength(KNOWN_FINDINGS.length);
+		for (const [at, entry] of KNOWN_FINDINGS.entries()) {
+			const text = TEXTS_TO_REPAIR[at] ?? '';
 			expect(entry.issue).toBeGreaterThan(0);
 			expect(entry.kinds.length).toBeGreaterThan(0);
-			expect(entry.repairValue(sample)).not.toBe(sample);
-			expect(typeof entry.repairText('X-A;P="a:b":v')).toBe('string');
+			expect(entry.repairValue(value)).not.toBe(value);
+			expect(entry.pattern.test(text)).toBe(true);
+			expect(entry.repairText(text)).not.toBe(text);
 		}
 	});
 });
@@ -455,18 +476,64 @@ describe('one run of the lane', () => {
 	});
 
 	it('names the seed file of a finding after the kind of it', () => {
-		expect(
-			seedFileName(3, {
-				kind: 'crash',
-				stage: 'parse',
-				detail: 'a detail',
-				recipe: 'a recipe',
-				seed: 1,
-				path: null,
-				input: '',
-				minimized: '',
-				repeats: 0,
-			}),
-		).toBe('finding-03-crash.ics');
+		const finding = {
+			kind: 'crash',
+			stage: 'parse',
+			detail: 'a detail',
+			recipe: 'a recipe',
+			seed: 1,
+			path: null,
+			input: '',
+			minimized: '',
+			repeats: 0,
+		} as const;
+		expect(seedFileName(3, finding)).toBe('finding-03-crash.json');
+		expect(seedFileName(3, finding, 'as-drawn')).toBe(
+			'finding-03-crash.as-drawn.json',
+		);
+	});
+});
+
+describe('the seed file of a finding', () => {
+	// A file holds octets, and this lane writes its files as UTF-8. UTF-8
+	// carries no lone surrogate. A seed file that held the input as text
+	// therefore held the replacement character in the place of such a code
+	// unit. `--graduate` then wrote a fixture that states another input than
+	// the finding. The seed file holds one JSON string for that reason.
+	//
+	// The text below is the smallest input of one finding of a real run. The
+	// generator drew a high surrogate with no low surrogate after it.
+	const LONE_SURROGATE = 'BEGIN:VCALENDAR\n:\r\r\n \ud83d\nEND:VCALENDAR';
+
+	it('gives back every input, code unit for code unit', () => {
+		for (const input of [
+			'',
+			EMPTY_CALENDAR,
+			'X-A:a\rb',
+			LONE_SURROGATE,
+			'X-A:\udca9',
+			'X-A:\ud83d\udca9',
+			'X-A:\u0000\u001f\u007f',
+			'X-A:"\\\n\t',
+		]) {
+			expect(seedInput(seedText(input))).toBe(input);
+		}
+	});
+
+	it('writes a lone surrogate as an escape, and the file keeps it', () => {
+		const text = seedText(LONE_SURROGATE);
+		expect(text).toContain('\\ud83d');
+		// The text of the seed file goes through UTF-8 whole, and the input
+		// that the seed file states does not. That difference is the reason
+		// for the encoding.
+		expect(utf8CanCarry(text)).toBe(true);
+		expect(utf8CanCarry(LONE_SURROGATE)).toBe(false);
+		expect(seedInput(text)).toBe(LONE_SURROGATE);
+	});
+
+	it('reads no input from a text that is not one JSON string', () => {
+		for (const text of ['', 'BEGIN:VCALENDAR\r\n', '[1]', 'null', '"a']) {
+			expect(seedInput(text)).toBeNull();
+		}
 	});
 });

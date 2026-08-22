@@ -1,23 +1,23 @@
 {
 	"total": {
 		"statements": {
-			"total": 1928,
-			"covered": 1899,
+			"total": 1931,
+			"covered": 1902,
 			"pct": 98.49
 		},
 		"branches": {
-			"total": 1373,
-			"covered": 1302,
-			"pct": 94.82
+			"total": 1377,
+			"covered": 1306,
+			"pct": 94.84
 		},
 		"functions": {
-			"total": 373,
-			"covered": 373,
+			"total": 374,
+			"covered": 374,
 			"pct": 100
 		},
 		"lines": {
-			"total": 1913,
-			"covered": 1884,
+			"total": 1916,
+			"covered": 1887,
 			"pct": 98.48
 		}
 	},
@@ -922,23 +922,23 @@
 		{
 			"path": "src/core/records/content.ts",
 			"statements": {
-				"total": 27,
-				"covered": 27,
+				"total": 30,
+				"covered": 30,
 				"pct": 100
 			},
 			"branches": {
-				"total": 8,
-				"covered": 8,
+				"total": 12,
+				"covered": 12,
 				"pct": 100
 			},
 			"functions": {
-				"total": 9,
-				"covered": 9,
+				"total": 10,
+				"covered": 10,
 				"pct": 100
 			},
 			"lines": {
-				"total": 27,
-				"covered": 27,
+				"total": 30,
+				"covered": 30,
 				"pct": 100
 			}
 		},

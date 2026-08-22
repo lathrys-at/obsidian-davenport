@@ -1,5 +1,6 @@
 /**
- * The wording of everything that the fuzzing lane prints.
+ * The wording of everything that the fuzzing lane prints, and the shape of
+ * the file that holds one input.
  *
  * The lane prints two kinds of line. The report says how much the run
  * examined and what it met. The failure names each new finding and says
@@ -103,9 +104,64 @@ function findingLines(number: number, finding: RunFinding): readonly string[] {
 	];
 }
 
-/** The name of the file that holds the input of one finding. */
-export function seedFileName(number: number, finding: RunFinding): string {
-	return `finding-${String(number).padStart(2, '0')}-${finding.kind}.ics`;
+/** Which of the two inputs of a finding a seed file holds. */
+export type SeedPart = 'smallest' | 'as-drawn';
+
+/**
+ * The name of a file that holds one input of one finding. The lane writes
+ * two of them for each finding: the smallest input that the run found, and
+ * the input as the generator left it. The name states JSON, because the
+ * file holds one JSON string and not the text of a calendar.
+ */
+export function seedFileName(
+	number: number,
+	finding: RunFinding,
+	part: SeedPart = 'smallest',
+): string {
+	const at = String(number).padStart(2, '0');
+	const tail = part === 'smallest' ? '' : '.as-drawn';
+	return `finding-${at}-${finding.kind}${tail}.json`;
+}
+
+/**
+ * The text of a seed file.
+ *
+ * A file holds octets, and this lane writes its files as UTF-8. UTF-8
+ * carries no lone surrogate. A string that holds a lone surrogate reaches
+ * such a file as the replacement character. The file then states another
+ * input than the input that the run found. JSON writes a lone surrogate as
+ * an escape, and it writes every other code unit of a JavaScript string as
+ * well. The seed file therefore holds one JSON string, and every input
+ * reaches the file whole.
+ */
+export function seedText(input: string): string {
+	return `${JSON.stringify(input)}\n`;
+}
+
+/**
+ * The input that a seed file holds, or null where the text is not one JSON
+ * string. The function gives back the input that the run found, code unit
+ * for code unit.
+ */
+export function seedInput(text: string): string | null {
+	let held: unknown;
+	try {
+		held = JSON.parse(text);
+	} catch {
+		return null;
+	}
+	return typeof held === 'string' ? held : null;
+}
+
+/**
+ * True where UTF-8 carries the input and gives it back whole. A lone
+ * surrogate is a code unit that UTF-8 cannot carry. A file that takes an
+ * input with a lone surrogate holds the replacement character in the place
+ * of that code unit. A fixture of the crash corpus is a file of that kind,
+ * so an input that fails this test cannot become a fixture.
+ */
+export function utf8CanCarry(input: string): boolean {
+	return new TextDecoder().decode(new TextEncoder().encode(input)) === input;
 }
 
 /** The lines that the graduation of one finding prints. */

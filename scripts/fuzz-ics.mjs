@@ -14,22 +14,23 @@
  * counts as a finding. `fuzz-ics-inputs.ts` states where the inputs come
  * from. `fuzz-ics-ledger.ts` holds the defects that are already filed and
  * the rule that recognises one. `fuzz-ics-campaign.ts` runs the passes.
- * `fuzz-ics-text.ts` holds the wording of the report.
+ * `fuzz-ics-text.ts` holds the wording of the report and the shape of the
+ * seed file.
  *
- * The run writes a report and one file for each new finding. A run that
- * found nothing new gives the status 0. A run that found something new
- * gives the status 1, and so does a run that examined no input. A command
- * that cannot run gives the status 2.
+ * The run writes a report and two files for each new finding. A seed file
+ * holds one JSON string, because a file holds octets and UTF-8 carries no
+ * lone surrogate. A run that found nothing new gives the status 0. A run
+ * that found something new gives the status 1, and so does a run that
+ * examined no input. A command that cannot run gives the status 2.
  *
  *     npm run fuzz
  *     npm run fuzz -- --budget=600 --seed=17
  *     node scripts/fuzz-ics.mjs --all-findings
- *     node scripts/fuzz-ics.mjs --graduate=reports/fuzz/finding-01-crash.ics --name=a-name
+ *     node scripts/fuzz-ics.mjs --graduate=reports/fuzz/finding-01-crash.json --name=a-name
  *
  * The lane runs no part of the required check. It takes minutes, and it
  * draws inputs that no earlier run drew, so a merge must not wait for it.
  */
-import { Buffer } from 'node:buffer';
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { basename, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -136,6 +137,11 @@ if (options.graduate !== undefined) {
  * command.
  */
 function run() {
+	if (options.budget === 0) {
+		fail(
+			'--budget must state a count of seconds that is more than nothing',
+		);
+	}
 	if (options.runs === 0) {
 		fail('--runs must state a count that is more than nothing');
 	}
@@ -161,7 +167,12 @@ function run() {
 	process.exit(lane.campaign.runFails(report) ? 1 : 0);
 }
 
-/** Writes the report of a run, and one file for each new finding. */
+/**
+ * Writes the report of a run, and two files for each new finding: the
+ * smallest input that the run found, and the input as the generator left
+ * it. Each file holds one JSON string, so the file gives the input back
+ * code unit for code unit.
+ */
 function write(report, lines) {
 	mkdirSync(options.out, { recursive: true });
 	writeFileSync(
@@ -170,9 +181,16 @@ function write(report, lines) {
 	);
 	writeFileSync(join(options.out, 'report.txt'), `${lines.join('\n')}\n`);
 	for (const [at, finding] of report.findings.entries()) {
-		const name = lane.text.seedFileName(at + 1, finding);
-		writeFileSync(join(options.out, name), finding.minimized);
-		writeFileSync(join(options.out, `${name}.as-drawn`), finding.input);
+		const seed = lane.text.seedFileName(at + 1, finding);
+		const drawn = lane.text.seedFileName(at + 1, finding, 'as-drawn');
+		writeFileSync(
+			join(options.out, seed),
+			lane.text.seedText(finding.minimized),
+		);
+		writeFileSync(
+			join(options.out, drawn),
+			lane.text.seedText(finding.input),
+		);
 	}
 	console.log(`ics fuzz: the run wrote its report to ${options.out}`);
 }
@@ -191,14 +209,20 @@ function graduate(path, name) {
 	if (!existsSync(path)) {
 		fail(`the command cannot read ${path}: no file stands there`);
 	}
-	const text = readFileSync(path, 'utf8');
-	// The corpus holds files, and a file holds octets. A text that UTF-8
-	// cannot carry loses the code unit that it cannot carry, and the fixture
-	// would then hold another input than the finding. A lone surrogate is
-	// such a code unit.
-	if (Buffer.from(text, 'utf8').toString('utf8') !== text) {
+	const text = lane.text.seedInput(readFileSync(path, 'utf8'));
+	if (text === null) {
 		fail(
-			`the input holds a code unit that UTF-8 cannot carry, so a file cannot hold it. Read ${path} and write a fixture by hand.`,
+			`the file ${path} is not a seed file of this lane: a seed file holds one JSON string, and this file holds other text`,
+		);
+	}
+	// The corpus holds files, and a file holds octets. The seed file gives
+	// the input back whole, and this step writes that input into a file of
+	// the corpus. UTF-8 carries no lone surrogate, and a fixture cannot
+	// state an input that holds a lone surrogate. The refusal therefore
+	// stands here.
+	if (!lane.text.utf8CanCarry(text)) {
+		fail(
+			`the seed file ${path} holds a code unit that UTF-8 cannot carry, so a fixture cannot hold this input. Read the input in ${path} and write the fixture by hand.`,
 		);
 	}
 	const target = join(CRASH_CORPUS, `${name}.ics`);

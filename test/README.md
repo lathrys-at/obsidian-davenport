@@ -237,7 +237,22 @@ npm run fuzz -- --all-findings        # report the filed defects too
 
 The command gives the status 0 when it found nothing new, and the status 1 when
 it found something new or when it examined no input. It writes its report and
-one file for each new finding into `reports/fuzz`. Git ignores that folder.
+two seed files for each new finding into `reports/fuzz`: the smallest input
+that the run found, and the input as the generator left it. Git ignores that
+folder.
+
+A seed file holds one JSON string, and not the text of a calendar. A file holds
+octets, and this lane writes its files as UTF-8. UTF-8 carries no lone
+surrogate. A seed file of plain text therefore held the replacement character
+in the place of such a code unit. The fixture that came out of that seed file
+then stated another input than the finding. JSON writes a lone surrogate as an
+escape, and it writes every other code unit of a JavaScript string as well. The
+seed file therefore gives the input back whole.
+
+The rules of the lane live under `scripts/`. The coverage floor of
+`coverage-baseline.json` reads the files under `src/` alone, so no floor guards
+those rules. `test/fuzz-ics.test.ts` guards them instead, and the required
+check runs that file on every commit.
 
 The lane has two arms, and each arm knows something different about its input.
 
@@ -314,13 +329,16 @@ Turn a finding into a fixture in four steps.
 
     ```bash
     node scripts/fuzz-ics.mjs \
-        --graduate=reports/fuzz/finding-01-crash.ics \
+        --graduate=reports/fuzz/finding-01-crash.json \
         --name=a-name-for-the-fixture
     ```
 
-    The command copies the file into the corpus, drives it, and says which
-    finding it gives today. The command writes no other file, and it refuses a
-    name that the corpus already holds.
+    The command reads the input out of the seed file, writes that input into
+    the corpus, drives it, and says which finding it gives today. The command
+    writes no other file, and it refuses a name that the corpus already holds.
+    It also refuses an input that UTF-8 cannot carry, because a fixture is a
+    file and such a file would state another input than the finding. Read the
+    input in the seed file and write that fixture by hand.
 
 2. Add the entry to the index in
    [`harness/fixtures/ics-crash-corpus.ts`](harness/fixtures/ics-crash-corpus.ts).
