@@ -44,11 +44,15 @@
  *   back then differs from the value that went in, and the difference
  *   belongs to the library.
  *
- * The rest leave because the boundary reads them wrongly today. Each one
- * has a case in `test/properties/ics/known-defects.test.ts`, and the
- * comment at the generator names the case. A backslash at the end of one
- * value of a property that carries several is one of them, and a colon or a
- * quotation mark in a parameter that carries a list of values is another.
+ * The rest leave because the parse boundary refuses a text that states
+ * them. The library reads such a text wrongly, and the boundary sees the
+ * difference. No text of the format therefore carries such a model into the
+ * engine, and a model that holds one of these shapes stands outside the
+ * range of the boundary. Each one has a case in
+ * `test/properties/ics/library-defects.test.ts`, and the comment at the
+ * generator names the shape. A backslash at the end of one value of a
+ * property that carries several is one of them, and a colon or a quotation
+ * mark in a parameter that carries a list of values is another.
  */
 
 import fc from 'fast-check';
@@ -280,11 +284,12 @@ export function icsParameterValue(): fc.Arbitrary<string> {
 
 /**
  * One value of a parameter that carries a list of values. Two characters
- * stay out of these values, and the file `known-defects.test.ts` holds a
- * case for each one. A colon in the last value of such a list makes the
- * parse boundary read the wrong value for the whole property. A quotation
- * mark beside a comma makes the boundary report parameter values that the
- * text does not state.
+ * stay out of these values, and the file `library-defects.test.ts` holds a
+ * case for each one. A colon in the last value of such a list moves the
+ * place where the library starts to read the value of the property. A
+ * quotation mark beside a comma divides the list of the library where the
+ * text divides nothing. The boundary refuses a text that states either
+ * shape, so no text of the format gives such a value back.
  */
 export function icsListParameterValue(): fc.Arbitrary<string> {
 	return parameterCharacters(
@@ -494,8 +499,10 @@ export function icsRecur(): fc.Arbitrary<JCalRecur> {
  * A text value that stands beside another value of the same property. Such
  * a value never ends with a backslash. The library reads the escape of a
  * backslash at the end of a value together with the separator that follows
- * it, and it then reports one value where the text states two. The test
- * file `known-defects.test.ts` holds that case.
+ * it, and it then reports one value where the text states two. The boundary
+ * refuses a text that states this shape, so no text of the format gives
+ * such a value back. The test file `library-defects.test.ts` holds that
+ * case.
  */
 function neighbouringText(): fc.Arbitrary<string> {
 	return icsTextValue().filter((value) => !value.endsWith('\\'));

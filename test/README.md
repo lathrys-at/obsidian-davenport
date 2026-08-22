@@ -216,9 +216,13 @@ DAVENPORT_PROPERTY_SEED=17 npm test -- test/properties
 
 A failure states the command that draws the same inputs again.
 
-`test/properties/ics/known-defects.test.ts` holds the defects that these tests
-and the fuzzing lane found. Every case in that file is skipped, and each one is
-the smallest input that reaches the defect.
+`test/properties/ics/library-defects.test.ts` holds the defects of the parse
+library that these tests and the fuzzing lane found. Each case is the smallest
+input that reaches the defect, and it states the rule that the parse boundary
+keeps for that shape. The boundary refuses each of these texts and names the
+reason. It does not correct them: the model comes from the library, and a
+boundary that built the right model would own the parse. Beside the refusals
+the file pins the shapes of every day that must still come through.
 
 ## The fuzzing lane
 
@@ -260,9 +264,11 @@ The lane has two arms, and each arm knows something different about its input.
   writes the text of it. The arm knows which calendar the text states, so the
   drive can ask whether the calendar comes back whole. That question is the
   only one that sees a value which the parse loses without a change of the
-  bytes. Those generators leave out the shapes that the boundary reads wrongly
-  today, and this arm puts one of those shapes back into the calendar that it
-  drew.
+  bytes. Those generators leave out the shapes that the boundary refuses, and
+  this arm puts one of those shapes back into the calendar that it drew. A
+  calendar that the arm widened in that way carries no promise that the
+  boundary accepts its text. The boundary must read that text exactly or
+  refuse it, and it must never read it wrongly.
 - The text arm draws a text and changes it. The text comes from the adversarial
   corpus, from a calendar of the model arm, from a feed of ordinary shape, or
   from noise that carries the words of the format. The changes that keep the
@@ -316,6 +322,14 @@ else, and the drive that made the finding is the control.
 Condition 3 keeps the ledger narrow. A defect that stands beside the construct
 of an entry survives the repair, so the run reports it.
 
+The ledger is empty today. The boundary refuses every shape that an entry of it
+named, and each entry left the ledger together with the change that repaired
+its defect. Every finding of a run is therefore new, and the run fails on it.
+The rule stays in use for the next defect that somebody files, and
+`test/fuzz-ics.test.ts` drives that rule with entries and engines of its own.
+Each of those engines carries one defect that a repair can remove, because the
+boundary carries none.
+
 ### The crash corpus, and how a finding gets there
 
 [`test/harness/fixtures/ics-crash/`](harness/fixtures/ics-crash) holds the
@@ -349,12 +363,20 @@ Turn a finding into a fixture in four steps.
    the kind of finding that the file still gives.
 
 3. Add the case that states the rule to
-   [`../test/properties/ics/known-defects.test.ts`](properties/ics/known-defects.test.ts),
+   [`../test/properties/ics/library-defects.test.ts`](properties/ics/library-defects.test.ts),
    and skip that case while the defect waits.
 
 4. When somebody files the issue, put the number of it in the entry of the
    index, and add an entry to the ledger so that the lane stops reporting the
    finding as new.
+
+A change that repairs the defect goes the other way, in one commit. Move the
+entry of the index to the state `held`, set its finding to null, and write the
+summary again so that it states the rule that the engine now keeps. Take the
+entry of the defect out of the ledger. Take the skip off the case in
+`library-defects.test.ts`, and write that case again so that it states the same
+rule. The file of the corpus stays where it is, and the required check drives
+it from that day forward.
 
 ### The workflow
 
