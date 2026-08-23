@@ -179,12 +179,13 @@ function address(found: string | undefined, step: string): string {
  * no document for such an answer, and it therefore writes no address into
  * the entry. That answer is the answer of a collection that did not
  * change.
+ *
+ * The test reads the member the way the library reads it: a value that
+ * the library takes as no document is no document here, whatever scalar
+ * the parser made of it.
  */
 export function isRawEntry(answer: DAVResponse): boolean {
-	return (
-		answer.raw !== undefined &&
-		reach(answer.raw, ['multistatus']) === undefined
-	);
+	return answer.raw !== undefined && !reach(answer.raw, ['multistatus']);
 }
 
 /** True where one entry or more of the answer states no multistatus. */
@@ -330,6 +331,11 @@ function nextToken(found: string | null, changes: number): NextSyncToken {
  * states nothing: a caller cannot tell "the resource is not there" from
  * "the server did not say", and the first of those two readings would mint
  * a deletion that no server confirmed.
+ *
+ * One form stays outside these rules. A cut that falls after a complete
+ * response for an asked address reads as a found resource whose calendar
+ * text the cut shortened. No rule over addresses can see that form. The
+ * reader of the calendar text is the net for it.
  */
 export function readOutcomes(
 	answers: readonly DAVResponse[],

@@ -266,6 +266,21 @@ describe('the answer that states no multistatus', () => {
 		);
 	});
 
+	// The parser can make a scalar of the member, and the library takes a
+	// scalar that is not true as no document. The test agrees with the
+	// library on every such value.
+	it('names the entry of a multistatus that holds a scalar', () => {
+		expect(
+			isRawEntry(response({ href: ROOT, raw: { multistatus: 0 } })),
+		).toBe(true);
+		expect(
+			isRawEntry(response({ href: ROOT, raw: { multistatus: false } })),
+		).toBe(true);
+		expect(
+			isRawEntry(response({ href: ROOT, raw: { multistatus: '' } })),
+		).toBe(true);
+	});
+
 	it('names no entry of a multistatus', () => {
 		expect(
 			isRawEntry(

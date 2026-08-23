@@ -529,9 +529,11 @@ const NOT_A_REPORT: readonly (readonly [string, CalDavSession])[] = [
  * A body that a cut left half written can still parse as a multistatus,
  * because the parser closes the tags that the cut left open. Such a body
  * is a report as far as any reader can tell, and no rule of this layer
- * refuses it. The two cases below state what the layer does with the two
- * shapes that such a body takes, and each answer is one that takes nothing
- * away.
+ * refuses it. The cases below state what the layer does with two of the
+ * shapes that such a body takes, and each of those answers takes nothing
+ * away. A third shape stays open: a cut that falls after a complete
+ * response for an asked address reads as found, with a calendar text that
+ * the cut shortened, and the reader of that text is the net for it.
  */
 const CUT_SHORT =
 	'<?xml version="1.0"?><D:multistatus xmlns:D="DAV:"><D:response><D:href>/dav/calendars/alice/home/';
@@ -607,6 +609,42 @@ describe('a request that the server refused whole', () => {
 			).rejects.toBeInstanceOf(CalDavError);
 		},
 	);
+});
+
+// A failure status can carry a well-formed report. The library gives
+// every answer with a failure status to the layer as one raw entry,
+// whatever the body holds, so the body rule refuses this shape too, and
+// the two rules state the same refusal here. The ground that the status
+// rule holds alone is the answer that never arrived.
+describe('a failure status that carries a well-formed report', () => {
+	const REPORT_UNDER_FAILURE = overOneAnswer(
+		500,
+		'<?xml version="1.0"?><D:multistatus xmlns:D="DAV:"><D:response><D:href>/dav/calendars/alice/home/one.ics</D:href><D:status>HTTP/1.1 200 OK</D:status></D:response></D:multistatus>',
+		XML,
+	);
+
+	it('refuses a change report under the status alone', async () => {
+		await expect(
+			REPORT_UNDER_FAILURE.changes(
+				'https://caldav.example.com/dav/calendars/alice/home/',
+				null,
+			),
+		).rejects.toBeInstanceOf(CalDavError);
+	});
+
+	it('refuses a calendar list under the status alone', async () => {
+		await expect(
+			REPORT_UNDER_FAILURE.calendars(ENDPOINTS),
+		).rejects.toBeInstanceOf(CalDavError);
+	});
+
+	it('states the refusal of a calendar object report under the status alone', async () => {
+		const report = await REPORT_UNDER_FAILURE.resources(
+			'https://caldav.example.com/dav/calendars/alice/home/',
+			['/dav/calendars/alice/home/one.ics'],
+		);
+		expect(report).toEqual({ ok: false, status: 500 });
+	});
 });
 
 // A cut can leave a body that still parses as a multistatus. No rule can

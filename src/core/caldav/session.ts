@@ -122,7 +122,10 @@ function answered(status: number | null): status is number {
  * The status is the first test and the cheap one: a server that refused
  * the request sent no report. The body is the test that decides, because a
  * status of success carries a body that is not a report as readily as a
- * status of failure does.
+ * status of failure does. The library also gives every answer with a
+ * failure status as a raw entry, whatever its body, so the body test
+ * covers each answer that a server can send; the ground that the status
+ * test holds alone is the answer that never arrived.
  */
 function readable(attempt: Attempt<readonly DAVResponse[]>): boolean {
 	return answered(attempt.status) && !holdsRawEntry(attempt.answer);
@@ -162,13 +165,14 @@ export class CalDavSession {
 	 *
 	 * This step alone reads no answer of its own, and the reason is a
 	 * property of the library and not of the discovery. Each discovery
-	 * helper of the library reads two things before it takes an answer: it
-	 * reads whether the server answered, and it reads the one address that
-	 * the step needs. An answer that states no multistatus carries neither,
-	 * so each helper refuses it. `readEndpoints` then refuses an address
-	 * that no step found, which is the second net. The three functions that
-	 * the other steps use read no such thing, and they give the answer
-	 * straight back; those steps therefore make the test themselves.
+	 * helper of the library takes an answer only when the answer names the
+	 * one address that the step needs. The entry that the library makes
+	 * from a body with no multistatus names no address, whatever status it
+	 * carries, so each helper refuses it. `readEndpoints` then refuses an
+	 * address that no step found, which is the second net. The three
+	 * functions that the other steps use read no such thing, and they give
+	 * the answer straight back; those steps therefore make the test
+	 * themselves.
 	 *
 	 * The discovery also probes an address that most servers do not serve,
 	 * and a failure of a probe is one of the steps of the discovery. A test
