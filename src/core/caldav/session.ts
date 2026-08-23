@@ -26,38 +26,50 @@
  * says whether the request arrived. The status inside each response of the
  * document says what the server did with one resource.
  *
- * The first rule. Where the envelope states a failure, the layer refuses
- * the answer whole. The library reads a body that is not a multistatus as
- * one response of its own, and it writes the address of the request into
- * that response. A reader that took such a response for data would state
- * the collection itself as a resource that is gone, and a report that no
- * server answered would read as a collection with no calendar in it.
+ * The first rule. The layer refuses an answer whole where that answer is
+ * not a report. The library reads a body that is not a multistatus as one
+ * response of its own, and it writes the address of the request into that
+ * response. A reader that took such a response for data would state the
+ * collection itself as a resource, and a report that no server answered
+ * would read as a calendar home with no calendar in it. The status does
+ * not name that condition. A body that carries no XML, a body with no
+ * characters, a body that does not parse, and a body that parses to
+ * something other than a multistatus each arrive under a status of success
+ * as readily as under a status of failure, and a captive portal, a proxy,
+ * a session that ended, and a body that was cut short each produce one.
+ * The layer therefore reads the body of the answer and not the status of
+ * it. It reads the status as well, because the status is what the layer
+ * reports back for a report that a server refused.
  *
- * The second rule. Where the envelope states success, the status inside a
+ * The second rule. Where the answer is a report, the status inside a
  * response is an observation and never a failure. A response with status
  * 404 states that the server holds no resource at that address, and that
  * is the answer which confirms a deletion. The report gives an outcome for
  * each address, and one absent member refuses nothing.
  *
- * The layer builds the multiget report itself, and two functions of the
- * library are therefore not in use. The first fetches the objects of a
- * collection and drops every address that does not end in `.ics`; Google
- * states an address of another form. The second is the query wrapper of
- * the library, which reads the status of each response and refuses the
- * whole report where one response states a failure; that wrapper refuses
- * the answer which confirms a deletion.
+ * The layer builds the multiget report and the calendar report itself, and
+ * three functions of the library are therefore not in use. The first
+ * fetches the objects of a collection and drops every address that does
+ * not end in `.ics`; Google states an address of another form. The second
+ * is the query wrapper of the library, which reads the status of each
+ * response and refuses the whole report where one response states a
+ * failure; that wrapper refuses the answer which confirms a deletion. The
+ * third fetches the calendars of an account and gives calendars back and
+ * not responses, so the first rule above could not read its answer; that
+ * function also asks each collection for its set of reports, which costs
+ * one request for each calendar and which this layer does not read.
  */
 
 import {
 	createAccount,
 	davRequest,
-	fetchCalendars,
 	getDAVAttribute,
+	propfind,
 	syncCollection,
 	DAVNamespace,
 	DAVNamespaceShort,
 } from 'tsdav';
-import type { DAVAccount } from 'tsdav';
+import type { DAVAccount, DAVResponse } from 'tsdav';
 import type { HttpTransport } from '../ports/transport';
 import { watchStatus } from '../transport/watch';
 import type { RequestHeaders } from './credentials';
@@ -71,11 +83,21 @@ import type {
 	ResourceReport,
 } from './reading';
 import {
-	readCalendar,
+	holdsRawEntry,
+	readCalendars,
 	readDelta,
 	readEndpoints,
 	readOutcomes,
 } from './reading';
+
+/** The properties that a report over the calendar home asks for. */
+const CALENDAR_PROPS = {
+	'd:resourcetype': {},
+	'd:displayname': {},
+	'd:sync-token': {},
+	'c:supported-calendar-component-set': {},
+	'cs:getctag': {},
+};
 
 /** The properties that a sync-collection report asks for. */
 const CHANGE_PROPS = { 'd:getetag': {} };
@@ -92,6 +114,18 @@ const MEMBER_DEPTH = '1';
 /** True where a status states that the server answered the request. */
 function answered(status: number | null): status is number {
 	return status !== null && status >= 200 && status < 300;
+}
+
+/**
+ * True where the answer of one call is a report that the layer can read.
+ *
+ * The status is the first test and the cheap one: a server that refused
+ * the request sent no report. The body is the test that decides, because a
+ * status of success carries a body that is not a report as readily as a
+ * status of failure does.
+ */
+function readable(attempt: Attempt<readonly DAVResponse[]>): boolean {
+	return answered(attempt.status) && !holdsRawEntry(attempt.answer);
 }
 
 export interface CalDavSessionParts {
@@ -126,9 +160,19 @@ export class CalDavSession {
 	 * The three addresses of the calendar service. The call makes a request
 	 * for each address that the caller does not give.
 	 *
-	 * This step reads no status of an envelope. The discovery probes an
-	 * address that most servers do not serve, and a failure of a probe is
-	 * one of the steps of the discovery.
+	 * This step alone reads no answer of its own, and the reason is a
+	 * property of the library and not of the discovery. Each discovery
+	 * helper of the library reads two things before it takes an answer: it
+	 * reads whether the server answered, and it reads the one address that
+	 * the step needs. An answer that states no multistatus carries neither,
+	 * so each helper refuses it. `readEndpoints` then refuses an address
+	 * that no step found, which is the second net. The three functions that
+	 * the other steps use read no such thing, and they give the answer
+	 * straight back; those steps therefore make the test themselves.
+	 *
+	 * The discovery also probes an address that most servers do not serve,
+	 * and a failure of a probe is one of the steps of the discovery. A test
+	 * of the answer here would refuse a discovery that is going well.
 	 */
 	async discover(known: KnownEndpoints = {}): Promise<CalDavEndpoints> {
 		const found = await this.call('discovery', () =>
@@ -143,20 +187,26 @@ export class CalDavSession {
 		return readEndpoints(found);
 	}
 
-	/** The calendar collections of the account. */
+	/**
+	 * The calendar collections of the account. One request reads the
+	 * calendar home to a depth of one, which names the home and every
+	 * collection in it.
+	 */
 	async calendars(
 		endpoints: CalDavEndpoints,
 	): Promise<readonly CalDavCalendar[]> {
 		const step = 'calendar list';
 		const attempt = await this.attempt(step, (fetch) =>
-			fetchCalendars({
-				account: this.account(endpoints),
+			propfind({
+				url: endpoints.homeUrl,
+				props: CALENDAR_PROPS,
+				depth: '1',
 				headers: { ...this.headers },
 				fetch,
 			}),
 		);
-		this.refuseFailure(step, attempt.status);
-		return attempt.answer.map(readCalendar);
+		this.refuseUnreadable(step, attempt);
+		return readCalendars(attempt.answer, endpoints.rootUrl);
 	}
 
 	/**
@@ -179,7 +229,7 @@ export class CalDavSession {
 				fetch,
 			}),
 		);
-		this.refuseFailure(step, attempt.status);
+		this.refuseUnreadable(step, attempt);
 		return readDelta(attempt.answer);
 	}
 
@@ -189,9 +239,15 @@ export class CalDavSession {
 	 * One call sends one report, whatever the number of addresses. Where
 	 * the server answered the report, the outcome of each address states
 	 * the resource with its text, or the absence of a resource, or another
-	 * status. Where the server refused the report itself, the answer
-	 * carries that status and no outcome. Only a failure of the transport
-	 * rejects.
+	 * status. The answer states an outcome for the addresses that the
+	 * caller named and for no other address.
+	 *
+	 * Where the server refused the report itself, the answer carries that
+	 * status and no outcome. A report that left one address of the caller
+	 * out takes the same arm, because an address with no response states
+	 * nothing at all and the caller must not read it as an absence.
+	 *
+	 * Only a failure of the transport rejects.
 	 */
 	async resources(
 		calendarUrl: string,
@@ -207,9 +263,12 @@ export class CalDavSession {
 				fetch,
 			}),
 		);
-		return answered(attempt.status)
-			? { ok: true, outcomes: readOutcomes(attempt.answer) }
-			: { ok: false, status: attempt.status };
+		const outcomes = readable(attempt)
+			? readOutcomes(attempt.answer, hrefs, calendarUrl)
+			: null;
+		return outcomes === null
+			? { ok: false, status: attempt.status }
+			: { ok: true, outcomes };
 	}
 
 	/**
@@ -228,9 +287,12 @@ export class CalDavSession {
 		return { answer, status: watched.lastStatus() };
 	}
 
-	/** Refuses an answer whose envelope states a failure of the request. */
-	private refuseFailure(step: string, status: number | null): void {
-		if (!answered(status)) {
+	/** Refuses an answer that no server answered with a report. */
+	private refuseUnreadable(
+		step: string,
+		attempt: Attempt<readonly DAVResponse[]>,
+	): void {
+		if (!readable(attempt)) {
 			throw new CalDavError(step);
 		}
 	}

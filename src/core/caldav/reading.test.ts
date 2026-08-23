@@ -9,9 +9,12 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import type { DAVCalendar, DAVResponse } from 'tsdav';
+import type { DAVResponse } from 'tsdav';
+import type { ResourceOutcome } from './reading';
 import {
-	readCalendar,
+	holdsRawEntry,
+	isRawEntry,
+	readCalendars,
 	readDelta,
 	readEndpoints,
 	readOutcomes,
@@ -76,61 +79,221 @@ describe('the addresses of a discovery', () => {
 	});
 });
 
-describe('one calendar of the library', () => {
+describe('the calendars of a property report', () => {
+	/** One response of a report over a calendar home. */
+	function collection(
+		parts: Partial<DAVResponse['props']> = {},
+	): DAVResponse {
+		return response({
+			href: '/dav/calendars/alice/home/work/',
+			props: { resourcetype: { collection: {}, calendar: {} }, ...parts },
+		});
+	}
+
 	it('takes the name, the components, the tag, and the token', () => {
 		expect(
-			readCalendar({
-				url: HOME,
-				displayName: 'Home',
+			readCalendars(
+				[
+					collection({
+						displayname: 'Work',
+						supportedCalendarComponentSet: {
+							comp: { _attributes: { name: 'VEVENT' } },
+						},
+						getctag: '"ctag-3"',
+						syncToken: 'sync-3',
+					}),
+				],
+				ROOT,
+			),
+		).toEqual([
+			{
+				url: `${ROOT}calendars/alice/home/work/`,
+				displayName: 'Work',
 				components: ['VEVENT'],
 				ctag: '"ctag-3"',
 				syncToken: 'sync-3',
-			}),
-		).toEqual({
-			url: HOME,
-			displayName: 'Home',
-			components: ['VEVENT'],
-			ctag: '"ctag-3"',
-			syncToken: 'sync-3',
-		});
+			},
+		]);
+	});
+
+	// The report reads the home to a depth of one, so it names the home
+	// itself beside each calendar in it. The home states no calendar in the
+	// type of the resource.
+	it('states no calendar for a collection that holds none', () => {
+		expect(
+			readCalendars(
+				[
+					response({
+						href: '/dav/calendars/alice/home/',
+						props: { resourcetype: { collection: {} } },
+					}),
+				],
+				ROOT,
+			),
+		).toEqual([]);
+	});
+
+	it('states no calendar for a response with no property at all', () => {
+		expect(
+			readCalendars([response({ href: '/calendars/alice/home/' })], ROOT),
+		).toEqual([]);
+	});
+
+	it('states no calendar for a response that names no address', () => {
+		expect(
+			readCalendars(
+				[response({ props: { resourcetype: { calendar: {} } } })],
+				ROOT,
+			),
+		).toEqual([]);
 	});
 
 	it('takes the address as the name where the server states none', () => {
-		expect(readCalendar({ url: HOME }).displayName).toBe(HOME);
-	});
-
-	// The library unwraps a CDATA section on this property before the
-	// reader sees it, so the reader meets a name of another shape only
-	// where that shape carries no text at all.
-	it('takes the address as the name where the name states no text', () => {
-		expect(readCalendar({ url: HOME, displayName: {} }).displayName).toBe(
-			HOME,
+		expect(readCalendars([collection()], ROOT)[0]?.displayName).toBe(
+			`${ROOT}calendars/alice/home/work/`,
 		);
 	});
 
-	it('takes the name out of a CDATA section, where one arrives', () => {
+	it('takes the name out of a CDATA section', () => {
 		expect(
-			readCalendar({ url: HOME, displayName: { _cdata: 'Home' } })
-				.displayName,
-		).toBe('Home');
+			readCalendars(
+				[collection({ displayname: { _cdata: 'Work' } })],
+				ROOT,
+			)[0]?.displayName,
+		).toBe('Work');
+	});
+
+	it('takes an address that the server states in whole', () => {
+		expect(
+			readCalendars(
+				[
+					response({
+						href: `${ROOT}calendars/alice/home/work/`,
+						props: { resourcetype: { calendar: {} } },
+					}),
+				],
+				ROOT,
+			)[0]?.url,
+		).toBe(`${ROOT}calendars/alice/home/work/`);
+	});
+
+	// A parser gives one element as a value and more than one as a list.
+	it('takes one component type', () => {
+		expect(
+			readCalendars(
+				[
+					collection({
+						supportedCalendarComponentSet: {
+							comp: { _attributes: { name: 'VTODO' } },
+						},
+					}),
+				],
+				ROOT,
+			)[0]?.components,
+		).toEqual(['VTODO']);
+	});
+
+	it('takes more than one component type', () => {
+		expect(
+			readCalendars(
+				[
+					collection({
+						supportedCalendarComponentSet: {
+							comp: [
+								{ _attributes: { name: 'VEVENT' } },
+								{ _attributes: { name: 'VTODO' } },
+							],
+						},
+					}),
+				],
+				ROOT,
+			)[0]?.components,
+		).toEqual(['VEVENT', 'VTODO']);
 	});
 
 	it('states no component where the server states none', () => {
-		expect(readCalendar({ url: HOME }).components).toEqual([]);
+		expect(readCalendars([collection()], ROOT)[0]?.components).toEqual([]);
+	});
+
+	it('states no component for an element with no name', () => {
+		expect(
+			readCalendars(
+				[collection({ supportedCalendarComponentSet: { comp: {} } })],
+				ROOT,
+			)[0]?.components,
+		).toEqual([]);
 	});
 
 	it('states no tag and no token where the server states none', () => {
-		const calendar = readCalendar({ url: HOME });
-		expect(calendar.ctag).toBeNull();
-		expect(calendar.syncToken).toBeNull();
+		const calendar = readCalendars([collection()], ROOT)[0];
+		expect(calendar?.ctag).toBeNull();
+		expect(calendar?.syncToken).toBeNull();
 	});
 
 	it('takes a token that reads as a number, as text', () => {
-		const numeric = {
-			url: HOME,
-			syncToken: 1234,
-		} as unknown as DAVCalendar;
-		expect(readCalendar(numeric).syncToken).toBe('1234');
+		expect(
+			readCalendars([collection({ syncToken: 1234 })], ROOT)[0]
+				?.syncToken,
+		).toBe('1234');
+	});
+
+	// The address of the server comes from the settings, and a user writes
+	// that value. An address that states no server leaves each address of
+	// the answer as the server stated it.
+	it('keeps the address of the response where the server address is not one', () => {
+		expect(readCalendars([collection()], 'not an address')[0]?.url).toBe(
+			'/dav/calendars/alice/home/work/',
+		);
+	});
+});
+
+// The library gives one entry for each response of a multistatus, and one
+// entry carrying the whole body where the body is anything else. The
+// second form carries the address of the request, so a reader that took it
+// for data would state that address as a resource.
+describe('the answer that states no multistatus', () => {
+	it.each([
+		['a body of text', 'the server is behind a login wall'],
+		['a body with no characters', ''],
+		['a body that does not parse', '<multistatus'],
+	])('names the entry of %s', (_name, raw) => {
+		expect(isRawEntry(response({ href: ROOT, raw }))).toBe(true);
+	});
+
+	it('names the entry of a document that is not a multistatus', () => {
+		expect(isRawEntry(response({ href: ROOT, raw: { error: {} } }))).toBe(
+			true,
+		);
+	});
+
+	it('names no entry of a multistatus', () => {
+		expect(
+			isRawEntry(
+				response({
+					href: HOME,
+					raw: { multistatus: { response: {} } },
+				}),
+			),
+		).toBe(false);
+	});
+
+	// A multistatus that names no response is not this form. The library
+	// holds no document for it, so it writes no address into the entry, and
+	// that answer is the answer of a collection that did not change.
+	it('names no entry of a multistatus that names no response', () => {
+		expect(isRawEntry(response())).toBe(false);
+	});
+
+	it('finds one such entry among the entries of an answer', () => {
+		expect(holdsRawEntry([response({ href: ROOT, raw: 'a page' })])).toBe(
+			true,
+		);
+		expect(
+			holdsRawEntry([
+				response({ href: HOME, raw: { multistatus: {} } }),
+				response(),
+			]),
+		).toBe(false);
 	});
 });
 
@@ -225,11 +388,29 @@ describe('what a report states about the token of the next call', () => {
 });
 
 describe('the calendar objects of a report', () => {
+	const ONE = `${HOME}one.ics`;
+
+	/**
+	 * The outcomes for one asked-about address. The reader answers null
+	 * where the report left an address out, and a case that means that
+	 * asks for it by name.
+	 */
+	function outcomes(
+		answers: readonly DAVResponse[],
+		asked: readonly string[] = [ONE],
+	): readonly ResourceOutcome[] {
+		const found = readOutcomes(answers, asked, HOME);
+		if (found === null) {
+			throw new Error('the report answered about no named address');
+		}
+		return found;
+	}
+
 	it('states a resource that the server holds, with its tag and its text', () => {
 		expect(
-			readOutcomes([
+			outcomes([
 				response({
-					href: `${HOME}one.ics`,
+					href: ONE,
 					props: {
 						getetag: '"etag-1"',
 						calendarData: 'BEGIN:VCALENDAR',
@@ -239,7 +420,7 @@ describe('the calendar objects of a report', () => {
 		).toEqual([
 			{
 				kind: 'found',
-				href: `${HOME}one.ics`,
+				href: ONE,
 				etag: '"etag-1"',
 				ics: 'BEGIN:VCALENDAR',
 			},
@@ -249,29 +430,91 @@ describe('the calendar objects of a report', () => {
 	it.each([404, 410])(
 		'states a resource that is not there for status %i',
 		(status) => {
-			expect(
-				readOutcomes([response({ href: `${HOME}one.ics`, status })]),
-			).toEqual([{ kind: 'absent', href: `${HOME}one.ics` }]);
+			expect(outcomes([response({ href: ONE, status })])).toEqual([
+				{ kind: 'absent', href: ONE },
+			]);
 		},
 	);
 
 	it('states the status where the server answered in another way', () => {
-		expect(
-			readOutcomes([response({ href: `${HOME}one.ics`, status: 403 })]),
-		).toEqual([{ kind: 'other', href: `${HOME}one.ics`, status: 403 }]);
+		expect(outcomes([response({ href: ONE, status: 403 })])).toEqual([
+			{ kind: 'other', href: ONE, status: 403 },
+		]);
 	});
 
-	it('states no outcome for a response that names no address', () => {
+	// A report that leaves an address out answered nothing about it, and a
+	// caller cannot read that silence as an absence.
+	it('answers null where the report names no address', () => {
 		expect(
-			readOutcomes([response({ props: { getetag: '"one"' } })]),
-		).toEqual([]);
+			readOutcomes(
+				[response({ props: { getetag: '"one"' } })],
+				[ONE],
+				HOME,
+			),
+		).toBeNull();
+	});
+
+	// A body that was cut short can still parse as a multistatus, and the
+	// response that the cut left behind names an address of its own. That
+	// address is not the question the caller asked.
+	it('answers null where the report names another address alone', () => {
+		expect(
+			readOutcomes(
+				[
+					response({ href: `${HOME}other.ics`, props: {} }),
+					response({ href: HOME, props: {} }),
+				],
+				[ONE],
+				HOME,
+			),
+		).toBeNull();
+	});
+
+	it('answers null where the report left one address of two out', () => {
+		expect(
+			readOutcomes(
+				[response({ href: ONE })],
+				[ONE, `${HOME}two.ics`],
+				HOME,
+			),
+		).toBeNull();
+	});
+
+	it('answers every address that the caller named', () => {
+		expect(
+			outcomes(
+				[
+					response({ href: ONE }),
+					response({ href: `${HOME}two.ics`, status: 404 }),
+				],
+				[ONE, `${HOME}two.ics`],
+			).map((outcome) => outcome.kind),
+		).toEqual(['found', 'absent']);
+	});
+
+	it('takes the first response where a server states two for one address', () => {
+		expect(
+			outcomes([
+				response({ href: ONE, props: { getetag: '"first"' } }),
+				response({ href: ONE, props: { getetag: '"second"' } }),
+			]),
+		).toEqual([{ kind: 'found', href: ONE, etag: '"first"', ics: null }]);
+	});
+
+	it('reads a name that the caller stated two times one time', () => {
+		expect(outcomes([response({ href: ONE })], [ONE, ONE])).toHaveLength(1);
+	});
+
+	it('takes the address in the spelling that the caller used', () => {
+		expect(
+			outcomes([response({ href: '/dav/calendars/alice/home/one.ics' })]),
+		).toEqual([{ kind: 'found', href: ONE, etag: null, ics: null }]);
 	});
 
 	it('states no text where the response carries no calendar data', () => {
-		const found = readOutcomes([response({ href: `${HOME}one.ics` })])[0];
-		expect(found).toEqual({
+		expect(outcomes([response({ href: ONE })])[0]).toEqual({
 			kind: 'found',
-			href: `${HOME}one.ics`,
+			href: ONE,
 			etag: null,
 			ics: null,
 		});
@@ -292,26 +535,25 @@ describe('the calendar objects of a report', () => {
 			},
 		],
 	])('takes the calendar text from %s', (_name, calendarData) => {
-		const found = readOutcomes([
-			response({ href: `${HOME}one.ics`, props: { calendarData } }),
-		])[0];
-		expect(found).toMatchObject({ kind: 'found', ics: 'BEGIN:VCALENDAR' });
+		expect(
+			outcomes([response({ href: ONE, props: { calendarData } })])[0],
+		).toMatchObject({ kind: 'found', ics: 'BEGIN:VCALENDAR' });
 	});
 
 	it('states no text where a wrapper holds no text', () => {
-		const found = readOutcomes([
-			response({ href: `${HOME}one.ics`, props: { calendarData: {} } }),
-		])[0];
-		expect(found).toMatchObject({ kind: 'found', ics: null });
+		expect(
+			outcomes([response({ href: ONE, props: { calendarData: {} } })])[0],
+		).toMatchObject({ kind: 'found', ics: null });
 	});
 
 	it('takes a tag out of a CDATA section as well', () => {
-		const found = readOutcomes([
-			response({
-				href: `${HOME}one.ics`,
-				props: { getetag: { _cdata: '"etag-2"' } },
-			}),
-		])[0];
-		expect(found).toMatchObject({ kind: 'found', etag: '"etag-2"' });
+		expect(
+			outcomes([
+				response({
+					href: ONE,
+					props: { getetag: { _cdata: '"etag-2"' } },
+				}),
+			])[0],
+		).toMatchObject({ kind: 'found', etag: '"etag-2"' });
 	});
 });

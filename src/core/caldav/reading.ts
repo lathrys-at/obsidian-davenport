@@ -21,9 +21,17 @@
  * in the same form. A server can write the calendar text of a resource in
  * any of those shapes, and each shape states the same text. The reader
  * takes the text out of each of them.
+ *
+ * An answer of the library also arrives in one of two forms, and a caller
+ * must tell them apart before it reads anything. Where the body of the
+ * answer is a multistatus, the library gives one entry for each response
+ * of that document. Where the body is anything else, the library gives one
+ * entry that carries the body as it stands, and it writes the address of
+ * the request into that entry. `holdsRawEntry` below names the second
+ * form.
  */
 
-import type { DAVAccount, DAVCalendar, DAVResponse } from 'tsdav';
+import type { DAVAccount, DAVResponse } from 'tsdav';
 
 /** The addresses of the calendar service of one account. */
 export interface CalDavEndpoints {
@@ -154,15 +162,99 @@ function address(found: string | undefined, step: string): string {
 	return found;
 }
 
-/** One calendar of the library, in the shape of the engine. */
-export function readCalendar(found: DAVCalendar): CalDavCalendar {
-	return {
-		url: found.url,
-		displayName: text(found.displayName) ?? found.url,
-		components: found.components ?? [],
-		ctag: text(found.ctag),
-		syncToken: text(found.syncToken),
-	};
+/**
+ * True where the library built this entry from a body that is not a
+ * multistatus.
+ *
+ * The library reads such a body as one response of its own, and it writes
+ * the address of the request into that response. A reader that took the
+ * entry for data would state the address of a collection as a resource,
+ * and it would state the collection of a calendar home as a calendar with
+ * no name. The status of the answer does not name this form: a body that
+ * carries no XML, a body with no characters, a body that does not parse,
+ * and a body that parses to something other than a multistatus each arrive
+ * under a status of success as readily as under a status of failure.
+ *
+ * A multistatus that names no response is not this form. The library holds
+ * no document for such an answer, and it therefore writes no address into
+ * the entry. That answer is the answer of a collection that did not
+ * change.
+ */
+export function isRawEntry(answer: DAVResponse): boolean {
+	return (
+		answer.raw !== undefined &&
+		reach(answer.raw, ['multistatus']) === undefined
+	);
+}
+
+/** True where one entry or more of the answer states no multistatus. */
+export function holdsRawEntry(answers: readonly DAVResponse[]): boolean {
+	return answers.some(isRawEntry);
+}
+
+/**
+ * The calendar collections that one property report names.
+ *
+ * The report reads the calendar home to a depth of one, so it names the
+ * home itself beside each collection in it. A calendar collection states
+ * the type `calendar`, and the home does not, so the type of the resource
+ * selects the calendars. The reader keeps every calendar collection and
+ * states the component types of each one; the caller chooses the
+ * collections that it can use.
+ */
+export function readCalendars(
+	answers: readonly DAVResponse[],
+	rootUrl: string,
+): readonly CalDavCalendar[] {
+	const found: CalDavCalendar[] = [];
+	for (const answer of answers) {
+		const href = text(answer.href);
+		if (href === null || !isCalendarCollection(answer)) {
+			continue;
+		}
+		const url = absolute(href, rootUrl);
+		found.push({
+			url,
+			displayName: text(reach(answer.props, ['displayname'])) ?? url,
+			components: componentNames(
+				reach(answer.props, ['supportedCalendarComponentSet', 'comp']),
+			),
+			ctag: text(reach(answer.props, ['getctag'])),
+			syncToken: text(reach(answer.props, ['syncToken'])),
+		});
+	}
+	return found;
+}
+
+/** True where the response states a collection that holds a calendar. */
+function isCalendarCollection(answer: DAVResponse): boolean {
+	return reach(answer.props, ['resourcetype', 'calendar']) !== undefined;
+}
+
+/**
+ * The component types that a collection takes. The property holds one
+ * element for each type, and a parser gives one element as a value and
+ * more than one as a list.
+ */
+function componentNames(value: unknown): readonly string[] {
+	const held: readonly unknown[] = Array.isArray(value) ? value : [value];
+	const names: string[] = [];
+	for (const comp of held) {
+		const name = text(reach(comp, ['_attributes', 'name']));
+		if (name !== null) {
+			names.push(name);
+		}
+	}
+	return names;
+}
+
+/** The address of a response, against the address of the server. */
+function absolute(href: string, rootUrl: string): string {
+	try {
+		return new URL(href, rootUrl).href;
+	} catch {
+		return href;
+	}
 }
 
 /**
@@ -215,22 +307,50 @@ function nextToken(found: string | null, changes: number): NextSyncToken {
 }
 
 /**
- * What one multiget report states about each address that it names. A
- * response that names no address states nothing that a caller can use, and
- * it gets no outcome.
+ * What one multiget report states about each address that the caller
+ * named.
+ *
+ * The reader answers the question that the caller asked, and it answers no
+ * other question. A response for an address that the caller did not name
+ * states nothing that the caller can use, and it gets no outcome. A body
+ * that was cut short can still parse as a multistatus, and the response
+ * that the cut left behind names an address of its own; without this rule
+ * that address would arrive as a resource.
+ *
+ * Each outcome carries the address in the spelling that the caller used.
+ * A server states an address as a path or as a whole address, and the two
+ * forms name one resource, so the caller would otherwise have to match the
+ * two spellings itself. Where a server states two responses for one
+ * address, the first of them states the outcome.
+ *
+ * The result is null where the report did not answer about every address
+ * that the caller named. A server answers a report about a set of
+ * addresses with one response for each of them, so a report that leaves an
+ * address out did not answer the question. An address with no response
+ * states nothing: a caller cannot tell "the resource is not there" from
+ * "the server did not say", and the first of those two readings would mint
+ * a deletion that no server confirmed.
  */
 export function readOutcomes(
 	answers: readonly DAVResponse[],
-): readonly ResourceOutcome[] {
-	const outcomes: ResourceOutcome[] = [];
+	asked: readonly string[],
+	base: string,
+): readonly ResourceOutcome[] | null {
+	const wanted = new Map(asked.map((href) => [absolute(href, base), href]));
+	const found = new Map<string, ResourceOutcome>();
 	for (const answer of answers) {
 		const href = text(answer.href);
 		if (href === null) {
 			continue;
 		}
-		outcomes.push(outcomeOf(href, answer));
+		const at = absolute(href, base);
+		const named = wanted.get(at);
+		if (named === undefined || found.has(at)) {
+			continue;
+		}
+		found.set(at, outcomeOf(named, answer));
 	}
-	return outcomes;
+	return found.size === wanted.size ? [...found.values()] : null;
 }
 
 /** The outcome of one response of a multiget report. */

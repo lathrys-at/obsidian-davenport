@@ -468,14 +468,18 @@ describe('the calendar text in each shape that a server writes', () => {
 
 /**
  * A session over a transport that answers every request the same way. The
- * cases below drive a failure of the whole request, which the mock server
- * answers correctly and therefore cannot produce for every step.
+ * cases below drive an answer that is not a report, which the mock server
+ * answers correctly and therefore cannot produce.
  */
-function overOneAnswer(status: number, text = FAILURE_PAGE): CalDavSession {
+function overOneAnswer(
+	status: number,
+	text = FAILURE_PAGE,
+	contentType = 'text/html; charset=utf-8',
+): CalDavSession {
 	return new CalDavSession({
 		transport: new FakeTransport({
 			status,
-			headers: { 'content-type': 'text/html; charset=utf-8' },
+			headers: { 'content-type': contentType },
 			text,
 		}),
 		serverUrl: 'https://caldav.example.com/dav/',
@@ -485,6 +489,55 @@ function overOneAnswer(status: number, text = FAILURE_PAGE): CalDavSession {
 
 const FAILURE_PAGE =
 	'<html><body>the server of the provider says that user alice-2026 has no calendar named private-work</body></html>';
+
+const XML = 'application/xml; charset=utf-8';
+
+/**
+ * The answers that carry no report. The first four state a failure. The
+ * last four state success, and each of them still carries a body that is
+ * not a multistatus: a body with no characters, a page that a login wall
+ * answered, a document of another kind, and a document that was cut short.
+ * A captive portal, a proxy, a session that ended, and an answer that was
+ * cut short each produce one of the last four.
+ */
+const NOT_A_REPORT: readonly (readonly [string, CalDavSession])[] = [
+	['404 with a page', overOneAnswer(404)],
+	['500 with a page', overOneAnswer(500)],
+	['503 with a page', overOneAnswer(503)],
+	['302 with a page', overOneAnswer(302)],
+	['207 with no body at all', overOneAnswer(207, '', XML)],
+	['200 with a page that a login wall answered', overOneAnswer(200)],
+	[
+		'200 with a document that is not a multistatus',
+		overOneAnswer(200, '<?xml version="1.0"?><error><auth/></error>', XML),
+	],
+	[
+		'207 with a document that is not well formed',
+		overOneAnswer(
+			207,
+			'<?xml version="1.0"?><D:multistatus xmlns:D="DAV:"></D:wrong>',
+			XML,
+		),
+	],
+	[
+		'207 with a document cut short in its first tag',
+		overOneAnswer(207, '<?xml version="1.0"?><D:multi', XML),
+	],
+];
+
+/**
+ * A body that a cut left half written can still parse as a multistatus,
+ * because the parser closes the tags that the cut left open. Such a body
+ * is a report as far as any reader can tell, and no rule of this layer
+ * refuses it. The two cases below state what the layer does with the two
+ * shapes that such a body takes, and each answer is one that takes nothing
+ * away.
+ */
+const CUT_SHORT =
+	'<?xml version="1.0"?><D:multistatus xmlns:D="DAV:"><D:response><D:href>/dav/calendars/alice/home/';
+
+const CUT_SHORT_IN_A_TAG =
+	'<?xml version="1.0"?><D:multistatus xmlns:D="DAV:"><D:respo';
 
 const ENDPOINTS = {
 	rootUrl: 'https://caldav.example.com/dav/',
@@ -498,11 +551,11 @@ const ENDPOINTS = {
 // itself as a resource that is gone, or a calendar home with no calendar
 // in it. Each case below asks for the refusal instead.
 describe('a request that the server refused whole', () => {
-	it.each([404, 500, 503])(
-		'refuses a change report that answered %i',
-		async (status) => {
+	it.each(NOT_A_REPORT)(
+		'refuses a change report of %s',
+		async (_name, caldav) => {
 			await expect(
-				overOneAnswer(status).changes(
+				caldav.changes(
 					'https://caldav.example.com/dav/calendars/alice/home/',
 					null,
 				),
@@ -519,22 +572,86 @@ describe('a request that the server refused whole', () => {
 		).rejects.toThrow(/change report/u);
 	});
 
-	it.each([404, 500, 503])(
-		'refuses a calendar list that answered %i',
-		async (status) => {
-			await expect(
-				overOneAnswer(status).calendars(ENDPOINTS),
-			).rejects.toBeInstanceOf(CalDavError);
+	it.each(NOT_A_REPORT)(
+		'refuses a calendar list of %s',
+		async (_name, caldav) => {
+			await expect(caldav.calendars(ENDPOINTS)).rejects.toBeInstanceOf(
+				CalDavError,
+			);
 		},
 	);
 
-	it('refuses a discovery that answered a failure', async () => {
-		await expect(
-			overOneAnswer(500).discover({
-				rootUrl: ENDPOINTS.rootUrl,
-				principalUrl: ENDPOINTS.principalUrl,
-			}),
-		).rejects.toBeInstanceOf(CalDavError);
+	// The report of the calendar objects states its refusal and does not
+	// throw. The address that the caller asked about must get no outcome:
+	// an outcome there would state a resource that no server named.
+	it.each(NOT_A_REPORT)(
+		'states the refusal of a calendar object report of %s',
+		async (_name, caldav) => {
+			const report = await caldav.resources(
+				'https://caldav.example.com/dav/calendars/alice/home/',
+				['/dav/calendars/alice/home/one.ics'],
+			);
+			expect(report.ok).toBe(false);
+			expect('outcomes' in report).toBe(false);
+		},
+	);
+
+	it.each(NOT_A_REPORT)(
+		'refuses a discovery of %s',
+		async (_name, caldav) => {
+			await expect(
+				caldav.discover({
+					rootUrl: ENDPOINTS.rootUrl,
+					principalUrl: ENDPOINTS.principalUrl,
+				}),
+			).rejects.toBeInstanceOf(CalDavError);
+		},
+	);
+});
+
+// A cut can leave a body that still parses as a multistatus. No rule can
+// refuse such a body, because it is a report. These cases state that each
+// answer the layer gives for one takes nothing away: it names no resource
+// that the caller did not ask about, it states no resource as absent, and
+// it moves no token.
+describe('a report that a cut left half written', () => {
+	const HOME_URL = 'https://caldav.example.com/dav/calendars/alice/home/';
+
+	it('states the refusal where the report names no address of the caller', async () => {
+		const report = await overOneAnswer(207, CUT_SHORT, XML).resources(
+			HOME_URL,
+			[`${HOME_URL}one.ics`],
+		);
+		expect(report).toEqual({ ok: false, status: 207 });
+	});
+
+	it('states the refusal where the report names no address at all', async () => {
+		const report = await overOneAnswer(
+			207,
+			CUT_SHORT_IN_A_TAG,
+			XML,
+		).resources(HOME_URL, [`${HOME_URL}one.ics`]);
+		expect(report).toEqual({ ok: false, status: 207 });
+	});
+
+	// The change report has no set of addresses to read the answer
+	// against, so a cut that leaves a readable report is a report. The
+	// answer names the address that the cut left, and it moves no token,
+	// so the next call reads the same point again.
+	it('states no change and no token for a change report cut short in a tag', async () => {
+		const delta = await overOneAnswer(207, CUT_SHORT_IN_A_TAG, XML).changes(
+			HOME_URL,
+			'sync-1',
+		);
+		expect(delta).toEqual({ token: { kind: 'no-change' }, changes: [] });
+	});
+
+	it('states no calendar for a calendar list cut short in a tag', async () => {
+		expect(
+			await overOneAnswer(207, CUT_SHORT_IN_A_TAG, XML).calendars(
+				ENDPOINTS,
+			),
+		).toEqual([]);
 	});
 });
 
