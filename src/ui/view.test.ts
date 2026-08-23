@@ -4,12 +4,36 @@
  * The point of these cases is the paragraph about the storage of the app
  * passwords. The section shows a warning while the data file holds those
  * passwords, and it shows that warning each time the screen opens.
+ *
+ * The last block holds the words of a connection test. Each result of the
+ * test states one paragraph, and every result but a sign-in asks the user
+ * to do something.
  */
 
 import { describe, expect, it } from 'vitest';
 import type { AccountConfig } from '../core/model/settings';
-import { DATA_FILE_WARNING, SECRET_STORAGE_NOTE } from './copy';
-import { accountsView, outcomeView, passwordNote, rowNote } from './view';
+import {
+	CONNECTION_ALPHABET,
+	CONNECTION_NOT_REACHED,
+	CONNECTION_NO_ACCOUNT,
+	CONNECTION_NO_TOKEN_FLOW,
+	CONNECTION_REFUSED,
+	CONNECTION_RUNS,
+	CONNECTION_SIGNED_IN,
+	CONNECTION_UNREADABLE,
+	DATA_FILE_WARNING,
+	NO_CREDENTIAL,
+	SECRET_STORAGE_NOTE,
+	TEST_CONNECTION,
+} from './copy';
+import {
+	accountsView,
+	connectionRunningView,
+	connectionView,
+	outcomeView,
+	passwordNote,
+	rowNote,
+} from './view';
 
 const ACCOUNT: AccountConfig = {
 	id: 'caldav-example-com',
@@ -147,5 +171,47 @@ describe('the entries that the plugin did not read', () => {
 		expect(view.problemsHeading).toBeNull();
 		expect(view.problemsNote).toBeNull();
 		expect(view.problems).toEqual([]);
+	});
+});
+
+describe('what the section states about a connection test', () => {
+	it('names the button that starts the test', () => {
+		expect(accountsView('secret-storage', [ACCOUNT], []).testButton).toBe(
+			TEST_CONNECTION,
+		);
+	});
+
+	it('states that the test runs, and states no warning', () => {
+		expect(connectionRunningView()).toEqual({
+			text: CONNECTION_RUNS,
+			warning: false,
+		});
+	});
+
+	it('states a sign-in without a warning', () => {
+		expect(connectionView('signed-in')).toEqual({
+			text: CONNECTION_SIGNED_IN,
+			warning: false,
+		});
+	});
+
+	it.each([
+		['refused', CONNECTION_REFUSED],
+		['not-reached', CONNECTION_NOT_REACHED],
+		['no-credential', NO_CREDENTIAL],
+		['credential-unreadable', CONNECTION_UNREADABLE],
+		['credential-alphabet', CONNECTION_ALPHABET],
+		['no-token-flow', CONNECTION_NO_TOKEN_FLOW],
+		['no-account', CONNECTION_NO_ACCOUNT],
+	] as const)('states %s as a warning', (result, text) => {
+		expect(connectionView(result)).toEqual({ text, warning: true });
+	});
+
+	it('tells the user what to do after a refusal', () => {
+		expect(connectionView('refused').text).toContain('Check the username');
+	});
+
+	it('tells the user what to check where it reached no server', () => {
+		expect(connectionView('not-reached').text).toContain('server URL');
 	});
 });

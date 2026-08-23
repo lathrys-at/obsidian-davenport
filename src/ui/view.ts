@@ -12,6 +12,7 @@
  * words reach the notice of the app.
  */
 
+import type { ConnectionResult } from '../core/caldav/connection';
 import type { AccountConfig } from '../core/model/settings';
 import type { SecretTier } from '../core/ports/secret-store';
 import type { SettingsProblem } from '../core/settings/problems';
@@ -24,12 +25,21 @@ import {
 	ACCOUNTS_HEADING,
 	ACCOUNTS_INTRO,
 	ADD_ACCOUNT,
+	CONNECTION_ALPHABET,
+	CONNECTION_NOT_REACHED,
+	CONNECTION_NO_ACCOUNT,
+	CONNECTION_NO_TOKEN_FLOW,
+	CONNECTION_REFUSED,
+	CONNECTION_RUNS,
+	CONNECTION_SIGNED_IN,
+	CONNECTION_UNREADABLE,
 	KEEP_PASSWORD,
 	NO_ACCOUNTS,
 	NO_CREDENTIAL,
 	PROBLEMS_HEADING,
 	PROBLEMS_NOTE,
 	SECRET_STORAGE_NOTE,
+	TEST_CONNECTION,
 	tierNote,
 	tierWarning,
 } from './copy';
@@ -57,6 +67,8 @@ export interface AccountsView {
 	/** The words for a list with no account, or null. */
 	readonly empty: string | null;
 	readonly addButton: string;
+	/** The words on the button that starts the connection test of a row. */
+	readonly testButton: string;
 	/** The heading of the refused entries, or null where there are none. */
 	readonly problemsHeading: string | null;
 	readonly problemsNote: string | null;
@@ -84,6 +96,7 @@ export function accountsView(
 		})),
 		empty: accounts.length === 0 ? NO_ACCOUNTS : null,
 		addButton: ADD_ACCOUNT,
+		testButton: TEST_CONNECTION,
 		problemsHeading: problems.length === 0 ? null : PROBLEMS_HEADING,
 		problemsNote: problems.length === 0 ? null : PROBLEMS_NOTE,
 		problems: problems.map(describeSettingsProblem),
@@ -110,6 +123,47 @@ export function passwordNote(tier: SecretTier, keepsPassword: boolean): string {
 	return keepsPassword
 		? `${KEEP_PASSWORD} ${tierNote(tier)}`
 		: tierNote(tier);
+}
+
+/**
+ * What the screen states about one connection test.
+ *
+ * The screen shows the text under the row of the account. A result that is
+ * not a sign-in stands as a warning, because each of those results asks the
+ * user to do something.
+ */
+export type ConnectionView = NoteView;
+
+/** What the screen states while the connection test of a row runs. */
+export function connectionRunningView(): ConnectionView {
+	return { text: CONNECTION_RUNS, warning: false };
+}
+
+/** What the screen states after the connection test of a row ends. */
+export function connectionView(result: ConnectionResult): ConnectionView {
+	return { text: connectionText(result), warning: result !== 'signed-in' };
+}
+
+/** The words of one result of a connection test. */
+function connectionText(result: ConnectionResult): string {
+	switch (result) {
+		case 'signed-in':
+			return CONNECTION_SIGNED_IN;
+		case 'refused':
+			return CONNECTION_REFUSED;
+		case 'not-reached':
+			return CONNECTION_NOT_REACHED;
+		case 'no-credential':
+			return NO_CREDENTIAL;
+		case 'credential-unreadable':
+			return CONNECTION_UNREADABLE;
+		case 'credential-alphabet':
+			return CONNECTION_ALPHABET;
+		case 'no-token-flow':
+			return CONNECTION_NO_TOKEN_FLOW;
+		case 'no-account':
+			return CONNECTION_NO_ACCOUNT;
+	}
 }
 
 /** What the window that took the values of the user shows after a write. */

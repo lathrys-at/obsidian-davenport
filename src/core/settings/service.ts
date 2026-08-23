@@ -26,10 +26,14 @@
  * user alone, and they reach no settings value and no log entry.
  */
 
+import type { ConnectionResult } from '../caldav/connection';
+import { checkConnection } from '../caldav/connection';
 import type { Clock } from '../ports/clock';
 import type { Logger, LogOutcome } from '../ports/logger';
 import type { SecretStore, SecretTier } from '../ports/secret-store';
 import type { SettingsStore } from '../ports/settings-store';
+import type { HttpTransport } from '../ports/transport';
+import { fitsBasicAuth } from '../model/credential';
 import type { AccountConfig, SyncedSettings } from '../model/settings';
 import type { AccountDraft } from './accounts';
 import {
@@ -42,7 +46,7 @@ import {
 	replaceAccount,
 	trimDraft,
 } from './accounts';
-import { encodeCredential } from './credential';
+import { decodeCredential, encodeCredential } from './credential';
 import type { FieldFault, SettingsProblem } from './problems';
 import { nameFieldFault } from './problems';
 import {
@@ -67,6 +71,8 @@ export interface AccountServiceParts {
 	readonly secrets: SecretStore;
 	readonly logger: Logger;
 	readonly clock: Clock;
+	/** The transport that the connection test of an account uses. */
+	readonly transport: HttpTransport;
 }
 
 export class AccountService {
@@ -190,7 +196,10 @@ export class AccountService {
 		const others = this.accounts
 			.filter((other) => other.id !== id)
 			.map((other) => other.id);
-		const faults = checkAccount(account, others);
+		const faults = [
+			...checkAccount(account, others),
+			...(password === '' ? [] : passwordFaults(password)),
+		];
 		if (faults.length > 0) {
 			return this.refuse('change account', id, faults);
 		}
@@ -268,6 +277,49 @@ export class AccountService {
 		}
 		this.record('remove account', id, 'success');
 		return { ok: true, account };
+	}
+
+	/**
+	 * Runs the connection test of one account. The test reads the
+	 * credential of the account and runs the discovery of the principal
+	 * against the server. The result states what happened, in one word of
+	 * this plugin. The log holds that word, and it holds no value of the
+	 * user and no word of the server.
+	 */
+	async testConnection(id: string): Promise<ConnectionResult> {
+		const account = findAccount(this.reading.settings, id);
+		if (account === null) {
+			return this.stateConnection(id, 'no-account');
+		}
+		let held: string | null;
+		try {
+			held = await this.parts.secrets.get(account.credentialRef);
+		} catch {
+			return this.stateConnection(id, 'credential-unreadable');
+		}
+		if (held === null) {
+			return this.stateConnection(id, 'no-credential');
+		}
+		const credential = decodeCredential(account.credentialType, held);
+		if (credential === null) {
+			return this.stateConnection(id, 'credential-unreadable');
+		}
+		const result = await checkConnection({
+			transport: this.parts.transport,
+			serverUrl: account.serverUrl,
+			username: account.username,
+			credential,
+		});
+		return this.stateConnection(id, result);
+	}
+
+	/** Writes one result of a connection test to the log, and gives it back. */
+	private stateConnection(
+		id: string,
+		result: ConnectionResult,
+	): ConnectionResult {
+		this.record('test connection', id, connectionOutcome(result), result);
+		return result;
 	}
 
 	/**
@@ -414,7 +466,20 @@ const PASSWORD_GONE =
 
 /** The faults of the password that the user gave. */
 function passwordFaults(password: string): readonly FieldFault[] {
-	return password === '' ? [{ kind: 'empty', field: 'password' }] : [];
+	if (password === '') {
+		return [{ kind: 'empty', field: 'password' }];
+	}
+	return fitsBasicAuth(password)
+		? []
+		: [{ kind: 'sign-in-alphabet', field: 'password' }];
+}
+
+/** The outcome that one result of a connection test writes to the log. */
+function connectionOutcome(result: ConnectionResult): LogOutcome {
+	if (result === 'signed-in') {
+		return 'success';
+	}
+	return result === 'refused' ? 'refused' : 'failed';
 }
 
 /**

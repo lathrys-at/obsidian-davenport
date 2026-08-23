@@ -14,6 +14,7 @@
 import { describe, expect, it } from 'vitest';
 import { ControlledClock } from '../../harness/clock';
 import { FakePluginData } from '../../harness/obsidian-fake';
+import { refusingTransport } from '../../harness/transport';
 import { PluginDataStore } from '../../../src/adapters/plugin-data';
 import { createSecretStore } from '../../../src/adapters/secret-store';
 import type { SyncLogEntry } from '../../../src/core/ports/logger';
@@ -21,6 +22,9 @@ import { AccountService } from '../../../src/core/settings/service';
 import { accountsView } from '../../../src/ui/view';
 
 const PASSWORD = 'correct-horse-battery-staple';
+/** No case of this file makes a request, so every request is a fault. */
+const NO_REQUESTS = 'this test makes no network request';
+
 const DRAFT = {
 	serverUrl: 'https://caldav.example.com/dav/',
 	username: 'ren',
@@ -64,6 +68,7 @@ function plugin(
 			},
 		},
 		clock: new ControlledClock(),
+		transport: refusingTransport(NO_REQUESTS),
 	});
 	return { service, data, entries };
 }

@@ -10,18 +10,30 @@
  * as a sensitive value, and the sweep walks every surface of the evidence
  * and looks for that value. The surfaces hold the data file of the plugin
  * and the sync log, so a password in either one fails the run.
+ *
+ * The last block runs the transport instead of the settings. A request to
+ * a calendar server carries the credential of the user, and the log of
+ * that request must carry none of it.
  */
 
 import { describe, expect, it } from 'vitest';
+import { MockCalDavServer } from '../../harness/caldav-mock/server';
 import { ControlledClock } from '../../harness/clock';
 import { FakePluginData } from '../../harness/obsidian-fake';
 import { runSimulation } from '../../harness/sweeps';
+import { refusingTransport } from '../../harness/transport';
 import { PluginDataStore } from '../../../src/adapters/plugin-data';
 import { createSecretStore } from '../../../src/adapters/secret-store';
-import type { Logger } from '../../../src/core/ports/logger';
+import { basicHeaders } from '../../../src/core/caldav/credentials';
+import { CalDavSession } from '../../../src/core/caldav/session';
+import type { Logger, SyncLogEntry } from '../../../src/core/ports/logger';
 import { AccountService } from '../../../src/core/settings/service';
+import { loggedTransport } from '../../../src/core/transport/logged';
 
 const PASSWORD = 'planted-app-password-8f3c1d';
+/** No case of this file makes a request, so every request is a fault. */
+const NO_REQUESTS = 'this test makes no network request';
+
 const DRAFT = {
 	serverUrl: 'https://caldav.example.com/dav/',
 	username: 'ren',
@@ -63,6 +75,7 @@ function service(
 		secrets: createSecretStore(app, settings),
 		logger,
 		clock: new ControlledClock(),
+		transport: refusingTransport(NO_REQUESTS),
 	});
 }
 
@@ -191,5 +204,74 @@ describe('SC-2 the credential material around the settings', () => {
 				},
 			),
 		).rejects.toThrow(/secrets-scan/);
+	});
+});
+
+/** The mock calendar server that the transport cases speak to. */
+function calendarServer(): MockCalDavServer {
+	return new MockCalDavServer({
+		accounts: [{ name: 'ren', collections: [{ name: 'home' }] }],
+	});
+}
+
+/**
+ * Runs a session of the transport against the mock server, and gives the
+ * log entries of that session back. The sweep of the run reads the same
+ * entries.
+ */
+async function transportSession(
+	mock: MockCalDavServer,
+	name: string,
+): Promise<readonly SyncLogEntry[]> {
+	return runSimulation({ name, caldav: mock }, async (run) => {
+		run.registerSecret({ label: 'app password', value: PASSWORD });
+		const entries: SyncLogEntry[] = [];
+		const session = new CalDavSession({
+			transport: loggedTransport({
+				transport: mock,
+				logger: {
+					log: (entry) => {
+						entries.push(entry);
+						run.logger.log(entry);
+					},
+				},
+				clock: new ControlledClock(),
+			}),
+			serverUrl: mock.principalRootUrl,
+			headers: basicHeaders('ren', PASSWORD),
+		});
+		await session.calendars(await session.discover());
+		return entries;
+	});
+}
+
+describe('SC-2 the credential material around the transport', () => {
+	it('SC-2: a session of the transport puts no password in the log', async () => {
+		const entries = await transportSession(
+			calendarServer(),
+			'caldav session',
+		);
+		expect(entries.length).toBeGreaterThan(0);
+		expect(JSON.stringify(entries)).not.toContain(PASSWORD);
+	});
+
+	it('SC-2: no entry of that log carries the sign-in header', async () => {
+		const mock = calendarServer();
+		const entries = await transportSession(mock, 'caldav session header');
+		const written = JSON.stringify(entries);
+		const sent = basicHeaders('ren', PASSWORD).authorization ?? '';
+		expect(sent).toContain('Basic ');
+		expect(written).not.toContain(sent);
+		expect(written).not.toContain('authorization');
+	});
+
+	it('SC-2: every request of that session carried the sign-in header', async () => {
+		const mock = calendarServer();
+		await transportSession(mock, 'caldav session requests');
+		const sent = basicHeaders('ren', PASSWORD).authorization;
+		expect(mock.log.entries.length).toBeGreaterThan(0);
+		for (const entry of mock.log.entries) {
+			expect(entry.headers.authorization).toBe(sent);
+		}
 	});
 });

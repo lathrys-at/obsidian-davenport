@@ -57,6 +57,7 @@
 		}
 	},
 	"dependencies": {
-		"ical.js": "2.2.1"
+		"ical.js": "2.2.1",
+		"tsdav": "2.3.1"
 	}
 }

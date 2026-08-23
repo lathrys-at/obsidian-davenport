@@ -449,3 +449,24 @@ argument, and the timers `setTimeout`, `setInterval` and `setImmediate`.
 harness answers that port. A test that must read the real clock calls
 `withRealTime` from [`harness/sweeps/index.ts`](harness/sweeps/index.ts).
 That call states its reason.
+
+### The order that the CalDAV library needs
+
+`tsdav` reads the global fetch one time, at the moment its module loads, and it
+keeps that value as the fallback of every entry point. The poison must
+therefore stand before any test module imports `tsdav`. The setup file installs
+the poison at its top level, and the runner runs the setup file before it
+imports a test module, so the order holds. Two changes would break it: an
+import of `tsdav` from a setup file that runs before the poison, and an import
+of `tsdav` from `vitest.config.ts`.
+
+The proof of the order is a test.
+[`suites/network/discipline.test.ts`](suites/network/discipline.test.ts) calls
+`tsdav` without the injected transport and reads the throw. A change that puts
+the library in before the poison turns that file red, because the library then
+holds the real fetch and the call reaches the network.
+
+The doubles of the transport port live in
+[`harness/transport.ts`](harness/transport.ts). `FakeTransport` answers from a
+rule and records each request. `refusingTransport` fails every request, and a
+part of the plugin that must speak to no server takes that one.

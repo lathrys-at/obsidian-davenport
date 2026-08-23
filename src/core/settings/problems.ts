@@ -81,6 +81,12 @@ export type FieldFault =
 			readonly field: EntryField;
 			readonly value: string;
 	  }
+	/**
+	 * The field holds a character that the sign-in header cannot carry. A
+	 * message about this fault quotes no value, because the field can hold
+	 * a credential.
+	 */
+	| { readonly kind: 'sign-in-alphabet'; readonly field: EntryField }
 	/** Another entry holds the same value in the same field. */
 	| {
 			readonly kind: 'repeated';
@@ -181,6 +187,8 @@ export function describeFieldFault(fault: FieldFault): string {
 			return `The field ${field} holds ${quote(fault.value)}. Write a web address that starts with https:// or http://.`;
 		case 'alphabet':
 			return `The field ${field} holds ${quote(fault.value)}. That field takes lowercase letters, digits, and dashes.`;
+		case 'sign-in-alphabet':
+			return `The field ${field} holds a character that Davenport cannot send to a calendar server. Use letters, digits, and the marks of a keyboard. Do not use a character of another writing system. Do not use an emoji.`;
 		case 'repeated':
 			return `The field ${field} holds ${quote(fault.value)}. Another entry holds that value. Give each entry a value of its own.`;
 		case 'credentials-in-address':

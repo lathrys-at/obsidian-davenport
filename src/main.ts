@@ -1,9 +1,11 @@
-import { Plugin } from 'obsidian';
+import { Plugin, requestUrl } from 'obsidian';
 import { systemClock } from './adapters/clock';
+import { createHttpTransport } from './adapters/http-transport';
 import { MemoryLog } from './adapters/log';
 import { PluginDataStore } from './adapters/plugin-data';
 import { createSecretStore } from './adapters/secret-store';
 import { AccountService } from './core/settings/service';
+import { loggedTransport } from './core/transport/logged';
 import { DavenportSettingTab } from './ui/settings-tab';
 
 /**
@@ -22,11 +24,18 @@ import { DavenportSettingTab } from './ui/settings-tab';
 export default class DavenportPlugin extends Plugin {
 	override async onload(): Promise<void> {
 		const data = new PluginDataStore(this);
+		const logger = new MemoryLog();
+		const clock = systemClock();
 		const service = new AccountService({
 			settings: data,
 			secrets: createSecretStore(this.app, data),
-			logger: new MemoryLog(),
-			clock: systemClock(),
+			logger,
+			clock,
+			transport: loggedTransport({
+				transport: createHttpTransport(requestUrl),
+				logger,
+				clock,
+			}),
 		});
 		await service.load();
 		this.addSettingTab(new DavenportSettingTab(this.app, this, service));
