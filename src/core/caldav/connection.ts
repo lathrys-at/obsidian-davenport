@@ -12,18 +12,22 @@
  *
  * The plugin cannot read the reason out of the library, because the
  * library states each failure of the discovery in words of its own and in
- * one shape. The test therefore watches the transport. Where the server
- * answered a request with 401 or with 403, the server refused the
- * credential. Where no answer of that kind arrived, the plugin did not
- * reach a calendar server at that address.
+ * one shape. The test therefore watches the transport, and it reads the
+ * status of the last answer alone.
+ *
+ * The last answer is the one that stopped the discovery. The discovery
+ * starts with two probes of the well-known address, and a server that
+ * takes no credential at that address answers a probe with 401. Such a
+ * server then goes on and signs the plugin in. A test that read every
+ * status of the chain would report that server as one that refused the
+ * credential, and it would ask the user to enter the app password again.
+ * The status of the last answer states what stopped the discovery, and the
+ * test reads that one.
  */
 
 import type { AccountCredential } from '../model/credential';
-import type {
-	HttpRequest,
-	HttpResponse,
-	HttpTransport,
-} from '../ports/transport';
+import type { HttpTransport } from '../ports/transport';
+import { watchStatus } from '../transport/watch';
 import { signRequests } from './credentials';
 import { CalDavSession } from './session';
 
@@ -73,9 +77,9 @@ export async function checkConnection(
 			? 'no-token-flow'
 			: 'credential-alphabet';
 	}
-	const watched = new WatchedTransport(parts.transport);
+	const watched = watchStatus(parts.transport);
 	const session = new CalDavSession({
-		transport: watched,
+		transport: watched.transport,
 		serverUrl: parts.serverUrl,
 		headers: signing.headers,
 	});
@@ -83,32 +87,11 @@ export async function checkConnection(
 		await session.discover();
 		return 'signed-in';
 	} catch {
-		return watched.refused ? 'refused' : 'not-reached';
+		return refusal(watched.lastStatus()) ? 'refused' : 'not-reached';
 	}
 }
 
-/**
- * A transport that remembers whether a server refused the credential. The
- * class changes no request and no answer.
- */
-class WatchedTransport implements HttpTransport {
-	private readonly inner: HttpTransport;
-	private seenRefusal = false;
-
-	constructor(inner: HttpTransport) {
-		this.inner = inner;
-	}
-
-	/** True where one answer or more stated a refusal of the credential. */
-	get refused(): boolean {
-		return this.seenRefusal;
-	}
-
-	async request(req: HttpRequest): Promise<HttpResponse> {
-		const answer = await this.inner.request(req);
-		if (REFUSAL_STATUSES.has(answer.status)) {
-			this.seenRefusal = true;
-		}
-		return answer;
-	}
+/** True where a status states that the server refused the credential. */
+function refusal(status: number | null): boolean {
+	return status !== null && REFUSAL_STATUSES.has(status);
 }

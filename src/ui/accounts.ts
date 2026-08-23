@@ -21,6 +21,7 @@
  */
 
 import { App, Notice, Setting } from 'obsidian';
+import type { ButtonComponent } from 'obsidian';
 import type { AccountConfig } from '../core/model/settings';
 import type { AccountOutcome, AccountService } from '../core/settings/service';
 import { AccountModal } from './account-modal';
@@ -146,7 +147,7 @@ function renderAccount(
 	state.hide();
 	row.addButton((button) =>
 		button.setButtonText(text.testButton).onClick(() => {
-			void runTest(section, account, state);
+			void runTest(section, account, state, button);
 		}),
 	);
 	return {
@@ -161,18 +162,36 @@ function renderAccount(
  * Tests the connection of one account and states the result under the row.
  * The screen states that the test runs first, because the test speaks to a
  * server and the answer takes time.
+ *
+ * The button takes no second selection while its own test runs. Two tests
+ * of one account write to one paragraph, and the test that ends last then
+ * states its result over the result of the other one. The button takes
+ * selections again when the test ends, and it does so only while the draw
+ * that holds it stands on the screen.
+ *
+ * The function writes the `disabled` property of the element of the
+ * button. The `setDisabled` method of the API does the same, and that
+ * method arrives in a version of Obsidian that is newer than the version
+ * that the manifest states.
  */
 async function runTest(
 	section: AccountsSection,
 	account: AccountConfig,
 	state: HTMLElement,
+	button: ButtonComponent,
 ): Promise<void> {
-	say(state, connectionRunningView());
-	const result = await section.service.testConnection(account.id);
-	if (!section.live()) {
-		return;
+	button.buttonEl.disabled = true;
+	try {
+		say(state, connectionRunningView());
+		const result = await section.service.testConnection(account.id);
+		if (section.live()) {
+			say(state, connectionView(result));
+		}
+	} finally {
+		if (section.live()) {
+			button.buttonEl.disabled = false;
+		}
 	}
-	say(state, connectionView(result));
 }
 
 /** Writes one paragraph of the screen. */

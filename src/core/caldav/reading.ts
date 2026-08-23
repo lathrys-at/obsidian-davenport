@@ -12,9 +12,15 @@
  * arrived. The status inside each response of the document says what the
  * server did with that one resource. A report that arrives as 207 can hold
  * a response with status 404, and that response states one resource that
- * is gone. The `ok` member of the library follows the status inside the
- * response, and it falls back to the status of the envelope where the
- * response states none.
+ * is gone. The readers below take the status inside the response, because
+ * that status is the answer about the resource.
+ *
+ * A value of the document arrives in more than one shape. A parser of XML
+ * gives plain text as the value itself. It gives a CDATA section as a set
+ * of named values with one member, and it gives text beside an attribute
+ * in the same form. A server can write the calendar text of a resource in
+ * any of those shapes, and each shape states the same text. The reader
+ * takes the text out of each of them.
  */
 
 import type { DAVAccount, DAVCalendar, DAVResponse } from 'tsdav';
@@ -48,23 +54,84 @@ export interface CollectionChange {
 	readonly gone: boolean;
 }
 
+/**
+ * What one sync-collection report states about the token of the next call.
+ *
+ * The three conditions are different, and a caller must be able to tell
+ * them apart.
+ *
+ * `token` says that the report carried a token. The caller sends that
+ * token on the next call.
+ *
+ * `no-change` says that the report named no resource and carried no token.
+ * The library drops the token of such a report, so the plugin cannot tell
+ * whether the server sent one. The collection did not change, and the
+ * token that the caller holds still states the same point.
+ *
+ * `no-token` says that the report named one resource or more and carried
+ * no token. The server sent no token. The caller cannot keep the token
+ * that it holds and also count the changes as seen, because the next call
+ * with that token names the same changes again. What the caller does then
+ * is a decision of the sync loop, and this module does not make it.
+ */
+export type NextSyncToken =
+	| { readonly kind: 'token'; readonly value: string }
+	| { readonly kind: 'no-change' }
+	| { readonly kind: 'no-token' };
+
 /** What one sync-collection report states. */
 export interface CollectionDelta {
-	/**
-	 * The token that the report gives for the next call, or null where the
-	 * answer carries none. See `readSyncToken` for the second condition.
-	 */
-	readonly syncToken: string | null;
+	readonly token: NextSyncToken;
 	readonly changes: readonly CollectionChange[];
 }
 
-/** One calendar object, as a multiget report states it. */
-export interface CalendarResource {
-	readonly href: string;
-	readonly etag: string | null;
-	/** The iCalendar text, or null where the response carries none. */
-	readonly ics: string | null;
-}
+/**
+ * What a multiget report states about one address.
+ *
+ * `found` says that the server holds a resource at that address. `absent`
+ * says that the server holds none, which is the answer that confirms a
+ * deletion. `other` says that the server answered about the address in
+ * another way, and it carries the status of that answer.
+ */
+export type ResourceOutcome =
+	| {
+			readonly kind: 'found';
+			readonly href: string;
+			readonly etag: string | null;
+			/** The iCalendar text, or null where the response carries none. */
+			readonly ics: string | null;
+	  }
+	| { readonly kind: 'absent'; readonly href: string }
+	| {
+			readonly kind: 'other';
+			readonly href: string;
+			readonly status: number;
+	  };
+
+/**
+ * What one multiget report gives back.
+ *
+ * The two arms answer two different questions, and a caller reads the
+ * first one before it can read the second. `ok` true says that the server
+ * answered the report, and the outcomes then state what the server holds
+ * at each address. `ok` false says that the server refused the report
+ * itself, and it carries the status of that refusal. No outcome of a
+ * member reaches this arm: a member that is not there is an outcome and
+ * not a failure.
+ */
+export type ResourceReport =
+	| { readonly ok: true; readonly outcomes: readonly ResourceOutcome[] }
+	| {
+			readonly ok: false;
+			/**
+			 * The status of the answer, or null where the library sent no
+			 * request at all.
+			 */
+			readonly status: number | null;
+	  };
+
+/** The statuses that state that a server holds no resource at an address. */
+const ABSENT_STATUSES: ReadonlySet<number> = new Set([404, 410]);
 
 /**
  * The three addresses of an account of the library. The call throws where
@@ -99,14 +166,15 @@ export function readCalendar(found: DAVCalendar): CalDavCalendar {
 }
 
 /**
- * The token of the next sync, or null where the answer carries none.
+ * The token that a report carried, or null where no answer of the report
+ * carried one.
  *
  * The library gives the whole parsed document back on each response of the
  * answer. A report that names no resource carries no response, and the
  * library then builds one entry that holds no document. The token of such
- * a report does not reach this reader, and the result is null. The caller
- * keeps the token that it holds: the collection did not change, so that
- * token still states the same point.
+ * a report therefore never reaches this reader. `readDelta` below tells
+ * that condition apart from a report that named resources and carried no
+ * token.
  */
 export function readSyncToken(answers: readonly DAVResponse[]): string | null {
 	for (const answer of answers) {
@@ -129,29 +197,56 @@ export function readDelta(answers: readonly DAVResponse[]): CollectionDelta {
 		changes.push({
 			href,
 			etag: text(reach(answer.props, ['getetag'])),
-			gone: answer.status === 404 || answer.status === 410,
+			gone: ABSENT_STATUSES.has(answer.status),
 		});
 	}
-	return { syncToken: readSyncToken(answers), changes };
+	return {
+		token: nextToken(readSyncToken(answers), changes.length),
+		changes,
+	};
 }
 
-/** The resources that one multiget report states. */
-export function readResources(
+/** What the report states about the token of the next call. */
+function nextToken(found: string | null, changes: number): NextSyncToken {
+	if (found !== null) {
+		return { kind: 'token', value: found };
+	}
+	return changes === 0 ? { kind: 'no-change' } : { kind: 'no-token' };
+}
+
+/**
+ * What one multiget report states about each address that it names. A
+ * response that names no address states nothing that a caller can use, and
+ * it gets no outcome.
+ */
+export function readOutcomes(
 	answers: readonly DAVResponse[],
-): readonly CalendarResource[] {
-	const found: CalendarResource[] = [];
+): readonly ResourceOutcome[] {
+	const outcomes: ResourceOutcome[] = [];
 	for (const answer of answers) {
 		const href = text(answer.href);
-		if (href === null || !answer.ok) {
+		if (href === null) {
 			continue;
 		}
-		found.push({
-			href,
-			etag: text(reach(answer.props, ['getetag'])),
-			ics: text(reach(answer.props, ['calendarData'])),
-		});
+		outcomes.push(outcomeOf(href, answer));
 	}
-	return found;
+	return outcomes;
+}
+
+/** The outcome of one response of a multiget report. */
+function outcomeOf(href: string, answer: DAVResponse): ResourceOutcome {
+	if (ABSENT_STATUSES.has(answer.status)) {
+		return { kind: 'absent', href };
+	}
+	if (answer.status < 200 || answer.status >= 300) {
+		return { kind: 'other', href, status: answer.status };
+	}
+	return {
+		kind: 'found',
+		href,
+		etag: text(reach(answer.props, ['getetag'])),
+		ics: text(reach(answer.props, ['calendarData'])),
+	};
 }
 
 /**
@@ -171,12 +266,21 @@ function reach(value: unknown, path: readonly string[]): unknown {
 }
 
 /**
- * The text of a value, or null where the value is not text with
- * characters. The parser gives a number back for a value that reads as a
- * number, and a server can state a token or a tag in that form, so a
- * number becomes its text here.
+ * The text of a value, or null where the value states no text with
+ * characters. The value arrives as the text itself, or inside a wrapper
+ * that the parser builds for a CDATA section and for text beside an
+ * attribute.
  */
 function text(value: unknown): string | null {
+	return plain(value) ?? plain(unwrapped(value));
+}
+
+/**
+ * The text of a value that is text or a number. The parser gives a number
+ * back for a value that reads as a number, and a server can state a token
+ * or a tag in that form, so a number becomes its text here.
+ */
+function plain(value: unknown): string | null {
 	if (typeof value === 'string') {
 		return value === '' ? null : value;
 	}
@@ -184,4 +288,16 @@ function text(value: unknown): string | null {
 		return String(value);
 	}
 	return null;
+}
+
+/**
+ * The value inside the wrapper of a CDATA section or of a text node, or
+ * undefined where the value carries no such wrapper.
+ */
+function unwrapped(value: unknown): unknown {
+	if (typeof value !== 'object' || value === null) {
+		return undefined;
+	}
+	const cdata: unknown = Reflect.get(value, '_cdata');
+	return cdata === undefined ? Reflect.get(value, '_text') : cdata;
 }

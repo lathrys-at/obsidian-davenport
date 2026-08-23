@@ -14,7 +14,7 @@ import {
 	readCalendar,
 	readDelta,
 	readEndpoints,
-	readResources,
+	readOutcomes,
 	readSyncToken,
 } from './reading';
 
@@ -99,11 +99,20 @@ describe('one calendar of the library', () => {
 		expect(readCalendar({ url: HOME }).displayName).toBe(HOME);
 	});
 
-	it('takes the address as the name where the name is not text', () => {
+	// The library unwraps a CDATA section on this property before the
+	// reader sees it, so the reader meets a name of another shape only
+	// where that shape carries no text at all.
+	it('takes the address as the name where the name states no text', () => {
+		expect(readCalendar({ url: HOME, displayName: {} }).displayName).toBe(
+			HOME,
+		);
+	});
+
+	it('takes the name out of a CDATA section, where one arrives', () => {
 		expect(
 			readCalendar({ url: HOME, displayName: { _cdata: 'Home' } })
 				.displayName,
-		).toBe(HOME);
+		).toBe('Home');
 	});
 
 	it('states no component where the server states none', () => {
@@ -164,7 +173,7 @@ describe('the changes of a collection', () => {
 				}),
 			]),
 		).toEqual({
-			syncToken: 'sync-6',
+			token: { kind: 'token', value: 'sync-6' },
 			changes: [
 				{ href: `${HOME}one.ics`, etag: '"etag-1"', gone: false },
 			],
@@ -187,10 +196,38 @@ describe('the changes of a collection', () => {
 	});
 });
 
+// The three conditions below are different, and a caller that cannot tell
+// the second from the third keeps a token that no longer states the point
+// it reached, and reports the same change on every call.
+describe('what a report states about the token of the next call', () => {
+	it('names the token where the report carried one', () => {
+		expect(readDelta([withToken('sync-7')]).token).toEqual({
+			kind: 'token',
+			value: 'sync-7',
+		});
+	});
+
+	it('states no change where the report named no resource', () => {
+		expect(readDelta([response()]).token).toEqual({ kind: 'no-change' });
+	});
+
+	it('states no token where the report named a resource and carried none', () => {
+		const delta = readDelta([
+			response({
+				href: `${HOME}one.ics`,
+				props: { getetag: '"etag-1"' },
+				raw: { multistatus: {} },
+			}),
+		]);
+		expect(delta.changes).toHaveLength(1);
+		expect(delta.token).toEqual({ kind: 'no-token' });
+	});
+});
+
 describe('the calendar objects of a report', () => {
-	it('takes the address, the tag, and the text of each resource', () => {
+	it('states a resource that the server holds, with its tag and its text', () => {
 		expect(
-			readResources([
+			readOutcomes([
 				response({
 					href: `${HOME}one.ics`,
 					props: {
@@ -201,6 +238,7 @@ describe('the calendar objects of a report', () => {
 			]),
 		).toEqual([
 			{
+				kind: 'found',
 				href: `${HOME}one.ics`,
 				etag: '"etag-1"',
 				ics: 'BEGIN:VCALENDAR',
@@ -208,21 +246,72 @@ describe('the calendar objects of a report', () => {
 		]);
 	});
 
-	it('leaves out a response that states a failure for one resource', () => {
+	it.each([404, 410])(
+		'states a resource that is not there for status %i',
+		(status) => {
+			expect(
+				readOutcomes([response({ href: `${HOME}one.ics`, status })]),
+			).toEqual([{ kind: 'absent', href: `${HOME}one.ics` }]);
+		},
+	);
+
+	it('states the status where the server answered in another way', () => {
 		expect(
-			readResources([response({ href: `${HOME}one.ics`, status: 404 })]),
-		).toEqual([]);
+			readOutcomes([response({ href: `${HOME}one.ics`, status: 403 })]),
+		).toEqual([{ kind: 'other', href: `${HOME}one.ics`, status: 403 }]);
 	});
 
-	it('leaves out a response that names no address', () => {
+	it('states no outcome for a response that names no address', () => {
 		expect(
-			readResources([response({ props: { getetag: '"one"' } })]),
+			readOutcomes([response({ props: { getetag: '"one"' } })]),
 		).toEqual([]);
 	});
 
 	it('states no text where the response carries no calendar data', () => {
-		expect(
-			readResources([response({ href: `${HOME}one.ics` })])[0]?.ics,
-		).toBeNull();
+		const found = readOutcomes([response({ href: `${HOME}one.ics` })])[0];
+		expect(found).toEqual({
+			kind: 'found',
+			href: `${HOME}one.ics`,
+			etag: null,
+			ics: null,
+		});
+	});
+
+	// A parser of XML gives a CDATA section, and text beside an attribute,
+	// as a set of named values with one member. A server writes the
+	// calendar text of a resource in any of these shapes.
+	it.each([
+		['plain text', 'BEGIN:VCALENDAR'],
+		['a CDATA section', { _cdata: 'BEGIN:VCALENDAR' }],
+		['text beside an attribute', { _text: 'BEGIN:VCALENDAR' }],
+		[
+			'a CDATA section beside an attribute',
+			{
+				_attributes: { 'content-type': 'text/calendar' },
+				_cdata: 'BEGIN:VCALENDAR',
+			},
+		],
+	])('takes the calendar text from %s', (_name, calendarData) => {
+		const found = readOutcomes([
+			response({ href: `${HOME}one.ics`, props: { calendarData } }),
+		])[0];
+		expect(found).toMatchObject({ kind: 'found', ics: 'BEGIN:VCALENDAR' });
+	});
+
+	it('states no text where a wrapper holds no text', () => {
+		const found = readOutcomes([
+			response({ href: `${HOME}one.ics`, props: { calendarData: {} } }),
+		])[0];
+		expect(found).toMatchObject({ kind: 'found', ics: null });
+	});
+
+	it('takes a tag out of a CDATA section as well', () => {
+		const found = readOutcomes([
+			response({
+				href: `${HOME}one.ics`,
+				props: { getetag: { _cdata: '"etag-2"' } },
+			}),
+		])[0];
+		expect(found).toMatchObject({ kind: 'found', etag: '"etag-2"' });
 	});
 });

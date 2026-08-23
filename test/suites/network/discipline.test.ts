@@ -76,7 +76,10 @@ async function driveEveryOperation(mock: MockCalDavServer): Promise<void> {
 		throw new Error('the mock server stated no calendar');
 	}
 	const delta = await caldav.changes(home.url, null);
-	await caldav.changes(home.url, delta.syncToken);
+	await caldav.changes(
+		home.url,
+		delta.token.kind === 'token' ? delta.token.value : null,
+	);
 	await caldav.resources(
 		home.url,
 		delta.changes.map((change) => change.href),

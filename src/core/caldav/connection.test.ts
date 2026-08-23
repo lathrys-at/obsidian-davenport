@@ -83,6 +83,25 @@ describe('what the connection test states', () => {
 		});
 		expect(await check(mock, mock.principalRootUrl)).toBe('signed-in');
 	});
+
+	// The discovery starts with two probes of the well-known address. A
+	// server can answer a probe with 401 and still sign the plugin in at
+	// the address of the principal. A test that read every status of the
+	// chain would send the user to enter the app password again, where the
+	// address is the thing to correct.
+	it('states no server where a probe answered 401 and another step stopped the discovery', async () => {
+		const mock = server({
+			faults: [
+				{ kind: 'status', status: 401, pathContains: '.well-known' },
+			],
+		});
+		expect(await check(mock, mock.url('/'))).toBe('not-reached');
+	});
+
+	it('states a refusal where the server refused the last request as well', async () => {
+		const mock = server({ faults: [{ kind: 'status', status: 401 }] });
+		expect(await check(mock, mock.url('/'))).toBe('refused');
+	});
 });
 
 describe('the conditions that stop the test before a request', () => {
