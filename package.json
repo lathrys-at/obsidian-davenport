@@ -33,23 +33,23 @@
 		"@eslint/js": "^10.0.1",
 		"@stryker-mutator/core": "10.0.0",
 		"@stryker-mutator/vitest-runner": "10.0.0",
-		"@types/node": "^26.2.0",
-		"@vitest/coverage-v8": "^4.1.10",
-		"@vitest/utils": "4.1.10",
-		"@xmldom/xmldom": "^0.9.11",
+		"@types/node": "^26.6.2",
+		"@vitest/coverage-v8": "^5.0.1",
+		"@vitest/utils": "5.0.1",
+		"@xmldom/xmldom": "^0.9.12",
 		"esbuild": "0.28.2",
-		"eslint": "^10.8.1",
+		"eslint": "^10.11.0",
 		"eslint-config-prettier": "^10.1.8",
-		"eslint-plugin-obsidianmd": "^0.4.1",
-		"fast-check": "4.9.0",
-		"globals": "^17.11.0",
+		"eslint-plugin-obsidianmd": "^0.4.2",
+		"fast-check": "4.10.2",
+		"globals": "^17.12.0",
 		"jiti": "^2.6.1",
 		"obsidian": "1.13.1",
-		"prettier": "^3.9.6",
+		"prettier": "^3.9.8",
 		"typescript": "^5.8.3",
-		"typescript-eslint": "^8.67.0",
-		"vitest": "^4.1.10",
-		"yaml": "^2.9.0"
+		"typescript-eslint": "^8.70.0",
+		"vitest": "^5.0.1",
+		"yaml": "^2.9.1"
 	},
 	"overrides": {
 		"typed-rest-client": {
@@ -58,6 +58,6 @@
 	},
 	"dependencies": {
 		"ical.js": "2.2.1",
-		"tsdav": "2.3.1"
+		"tsdav": "2.3.4"
 	}
 }
